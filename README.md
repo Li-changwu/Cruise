@@ -18,25 +18,7 @@ Cruise 探索的是单次图重放之上的控制边界：图执行优化消除�
 
 ## 系统架构
 
-```mermaid
-flowchart LR
-    H["Host：vLLM 请求准入与全局调度"]
-    P["设备驻留 Epoch 计划"]
-    U["Device UDF 控制器"]
-    D["完整 Decoder AIR"]
-    S["Greedy Sampling"]
-    K["设备驻留 Paged-KV 与 Slot 状态"]
-    R["Token 序列与完成状态"]
-
-    H --> P
-    P -->|一次 Feed| U
-    U --> D
-    D --> S
-    S --> K
-    K -->|下一个有界 Step| U
-    U -->|一次 Fetch| R
-    R --> H
-```
+![Cruise 系统架构](docs/images/cruise-architecture-zh.svg)
 
 当前主线实现来自 **Attempt 74**，已经具备以下能力：
 

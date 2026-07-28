@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="420" viewBox="0 0 1280 420" role="img" aria-labelledby="title desc">
+  <title id="title">Cruise architecture</title>
+  <desc id="desc">A host sends one bounded epoch plan to a device-resident controller. The controller repeatedly runs the decoder, greedy sampling, and Paged-KV state update before returning one result to the host.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#16794b"/>
+    </marker>
+  </defs>
+
+  <rect width="1280" height="420" fill="#ffffff"/>
+
+  <rect x="32" y="72" width="246" height="276" rx="6" fill="#f8fafc" stroke="#64748b" stroke-width="2"/>
+  <text x="155" y="112" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a">Host / vLLM</text>
+  <line x1="56" y1="130" x2="254" y2="130" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="155" y="171" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" fill="#334155">Request admission</text>
+  <text x="155" y="205" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" fill="#334155">Global scheduling</text>
+  <text x="155" y="239" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" fill="#334155">Fairness and recovery</text>
+  <rect x="61" y="273" width="188" height="48" rx="5" fill="#e2e8f0"/>
+  <text x="155" y="303" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#1e293b">Bounded epoch plan</text>
+
+  <rect x="326" y="30" width="922" height="360" rx="6" fill="#f5fbf7" stroke="#23875b" stroke-width="2"/>
+  <text x="354" y="67" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#145c3c">Ascend NPU device-resident epoch</text>
+
+  <rect x="356" y="112" width="182" height="176" rx="6" fill="#e8f1fb" stroke="#3478b9" stroke-width="2"/>
+  <text x="447" y="160" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#174f83">Device UDF</text>
+  <text x="447" y="188" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#174f83">controller</text>
+  <text x="447" y="233" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#334155">Stop on EOS or</text>
+  <text x="447" y="256" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#334155">epoch bound</text>
+
+  <rect x="600" y="128" width="174" height="144" rx="6" fill="#f8fafc" stroke="#64748b" stroke-width="2"/>
+  <text x="687" y="188" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#0f172a">Full decoder</text>
+  <text x="687" y="219" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#0f172a">AIR graph</text>
+
+  <rect x="836" y="128" width="168" height="144" rx="6" fill="#fff4f2" stroke="#c65b4b" stroke-width="2"/>
+  <text x="920" y="188" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#8c3429">Greedy</text>
+  <text x="920" y="219" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#8c3429">sampling</text>
+
+  <rect x="1066" y="112" width="154" height="176" rx="6" fill="#fff8e7" stroke="#b87816" stroke-width="2"/>
+  <text x="1143" y="168" text-anchor="middle" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#7a4b08">Paged-KV</text>
+  <text x="1143" y="198" text-anchor="middle" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#7a4b08">and slot state</text>
+  <text x="1143" y="238" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#5b4630">Persistent across</text>
+  <text x="1143" y="261" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#5b4630">decode steps</text>
+
+  <path d="M278 168 H346" fill="none" stroke="#334155" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="312" y="145" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#334155">one Feed</text>
+
+  <path d="M356 246 H288" fill="none" stroke="#334155" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="322" y="273" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#334155">one Fetch</text>
+
+  <path d="M538 200 H590" fill="none" stroke="#334155" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M774 200 H826" fill="none" stroke="#334155" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M1004 200 H1056" fill="none" stroke="#334155" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <path d="M1143 298 V332 H447 V298" fill="none" stroke="#16794b" stroke-width="3" marker-end="url(#arrow-green)"/>
+  <rect x="690" y="314" width="210" height="34" rx="5" fill="#ffffff" stroke="#9acbb3"/>
+  <text x="795" y="336" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#145c3c">next bounded decode step</text>
+</svg>

@@ -20,25 +20,7 @@ Host coordination between a bounded number of decode iterations.
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    H["Host: vLLM admission and global scheduling"]
-    P["Resident-epoch plan"]
-    U["Device UDF controller"]
-    D["Full decoder AIR"]
-    S["Greedy sampling"]
-    K["Device-resident Paged-KV and slot state"]
-    R["Token spans and completion state"]
-
-    H --> P
-    P -->|one Feed| U
-    U --> D
-    D --> S
-    S --> K
-    K -->|next bounded step| U
-    U -->|one Fetch| R
-    R --> H
-```
+![Cruise architecture](docs/images/cruise-architecture-en.svg)
 
 The active implementation is the former **Attempt 74** snapshot. It provides:
 
