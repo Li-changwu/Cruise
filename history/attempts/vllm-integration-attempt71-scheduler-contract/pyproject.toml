@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vllm-ascend-resident-epoch"
+version = "0.1.0"
+description = "Fixed-batch resident epoch backend prototype for vLLM-Ascend"
+requires-python = ">=3.10"
+
+[project.entry-points."vllm.general_plugins"]
+ascend_resident_epoch = "vllm_ascend_resident_epoch.plugin:register"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+

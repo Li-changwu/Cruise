@@ -1,0 +1,58 @@
+{
+  "cluster": [
+    {
+      "cluster_nodes": [
+        {
+          "node_id": 0,
+          "node_type": "ATLAS900",
+          "ipaddr": "127.0.0.1",
+          "port": 2509,
+          "memory": 25165824,
+          "is_local": true,
+          "deploy_res_path": "/root/runtime/deploy_res",
+          "item_list": [
+            {
+              "item_id": 0,
+              "device_id": 7,
+              "ipaddr": "127.0.0.1"
+            }
+          ]
+        }
+      ],
+      "nodes_topology": {
+        "protocol": "RDMA:200Gb",
+        "type": "star",
+        "topos": [
+          {
+            "plane_id": 0,
+            "devices": [0]
+          }
+        ]
+      }
+    }
+  ],
+  "node_def": [
+    {
+      "node_type": "ATLAS900",
+      "resource_type": "Aarch",
+      "support_links": "[HCCS,PCIE,ROCE]",
+      "item_type": "Ascend910B2",
+      "inter_item_memory_access_mode": "[NUMA]",
+      "h2d_bw": "PCIE:100Gb",
+      "item_topology": [
+        {
+          "links_mode": "HCCS",
+          "links": []
+        }
+      ]
+    }
+  ],
+  "item_def": [
+    {
+      "item_type": "Ascend910B2",
+      "resource_type": "Ascend",
+      "memory": "[DDR:64GB]",
+      "aic_type": "[DAVINCI_V220:24]"
+    }
+  ]
+}

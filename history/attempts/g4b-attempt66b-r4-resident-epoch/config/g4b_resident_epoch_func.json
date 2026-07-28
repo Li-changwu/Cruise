@@ -1,0 +1,10 @@
+{
+  "func_list": [
+    {"func_name": "g4b_resident_epoch"}
+  ],
+  "input_num": 9,
+  "output_num": 6,
+  "target_bin": "libg4b_resident_epoch.so",
+  "workspace": "/root/ascend-control-g4-20260723/attempt66b-r4-src/controller",
+  "cmakelist_path": "CMakeLists.txt"
+}

@@ -1,0 +1,333 @@
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cstdint>
+#include <cstring>
+#include <fstream>
+#include <iostream>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <vector>
+
+#include "all_ops.h"
+#include "flow_graph/data_flow.h"
+#include "ge/ge_api.h"
+#include "graph/graph.h"
+
+namespace {
+constexpr int32_t kBatchSize = 4;
+constexpr int32_t kMaxEpochSteps = 8;
+constexpr int32_t kLogicalCapacity = 8;
+constexpr int32_t kPhysicalBlocks = 8;
+constexpr int32_t kBlocksPerRequest = 2;
+constexpr int32_t kBlockSize = 128;
+constexpr int32_t kVocabSize = 152064;
+constexpr int32_t kConfiguredEos = 151645;
+constexpr int32_t kControlInputElements = 1 + kBatchSize + 2;
+constexpr int32_t kControlOutputElements = 6 + 4 * kBatchSize + 2;
+constexpr int32_t kControlExecutedOffset = 6 + 2 * kBatchSize;
+constexpr size_t kCacheBytes =
+    28ULL * 8ULL * 128ULL * 4ULL * 128ULL * sizeof(uint16_t);
+constexpr size_t kTokenHistoryBytes =
+    kMaxEpochSteps * kBatchSize * sizeof(int64_t);
+constexpr int32_t kFeedTimeoutMs = 600000;
+constexpr int32_t kFetchTimeoutMs = 3600000;
+
+struct InputSpec {
+  std::vector<int64_t> shape;
+  ge::DataType dtype;
+  size_t bytes;
+};
+
+const std::array<InputSpec, 9> kInputSpecs = {{
+    {{4, 1}, ge::DT_INT64, kBatchSize * sizeof(int64_t)},
+    {{4}, ge::DT_INT64, kBatchSize * sizeof(int64_t)},
+    {{4, 1}, ge::DT_INT32, kBatchSize * sizeof(int32_t)},
+    {{28, 8, 128, 4, 128}, ge::DT_BF16, kCacheBytes},
+    {{4}, ge::DT_INT32, kBatchSize * sizeof(int32_t)},
+    {{4}, ge::DT_INT32, kBatchSize * sizeof(int32_t)},
+    {{4, 2}, ge::DT_INT32,
+     kBatchSize * kBlocksPerRequest * sizeof(int32_t)},
+    {{28, 8, 128, 4, 128}, ge::DT_BF16, kCacheBytes},
+    {{72}, ge::DT_UINT8, 72},
+}};
+
+struct ResidentEpochEngine {
+  std::shared_ptr<ge::Session> session;
+  std::array<uint8_t, 72> tiling;
+  std::mutex execute_mutex;
+};
+
+std::mutex g_lifecycle_mutex;
+bool g_engine_active = false;
+
+bool ReadTiling(const char *path, std::array<uint8_t, 72> &tiling) {
+  if (path == nullptr) return false;
+  std::ifstream stream(path, std::ios::binary | std::ios::ate);
+  if (!stream || static_cast<size_t>(stream.tellg()) != tiling.size()) {
+    return false;
+  }
+  stream.seekg(0, std::ios::beg);
+  stream.read(reinterpret_cast<char *>(tiling.data()), tiling.size());
+  return static_cast<bool>(stream);
+}
+
+ge::Tensor MakeTensor(std::vector<uint8_t> &data,
+                      const std::vector<int64_t> &shape,
+                      ge::DataType dtype) {
+  ge::Tensor tensor;
+  tensor.SetTensorDesc(ge::TensorDesc(ge::Shape(shape), ge::FORMAT_ND, dtype));
+  tensor.SetData(data.data(), data.size());
+  return tensor;
+}
+
+bool IsOutput(const ge::Tensor &tensor, size_t bytes, ge::DataType dtype) {
+  return tensor.GetData() != nullptr && tensor.GetSize() == bytes &&
+         tensor.GetTensorDesc().GetDataType() == dtype;
+}
+
+ge::dflow::FlowGraph BuildDeviceFlow(const std::string &air_path,
+                                     const std::string &graph_config,
+                                     const std::string &func_config) {
+  auto data0 = ge::dflow::FlowData("input0", 0);
+  auto data1 = ge::dflow::FlowData("input1", 1);
+  auto data2 = ge::dflow::FlowData("input2", 2);
+  auto data3 = ge::dflow::FlowData("input3", 3);
+  auto data4 = ge::dflow::FlowData("input4", 4);
+  auto data5 = ge::dflow::FlowData("input5", 5);
+  auto data6 = ge::dflow::FlowData("input6", 6);
+  auto data7 = ge::dflow::FlowData("input7", 7);
+  auto data8 = ge::dflow::FlowData("input8", 8);
+  auto control = ge::dflow::FlowData("control", 9);
+  auto graph_pp = ge::dflow::GraphPp(
+      "attempt69e_b4_decoder_graph_pp", [air_path]() {
+        ge::Graph graph("Attempt69eB4InvokedDecoder");
+        const auto status = graph.LoadFromFile(air_path.c_str());
+        std::cout << "ATTEMPT71_AIR_LOAD status=" << status
+                  << " valid=" << graph.IsValid() << std::endl;
+        return graph;
+      });
+  graph_pp.SetCompileConfig(graph_config.c_str());
+  auto function_pp = ge::dflow::FunctionPp("g4c_b4_resident_epoch_pp")
+                         .SetCompileConfig(func_config.c_str());
+  function_pp.AddInvokedClosure("decode_graph_0", graph_pp);
+  auto node = ge::dflow::FlowNode("g4c_b4_resident_epoch_node", 10, 10);
+  node.AddPp(function_pp)
+      .SetInput(0, data0)
+      .SetInput(1, data1)
+      .SetInput(2, data2)
+      .SetInput(3, data3)
+      .SetInput(4, data4)
+      .SetInput(5, data5)
+      .SetInput(6, data6)
+      .SetInput(7, data7)
+      .SetInput(8, data8)
+      .SetInput(9, control);
+  ge::dflow::FlowGraph flow_graph("attempt69e_b4_resident_epoch");
+  std::vector<ge::dflow::FlowOperator> inputs = {
+      data0, data1, data2, data3, data4,
+      data5, data6, data7, data8, control};
+  std::vector<std::pair<ge::dflow::FlowOperator, std::vector<size_t>>> outputs = {
+      {node, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}}};
+  flow_graph.SetInputs(inputs).SetOutputs(outputs);
+  return flow_graph;
+}
+
+int32_t ComputeSlot(int32_t row, int64_t position) {
+  if (row < 0 || row >= kBatchSize || position < 0 ||
+      position >= kLogicalCapacity) {
+    return -1;
+  }
+  const int32_t physical_block = row * kBlocksPerRequest;
+  return physical_block * kBlockSize + static_cast<int32_t>(position);
+}
+}  // namespace
+
+extern "C" void *resident_epoch_create(
+    const char *air_path, const char *graph_config, const char *func_config,
+    const char *external_weight_dir, const char *tiling_path,
+    int32_t *status) {
+  if (status == nullptr) return nullptr;
+  *status = 1;
+  std::lock_guard<std::mutex> lifecycle_lock(g_lifecycle_mutex);
+  if (g_engine_active || air_path == nullptr || graph_config == nullptr ||
+      func_config == nullptr || external_weight_dir == nullptr ||
+      std::strncmp(external_weight_dir, "/dev/shm/", 9) != 0) {
+    return nullptr;
+  }
+  std::unique_ptr<ResidentEpochEngine> engine(new ResidentEpochEngine());
+  if (!ReadTiling(tiling_path, engine->tiling)) {
+    *status = 2;
+    return nullptr;
+  }
+  auto flow_graph = BuildDeviceFlow(air_path, graph_config, func_config);
+  std::map<ge::AscendString, ge::AscendString> options = {
+      {"ge.exec.deviceId", "0"},
+      {"ge.exec.logicalDeviceClusterDeployMode", "SINGLE"},
+      {"ge.exec.logicalDeviceId", "[0:0]"},
+      {"ge.exec.precision_mode", "must_keep_origin_dtype"},
+      {"ge.externalWeightDir", external_weight_dir},
+      {"ge.graphRunMode", "0"}};
+  auto ret = ge::GEInitialize(options);
+  if (ret != ge::SUCCESS) {
+    *status = 3;
+    return nullptr;
+  }
+  engine->session = std::make_shared<ge::Session>(
+      std::map<ge::AscendString, ge::AscendString>{});
+  auto graph = flow_graph.ToGeGraph();
+  std::cout << "ATTEMPT71_FLOW_GRAPH valid=" << graph.IsValid() << std::endl;
+  if (!graph.IsValid()) {
+    engine->session.reset();
+    ge::GEFinalize();
+    *status = 5;
+    return nullptr;
+  }
+  ret = engine->session->AddGraph(0, graph);
+  if (ret != ge::SUCCESS) {
+    engine->session.reset();
+    ge::GEFinalize();
+    *status = 4;
+    return nullptr;
+  }
+  g_engine_active = true;
+  *status = 0;
+  return engine.release();
+}
+
+extern "C" int32_t resident_epoch_execute(
+    void *opaque, int32_t request_count, int32_t max_steps,
+    const int64_t *input_token_ids, const int64_t *input_positions,
+    const int32_t *input_sequence_lengths, const int32_t *input_eos_token_ids,
+    int64_t *output_token_ids, int32_t *output_executed,
+    int32_t *output_model_calls, int32_t *output_device_status,
+    int32_t *output_feed_calls, int32_t *output_fetch_calls,
+    int64_t *output_wall_us) {
+  if (opaque == nullptr || request_count < 1 || request_count > kBatchSize ||
+      max_steps < 1 || max_steps > kMaxEpochSteps ||
+      input_token_ids == nullptr || input_positions == nullptr ||
+      input_sequence_lengths == nullptr || input_eos_token_ids == nullptr ||
+      output_token_ids == nullptr || output_executed == nullptr ||
+      output_model_calls == nullptr || output_device_status == nullptr ||
+      output_feed_calls == nullptr || output_fetch_calls == nullptr ||
+      output_wall_us == nullptr) {
+    return 10;
+  }
+  auto *engine = static_cast<ResidentEpochEngine *>(opaque);
+  std::lock_guard<std::mutex> execute_lock(engine->execute_mutex);
+  *output_model_calls = 0;
+  *output_device_status = -1;
+  *output_feed_calls = 0;
+  *output_fetch_calls = 0;
+  *output_wall_us = 0;
+  std::fill(output_token_ids,
+            output_token_ids + request_count * kMaxEpochSteps, -1);
+  std::fill(output_executed, output_executed + request_count, 0);
+
+  std::array<std::vector<uint8_t>, 9> buffers;
+  for (size_t index = 0; index < buffers.size(); ++index) {
+    buffers[index].resize(kInputSpecs[index].bytes, 0);
+  }
+  auto *tokens = reinterpret_cast<int64_t *>(buffers[0].data());
+  auto *positions = reinterpret_cast<int64_t *>(buffers[1].data());
+  auto *lengths = reinterpret_cast<int32_t *>(buffers[2].data());
+  auto *slots = reinterpret_cast<int32_t *>(buffers[4].data());
+  auto *active = reinterpret_cast<int32_t *>(buffers[5].data());
+  auto *blocks = reinterpret_cast<int32_t *>(buffers[6].data());
+  for (int32_t row = 0; row < kBatchSize; ++row) {
+    blocks[row * kBlocksPerRequest] = row * kBlocksPerRequest;
+    blocks[row * kBlocksPerRequest + 1] = row * kBlocksPerRequest + 1;
+    tokens[row] = 0;
+    positions[row] = 0;
+    lengths[row] = 0;
+    slots[row] = ComputeSlot(row, 0);
+    active[row] = 0;
+  }
+  for (int32_t row = 0; row < request_count; ++row) {
+    if (input_token_ids[row] < 0 || input_token_ids[row] >= kVocabSize ||
+        input_positions[row] < 0 ||
+        input_positions[row] + max_steps > kLogicalCapacity ||
+        input_sequence_lengths[row] != input_positions[row] + 1 ||
+        input_eos_token_ids[row] < 0 ||
+        input_eos_token_ids[row] >= kVocabSize) {
+      return 11;
+    }
+    tokens[row] = input_token_ids[row];
+    positions[row] = input_positions[row];
+    lengths[row] = input_sequence_lengths[row];
+    slots[row] = ComputeSlot(row, input_positions[row]);
+    active[row] = 1;
+  }
+  std::memcpy(buffers[8].data(), engine->tiling.data(), engine->tiling.size());
+
+  std::array<int32_t, kControlInputElements> control{};
+  control[0] = max_steps;
+  for (int32_t row = 0; row < kBatchSize; ++row) {
+    control[1 + row] =
+        row < request_count ? input_eos_token_ids[row] : kConfiguredEos;
+  }
+  control[1 + kBatchSize] = 0;
+  control[2 + kBatchSize] = 0;
+  std::vector<uint8_t> control_bytes(sizeof(control));
+  std::memcpy(control_bytes.data(), control.data(), control_bytes.size());
+
+  std::vector<ge::Tensor> inputs;
+  inputs.reserve(10);
+  for (size_t index = 0; index < buffers.size(); ++index) {
+    inputs.push_back(MakeTensor(buffers[index], kInputSpecs[index].shape,
+                                kInputSpecs[index].dtype));
+  }
+  inputs.push_back(
+      MakeTensor(control_bytes, {kControlInputElements}, ge::DT_INT32));
+  ge::DataFlowInfo flow_info;
+  const auto wall_start = std::chrono::steady_clock::now();
+  auto ret = engine->session->FeedDataFlowGraph(
+      0, inputs, flow_info, kFeedTimeoutMs);
+  *output_feed_calls = 1;
+  if (ret != ge::SUCCESS) return 30;
+  std::vector<ge::Tensor> outputs;
+  ret = engine->session->FetchDataFlowGraph(
+      0, outputs, flow_info, kFetchTimeoutMs);
+  *output_fetch_calls = 1;
+  const auto wall_end = std::chrono::steady_clock::now();
+  *output_wall_us =
+      std::chrono::duration_cast<std::chrono::microseconds>(wall_end - wall_start)
+          .count();
+  if (ret != ge::SUCCESS || outputs.size() != 10) return 31;
+  if (!IsOutput(outputs[1], kTokenHistoryBytes, ge::DT_INT64) ||
+      !IsOutput(outputs[9], kControlOutputElements * sizeof(int32_t),
+                ge::DT_INT32)) {
+    return 32;
+  }
+  const auto *history =
+      reinterpret_cast<const int64_t *>(outputs[1].GetData());
+  const auto *result_control =
+      reinterpret_cast<const int32_t *>(outputs[9].GetData());
+  *output_device_status = result_control[3];
+  *output_model_calls = result_control[4];
+  for (int32_t row = 0; row < request_count; ++row) {
+    const int32_t executed = result_control[kControlExecutedOffset + row];
+    if (executed < 0 || executed > max_steps) return 33;
+    output_executed[row] = executed;
+    for (int32_t step = 0; step < executed; ++step) {
+      output_token_ids[row * kMaxEpochSteps + step] =
+          history[step * kBatchSize + row];
+    }
+  }
+  return 0;
+}
+
+extern "C" void resident_epoch_destroy(void *opaque) {
+  if (opaque == nullptr) return;
+  std::lock_guard<std::mutex> lifecycle_lock(g_lifecycle_mutex);
+  auto *engine = static_cast<ResidentEpochEngine *>(opaque);
+  {
+    std::lock_guard<std::mutex> execute_lock(engine->execute_mutex);
+    engine->session.reset();
+    ge::GEFinalize();
+  }
+  delete engine;
+  g_engine_active = false;
+}

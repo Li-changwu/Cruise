@@ -1,0 +1,7 @@
+name	max_bytes	role	disposition
+.triton	7516192768	shared-rebuildable-cache	block-and-review-above-ceiling
+.vscode-server	7516192768	active-remote-development	remove-stale-versions-above-ceiling
+miniconda3	5368709120	required-runtime-environment	block-and-review-above-ceiling
+triton-ascend-hust	5368709120	source-repository	block-and-review-above-ceiling
+vllm-moe-offload-ascend	4294967296	source-and-build-tree	prune-build-output-above-ceiling
+ascend-control-g4-20260723	6442450944	closed-g4-source-and-evidence	no-durable-external-weights

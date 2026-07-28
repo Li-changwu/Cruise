@@ -1,0 +1,10 @@
+{
+  "func_list": [
+    {"func_name": "g4c_b4_resident_epoch"}
+  ],
+  "input_num": 10,
+  "output_num": 10,
+  "target_bin": "libg4c_b4_resident_epoch.so",
+  "workspace": "/dev/shm/ascend-control-g4-20260726/attempt70b-r2-r1-b4-performance/controller",
+  "cmakelist_path": "CMakeLists.txt"
+}

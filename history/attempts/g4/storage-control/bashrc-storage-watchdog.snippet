@@ -1,0 +1,6 @@
+# >>> ascend-storage-watchdog >>>
+if [[ -x /root/ascend-control-g4-20260723/storage-control/ensure_storage_watchdog.sh ]]; then
+  /root/ascend-control-g4-20260723/storage-control/ensure_storage_watchdog.sh \
+    >/dev/null 2>&1 || true
+fi
+# <<< ascend-storage-watchdog <<<

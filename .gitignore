@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Ascend/CANN generated models, kernels, caches, and profiling
+*.air
+*.om
+*.o
+*.so
+*.a
+*.bin
+*.npy
+*.npz
+*.pt
+*.pth
+*.safetensors
+*.onnx
+*.log
+*.trace
+*.prof
+*.sqlite
+*.sock
+kernel_meta/
+opp_kernel_cache/
+ge_cache/
+msprof*/
+profiling/
+ctrl_probe/
+
+# Large local experiment material
+archive/
+results/
+scratch/
+runtime/
+weights/
+models/
+evidence/raw/
+
+# Crash dumps and temporary output
+core
+core.*
+*.tmp
+*.temp
+*.bak

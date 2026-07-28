@@ -1,0 +1,13 @@
+{
+  "build_options": {},
+  "inputs_tensor_desc": [
+    {"data_type": "DT_INT64", "shape": [1, 1]},
+    {"data_type": "DT_INT64", "shape": [1]},
+    {"data_type": "DT_INT32", "shape": [1, 1]},
+    {"data_type": "DT_INT32", "shape": [1, 2]},
+    {"data_type": "DT_INT32", "shape": [1]},
+    {"data_type": "DT_BF16", "shape": [28, 2, 128, 4, 128]},
+    {"data_type": "DT_BF16", "shape": [28, 2, 128, 4, 128]},
+    {"data_type": "DT_UINT8", "shape": [72]}
+  ]
+}

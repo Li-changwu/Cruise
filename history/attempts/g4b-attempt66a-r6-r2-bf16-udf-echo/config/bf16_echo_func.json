@@ -1,0 +1,10 @@
+{
+  "func_list": [
+    {"func_name": "bf16_echo"}
+  ],
+  "input_num": 1,
+  "output_num": 1,
+  "target_bin": "libbf16_echo.so",
+  "workspace": "/root/ascend-control-g4-20260723/attempt66a-r6-r2-src/udf",
+  "cmakelist_path": "CMakeLists.txt"
+}

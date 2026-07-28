@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vllm-ascend-resident-epoch"
+version = "0.1.0"
+description = "Cruise device-resident decode epoch prototype for vLLM-Ascend"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.entry-points."vllm.general_plugins"]
+ascend_resident_epoch = "vllm_ascend_resident_epoch.plugin:register"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

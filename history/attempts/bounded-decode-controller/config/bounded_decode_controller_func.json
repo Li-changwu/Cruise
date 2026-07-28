@@ -1,0 +1,10 @@
+{
+  "func_list": [
+    {"func_name": "bounded_decode_controller"}
+  ],
+  "input_num": 5,
+  "output_num": 5,
+  "target_bin": "libbounded_decode_controller.so",
+  "workspace": "../../../../ascend-control-bounded-decode-20260722/controller",
+  "cmakelist_path": "CMakeLists.txt"
+}

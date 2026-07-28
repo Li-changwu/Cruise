@@ -1,0 +1,10 @@
+{
+  "func_list": [
+    {"func_name": "bf16_echo"}
+  ],
+  "input_num": 1,
+  "output_num": 1,
+  "target_bin": "libbf16_echo.so",
+  "workspace": "../udf",
+  "cmakelist_path": "CMakeLists.txt"
+}

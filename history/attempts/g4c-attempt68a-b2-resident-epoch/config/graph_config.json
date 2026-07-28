@@ -1,0 +1,17 @@
+{
+  "build_options": {
+    "ge.externalWeight": "1",
+    "ge.modelFileNamePrefix": "attempt68a_b2_decoder"
+  },
+  "inputs_tensor_desc": [
+    {"data_type": "DT_INT64", "shape": [2, 1]},
+    {"data_type": "DT_INT64", "shape": [2]},
+    {"data_type": "DT_INT32", "shape": [2, 1]},
+    {"data_type": "DT_BFLOAT16", "shape": [28, 4, 128, 4, 128]},
+    {"data_type": "DT_INT32", "shape": [2]},
+    {"data_type": "DT_INT32", "shape": [2]},
+    {"data_type": "DT_INT32", "shape": [2, 2]},
+    {"data_type": "DT_BFLOAT16", "shape": [28, 4, 128, 4, 128]},
+    {"data_type": "DT_UINT8", "shape": [72]}
+  ]
+}

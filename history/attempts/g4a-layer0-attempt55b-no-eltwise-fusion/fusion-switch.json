@@ -1,0 +1,8 @@
+{
+  "Switch": {
+    "GraphFusion": {},
+    "UBFusion": {
+      "TbeEltwiseFusionPass": "off"
+    }
+  }
+}
