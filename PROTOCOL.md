@@ -162,6 +162,10 @@ Formal execution is allowed only through:
 Builds, relocated AIR, runtime and external weights, cache, CANN logs, profiler
 raw data, sockets, and temporary files live below marker-protected
 `/dev/shm/a74r1`. Root retains only source and compact evidence.
+The model-running phase also uses a scratch working directory because some
+CANN releases emit `fusion_result.json` relative to the process cwd. When the
+source is a Git checkout, clean-worktree gates before and after execution
+reject any runtime artifact that escapes this boundary.
 
 Passing applies to Qwen2.5-7B-Instruct, TP=PP=1, synchronous scheduling,
 one-token prompts, static B=4, K=2, greedy sampling, and one 910B2/CANN 9.0.0

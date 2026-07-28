@@ -23,6 +23,7 @@ profiler=${scratch}/profiler
 cann_logs=${scratch}/cann-logs
 tmp=${scratch}/t
 runtime_memcpy=${scratch}/rt-memcpy
+runtime_workdir=${scratch}/runtime-workdir
 frozen_air=${CRUISE_FROZEN_AIR:-${root}/export-attempt69c-r2-b4/qwen_b4_decoder_step_attempt69c_r2.air}
 tiling=${CRUISE_TILING:-${root}/raw-attempt69d-r1-b4-native/native-inputs/case0/explicit_tiling.bin}
 baseline=${CRUISE_BASELINE_RESULT:-${root}/evidence-attempt69e-r5-b4-resident-epoch/attempt69e-r5-result.json}
@@ -91,11 +92,12 @@ preflight_status=$?
 for heavy_path in "${build}" "${controller_new}" "${controller_old}" \
                   "${config_dir}" "${weights}" "${runtime_export}" \
                   "${runtime_air}" "${cache}" "${profiler}" \
-                  "${cann_logs}" "${tmp}" "${runtime_memcpy}"; do
+                  "${cann_logs}" "${tmp}" "${runtime_memcpy}" \
+                  "${runtime_workdir}"; do
   storage_guard_assert_scratch_path "${heavy_path}" || exit $?
 done
 mkdir -p "${build}" "${weights}" "${cache}" "${profiler}" \
-  "${cann_logs}" "${tmp}" "${config_dir}"
+  "${cann_logs}" "${tmp}" "${config_dir}" "${runtime_workdir}"
 mkdir -p "${runtime_memcpy}"
 if [[ "${msprof_mode}" == off ]]; then
   mkdir -p "${profiler}/old" "${profiler}/new"
@@ -106,6 +108,18 @@ fi
 status=${evidence}/status.tsv
 printf 'case\texit_status\n' >"${status}"
 finalized=0
+
+source_is_git=0
+if git -C "${src}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  source_is_git=1
+  git -C "${src}" status --porcelain --untracked-files=all \
+    >"${evidence}/source-worktree-pre.txt"
+  if [[ -s "${evidence}/source-worktree-pre.txt" ]]; then
+    printf 'source-worktree-clean-pre\t96\n' >>"${status}"
+    exit 96
+  fi
+  printf 'source-worktree-clean-pre\t0\n' >>"${status}"
+fi
 
 capture_after() {
   npu-smi info -t proc-mem -i "${physical_npu}" \
@@ -276,6 +290,9 @@ run_step relocate-runtime-air 600s "${build}/relocate_air_paths" \
   "${runtime_export}" "${evidence}/${run_id}-air-relocation.json" || exit $?
 sha256sum "${runtime_air}" >"${evidence}/runtime-air-integrity.log"
 
+# GE writes fusion_result.json relative to cwd on some CANN releases.
+cd "${runtime_workdir}" || exit 93
+
 configure_route() {
   local label=$1 route=$2
   export ASCEND_CACHE_PATH=${cache}/${label}
@@ -387,6 +404,16 @@ if [[ ${weight_file_count} -ne 379 || ${weight_bytes} -lt 15000000000 ||
   exit 93
 fi
 printf 'external-weights-integrity\t0\n' >>"${status}"
+
+if [[ ${source_is_git} -eq 1 ]]; then
+  git -C "${src}" status --porcelain --untracked-files=all \
+    >"${evidence}/source-worktree-final.txt"
+  if [[ -s "${evidence}/source-worktree-final.txt" ]]; then
+    printf 'source-worktree-clean-final\t93\n' >>"${status}"
+    exit 93
+  fi
+  printf 'source-worktree-clean-final\t0\n' >>"${status}"
+fi
 
 wait_npu_ready final
 idle_status=$?
