@@ -105,6 +105,10 @@ Application `msprof` covers initialization, warmup, and the measured epochs,
 so its byte totals, when available, are process-wide corroborating evidence;
 they are not divided by the epoch count.
 
+The frozen CANN 9.0.0 run uses `--storage-limit=2048`. CANN releases that
+require an explicit unit suffix can set `CRUISE_MSPROF_STORAGE_LIMIT=2048MB`;
+this changes only profiler retention syntax, not the measured workload.
+
 ## Per-epoch runtime transfer rule
 
 Every sidecar is launched with a small `LD_PRELOAD` interposer for the

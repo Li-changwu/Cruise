@@ -35,6 +35,7 @@ cann_set_env=${CRUISE_CANN_SET_ENV:-/usr/local/Ascend/cann-9.0.0/set_env.sh}
 vllm_root=${CRUISE_VLLM_ROOT:-/root/vllm-hust}
 vllm_ascend_root=${CRUISE_VLLM_ASCEND_ROOT:-/root/vllm-ascend-hust}
 resource_config=${CRUISE_RESOURCE_CONFIG:-${g2g}/numa_config.physical7.json}
+msprof_storage_limit=${CRUISE_MSPROF_STORAGE_LIMIT:-2048}
 
 guard=${src}/storage_guard/storage_guard.sh
 required=(
@@ -303,7 +304,7 @@ run_block() {
     run_step "benchmark-${label}" 14400s msprof \
       --output="${profile_output}" --ascendcl=on --ge-api=l1 \
       --runtime-api=on --task-time=l1 --ai-core=off --aicpu=off \
-      --type=text --storage-limit=2048 \
+      --type=text --storage-limit="${msprof_storage_limit}" \
       python3 "${src}/run_abi_epoch_benchmark.py" \
       --model-config "${model_config}" --baseline-result "${baseline}" \
       --route "${route}" --repetitions 15 --output "${output}"
