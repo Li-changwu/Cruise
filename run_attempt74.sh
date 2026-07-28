@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-root=/root/ascend-control-g4-20260723
-g2g=/root/ascend-control-g2g-20260719
-src=${root}/attempt74-src
-baseline_src=${root}/attempt73-src
-evidence=${root}/evidence-attempt74r1-minimal-abi
-scratch=/dev/shm/a74r1
+root=${CRUISE_EXPERIMENT_ROOT:-/root/ascend-control-g4-20260723}
+g2g=${CRUISE_G2G_ROOT:-/root/ascend-control-g2g-20260719}
+src=${CRUISE_SOURCE_DIR:-${root}/attempt74-src}
+baseline_src=${CRUISE_BASELINE_SOURCE_DIR:-${root}/attempt73-src}
+run_id=${CRUISE_RUN_ID:-attempt74r1}
+evidence=${CRUISE_EVIDENCE_DIR:-${root}/evidence-attempt74r1-minimal-abi}
+scratch=${CRUISE_SCRATCH_DIR:-/dev/shm/a74r1}
+physical_npu=${CRUISE_PHYSICAL_NPU:-7}
 build=${scratch}/native-build
 controller_new=${scratch}/controller-new
 controller_old=${scratch}/controller-old
@@ -15,18 +17,24 @@ runtime_config_new=${config_dir}/resident_epoch_func_new.json
 runtime_config_old=${config_dir}/resident_epoch_func_old.json
 weights=${scratch}/external-weights
 runtime_export=${scratch}/runtime-export
-runtime_air=${scratch}/qwen_b4_decoder_step_attempt74r1.air
+runtime_air=${scratch}/qwen_b4_decoder_step_${run_id}.air
 cache=${scratch}/cache
 profiler=${scratch}/profiler
 cann_logs=${scratch}/cann-logs
 tmp=${scratch}/t
 runtime_memcpy=${scratch}/rt-memcpy
-frozen_air=${root}/export-attempt69c-r2-b4/qwen_b4_decoder_step_attempt69c_r2.air
-tiling=${root}/raw-attempt69d-r1-b4-native/native-inputs/case0/explicit_tiling.bin
-baseline=${root}/evidence-attempt69e-r5-b4-resident-epoch/attempt69e-r5-result.json
-model_config=${src}/tests/fixtures/qwen2-7b-config
-model=/root/.cache/huggingface/hub/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28
-old_weight_prefix=${root}/export-attempt69c-b4
+frozen_air=${CRUISE_FROZEN_AIR:-${root}/export-attempt69c-r2-b4/qwen_b4_decoder_step_attempt69c_r2.air}
+tiling=${CRUISE_TILING:-${root}/raw-attempt69d-r1-b4-native/native-inputs/case0/explicit_tiling.bin}
+baseline=${CRUISE_BASELINE_RESULT:-${root}/evidence-attempt69e-r5-b4-resident-epoch/attempt69e-r5-result.json}
+model_config=${CRUISE_MODEL_CONFIG:-${src}/tests/fixtures/qwen2-7b-config}
+model=${CRUISE_MODEL_DIR:-/root/.cache/huggingface/hub/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28}
+old_weight_prefix=${CRUISE_OLD_WEIGHT_PREFIX:-${root}/export-attempt69c-b4}
+conda_sh=${CRUISE_CONDA_SH:-/root/miniconda3/etc/profile.d/conda.sh}
+conda_env=${CRUISE_CONDA_ENV:-vllm-hust-dev}
+cann_set_env=${CRUISE_CANN_SET_ENV:-/usr/local/Ascend/cann-9.0.0/set_env.sh}
+vllm_root=${CRUISE_VLLM_ROOT:-/root/vllm-hust}
+vllm_ascend_root=${CRUISE_VLLM_ASCEND_ROOT:-/root/vllm-ascend-hust}
+resource_config=${CRUISE_RESOURCE_CONFIG:-${g2g}/numa_config.physical7.json}
 
 guard=${src}/storage_guard/storage_guard.sh
 required=(
@@ -64,7 +72,8 @@ export STORAGE_GUARD_MAX_SCRATCH_GIB=64
 export STORAGE_GUARD_NPU_WAIT_SECONDS=21600
 export STORAGE_GUARD_NPU_STABLE_SAMPLES=3
 export STORAGE_GUARD_MAX_IDLE_HBM_PERCENT=5
-storage_guard_preflight "${root}" "${evidence}" "${scratch}" 7 100 24 128
+storage_guard_preflight "${root}" "${evidence}" "${scratch}" \
+  "${physical_npu}" 100 24 128
 preflight_status=$?
 [[ ${preflight_status} -eq 0 ]] || exit ${preflight_status}
 
@@ -83,9 +92,11 @@ printf 'case\texit_status\n' >"${status}"
 finalized=0
 
 capture_after() {
-  npu-smi info -t proc-mem -i 7 >"${evidence}/npu7-processes-after.txt" \
+  npu-smi info -t proc-mem -i "${physical_npu}" \
+    >"${evidence}/npu${physical_npu}-processes-after.txt" \
     2>&1 || true
-  npu-smi info -t usages -i 7 >"${evidence}/npu7-usages-after.txt" \
+  npu-smi info -t usages -i "${physical_npu}" \
+    >"${evidence}/npu${physical_npu}-usages-after.txt" \
     2>&1 || true
   du -sh "${weights}" >"${evidence}/external-weights-size.txt" 2>&1 || true
   find "${weights}" -type f -printf '%P\t%s bytes\n' | sort \
@@ -117,26 +128,28 @@ run_step() {
 
 wait_npu_ready() {
   local label=$1
-  storage_guard_wait_for_npu_idle 7 "${STORAGE_GUARD_NPU_WAIT_SECONDS}" \
+  storage_guard_wait_for_npu_idle "${physical_npu}" \
+    "${STORAGE_GUARD_NPU_WAIT_SECONDS}" \
     "${root}" 24 "${STORAGE_GUARD_MIN_ROOT_FREE_BYTES}" \
     "${STORAGE_GUARD_MIN_SHM_FREE_BYTES}"
   local ready_status=$?
   if [[ ${ready_status} -eq 0 ]]; then
     printf '%s\n' "${STORAGE_GUARD_WAITED_NPU_STATE}" \
-      >"${evidence}/npu7-processes-${label}.txt"
+      >"${evidence}/npu${physical_npu}-processes-${label}.txt"
     printf '%s\n' "${STORAGE_GUARD_WAITED_NPU_USAGE}" \
-      >"${evidence}/npu7-usages-${label}.txt"
-    printf 'npu7-ready-%s\t0\n' "${label}" >>"${status}"
+      >"${evidence}/npu${physical_npu}-usages-${label}.txt"
+    printf 'npu%s-ready-%s\t0\n' "${physical_npu}" "${label}" >>"${status}"
     return 0
   fi
-  printf 'npu7-ready-%s\t%s\n' "${label}" "${ready_status}" >>"${status}"
+  printf 'npu%s-ready-%s\t%s\n' "${physical_npu}" "${label}" \
+    "${ready_status}" >>"${status}"
   return "${ready_status}"
 }
 
-source /root/miniconda3/etc/profile.d/conda.sh
-conda activate vllm-hust-dev
-source /usr/local/Ascend/cann-9.0.0/set_env.sh
-export ASCEND_RT_VISIBLE_DEVICES=7
+source "${conda_sh}"
+conda activate "${conda_env}"
+source "${cann_set_env}"
+export ASCEND_RT_VISIBLE_DEVICES=${physical_npu}
 export ASCEND_GLOBAL_LOG_LEVEL=3
 export ASCEND_SLOG_PRINT_TO_STDOUT=1
 export ASCEND_PROCESS_LOG_PATH=${cann_logs}
@@ -146,22 +159,23 @@ export TORCHINDUCTOR_CACHE_DIR=${cache}/torchinductor
 export TRITON_CACHE_DIR=${cache}/triton
 export XDG_CACHE_HOME=${cache}/xdg
 export PYTHONDONTWRITEBYTECODE=1
-export RESOURCE_CONFIG_PATH=${g2g}/numa_config.physical7.json
+export RESOURCE_CONFIG_PATH=${resource_config}
 
-custom_set_env=$(find "${g2g}/install-attempt47" -type f -name set_env.bash | head -1)
-barrier_set_env=$(find "${root}/install-attempt69a-b4-barrier" -type f \
-  -name set_env.bash | head -1)
-materialize_set_env=$(find "${root}/install-attempt56r1" -type f \
-  -name set_env.bash | head -1)
+custom_set_env=${CRUISE_CUSTOM_SET_ENV:-$(find "${g2g}/install-attempt47" \
+  -type f -name set_env.bash | head -1)}
+barrier_set_env=${CRUISE_BARRIER_SET_ENV:-$(find \
+  "${root}/install-attempt69a-b4-barrier" -type f -name set_env.bash | head -1)}
+materialize_set_env=${CRUISE_MATERIALIZE_SET_ENV:-$(find \
+  "${root}/install-attempt56r1" -type f -name set_env.bash | head -1)}
 [[ -n "${custom_set_env}" && -n "${barrier_set_env}" && \
    -n "${materialize_set_env}" ]] || exit 94
 export ASCEND_CUSTOM_OPP_PATH=${ASCEND_CUSTOM_OPP_PATH:-}
 source "${custom_set_env}"
 source "${barrier_set_env}"
 source "${materialize_set_env}"
-export RESOURCE_CONFIG_PATH=${g2g}/numa_config.physical7.json
+export RESOURCE_CONFIG_PATH=${resource_config}
 
-export PYTHONPATH=${src}/src:${src}:/root/vllm-hust:/root/vllm-ascend-hust:${PYTHONPATH:-}
+export PYTHONPATH=${src}/src:${src}:${vllm_root}:${vllm_ascend_root}:${PYTHONPATH:-}
 export VLLM_ASCEND_RESIDENT_EPOCH_BACKEND_FACTORY=vllm_ascend_resident_epoch.sidecar_backend:create_sidecar_engine
 export VLLM_ASCEND_RESIDENT_EPOCH_AIR=${runtime_air}
 export VLLM_ASCEND_RESIDENT_EPOCH_GRAPH_CONFIG=${src}/config/graph_config.json
@@ -183,8 +197,8 @@ readlink -f "${model}"/model-*.safetensors | sort \
   >"${evidence}/model-shards.txt"
 sha256sum "${model}/config.json" "${model}/model.safetensors.index.json" \
   >"${evidence}/model-metadata-integrity.log"
-git -C /root/vllm-hust rev-parse HEAD >"${evidence}/vllm-commit.txt"
-git -C /root/vllm-ascend-hust rev-parse HEAD \
+git -C "${vllm_root}" rev-parse HEAD >"${evidence}/vllm-commit.txt"
+git -C "${vllm_ascend_root}" rev-parse HEAD \
   >"${evidence}/vllm-ascend-commit.txt"
 
 run_step cann-python-smoke 120s python3 -c 'import tbe' || exit $?
@@ -192,7 +206,7 @@ run_step unit-tests 600s python3 -m pytest -q "${src}/tests" || exit $?
 
 run_step source-verification 120s python3 "${src}/verify_minimal_abi_source.py" \
   "${src}" --baseline-source "${baseline_src}" \
-  --output "${evidence}/attempt74r1-source-verification.json" || exit $?
+  --output "${evidence}/${run_id}-source-verification.json" || exit $?
 
 run_step prepare-controller-new 120s cp -a "${src}/controller" \
   "${controller_new}" || exit $?
@@ -243,7 +257,7 @@ find "${runtime_export}" -maxdepth 1 -type f ! -name '*.*' -print0 | \
 
 run_step relocate-runtime-air 600s "${build}/relocate_air_paths" \
   "${frozen_air}" "${runtime_air}" "${old_weight_prefix}" \
-  "${runtime_export}" "${evidence}/attempt74r1-air-relocation.json" || exit $?
+  "${runtime_export}" "${evidence}/${run_id}-air-relocation.json" || exit $?
 sha256sum "${runtime_air}" >"${evidence}/runtime-air-integrity.log"
 
 configure_route() {
@@ -274,16 +288,16 @@ run_step minimal-abi-multi-epoch 10800s python3 \
   "${src}/run_multi_epoch_cohort.py" \
   --model-config "${model_config}" \
   --baseline-result "${baseline}" \
-  --output "${evidence}/attempt74r1-multi-epoch-result.json" || exit $?
+  --output "${evidence}/${run_id}-multi-epoch-result.json" || exit $?
 run_step minimal-abi-multi-epoch-verify 120s python3 \
   "${src}/verify_multi_epoch_cohort_result.py" \
-  "${evidence}/attempt74r1-multi-epoch-result.json" || exit $?
+  "${evidence}/${run_id}-multi-epoch-result.json" || exit $?
 
 run_block() {
   local label=$1 route=$2 profile_route=$3
   wait_npu_ready "pre-${label}" || return $?
   configure_route "${label}" "${route}"
-  local output=${evidence}/attempt74r1-${label}.json
+  local output=${evidence}/${run_id}-${label}.json
   if [[ "${profile_route}" == yes ]]; then
     local profile_output=${profiler}/${route}
     run_step "benchmark-${label}" 14400s msprof \
@@ -311,35 +325,35 @@ find "${profiler}" -type f -printf '%P\t%s\n' | sort \
 run_step summarize-msprof-transfers 600s python3 \
   "${src}/summarize_msprof_transfers.py" \
   --old-root "${profiler}/old" --new-root "${profiler}/new" \
-  --output "${evidence}/attempt74r1-msprof-transfer-summary.json" || exit $?
+  --output "${evidence}/${run_id}-msprof-transfer-summary.json" || exit $?
 
 run_step summarize-runtime-memcpy 600s python3 \
   "${src}/summarize_runtime_memcpy.py" \
   --old-1-trace "${runtime_memcpy}/old-1.tsv" \
-  --old-1-result "${evidence}/attempt74r1-old-1.json" \
+  --old-1-result "${evidence}/${run_id}-old-1.json" \
   --new-1-trace "${runtime_memcpy}/new-1.tsv" \
-  --new-1-result "${evidence}/attempt74r1-new-1.json" \
+  --new-1-result "${evidence}/${run_id}-new-1.json" \
   --new-2-trace "${runtime_memcpy}/new-2.tsv" \
-  --new-2-result "${evidence}/attempt74r1-new-2.json" \
+  --new-2-result "${evidence}/${run_id}-new-2.json" \
   --old-2-trace "${runtime_memcpy}/old-2.tsv" \
-  --old-2-result "${evidence}/attempt74r1-old-2.json" \
+  --old-2-result "${evidence}/${run_id}-old-2.json" \
   --filtered-dir "${evidence}/rt-memcpy-filtered" \
-  --output "${evidence}/attempt74r1-runtime-memcpy-summary.json" || exit $?
+  --output "${evidence}/${run_id}-runtime-memcpy-summary.json" || exit $?
 
 run_step analyze-abi-comparison 300s python3 \
   "${src}/analyze_abi_comparison.py" \
-  --old-1 "${evidence}/attempt74r1-old-1.json" \
-  --new-1 "${evidence}/attempt74r1-new-1.json" \
-  --new-2 "${evidence}/attempt74r1-new-2.json" \
-  --old-2 "${evidence}/attempt74r1-old-2.json" \
-  --semantic-result "${evidence}/attempt74r1-multi-epoch-result.json" \
-  --source-verification "${evidence}/attempt74r1-source-verification.json" \
-  --profiler-summary "${evidence}/attempt74r1-msprof-transfer-summary.json" \
-  --runtime-memcpy-summary "${evidence}/attempt74r1-runtime-memcpy-summary.json" \
-  --output "${evidence}/attempt74r1-result.json" || exit $?
+  --old-1 "${evidence}/${run_id}-old-1.json" \
+  --new-1 "${evidence}/${run_id}-new-1.json" \
+  --new-2 "${evidence}/${run_id}-new-2.json" \
+  --old-2 "${evidence}/${run_id}-old-2.json" \
+  --semantic-result "${evidence}/${run_id}-multi-epoch-result.json" \
+  --source-verification "${evidence}/${run_id}-source-verification.json" \
+  --profiler-summary "${evidence}/${run_id}-msprof-transfer-summary.json" \
+  --runtime-memcpy-summary "${evidence}/${run_id}-runtime-memcpy-summary.json" \
+  --output "${evidence}/${run_id}-result.json" || exit $?
 run_step verify-abi-comparison 300s python3 \
   "${src}/verify_abi_comparison_result.py" \
-  "${evidence}/attempt74r1-result.json" || exit $?
+  "${evidence}/${run_id}-result.json" || exit $?
 
 weight_file_count=$(find "${weights}" -maxdepth 1 -type f | wc -l)
 weight_bytes=$(storage_guard_used_bytes "${weights}")
@@ -355,7 +369,7 @@ printf 'external-weights-integrity\t0\n' >>"${status}"
 wait_npu_ready final
 idle_status=$?
 capture_after
-sha256sum "${evidence}/attempt74r1-result.json" "${status}" \
+sha256sum "${evidence}/${run_id}-result.json" "${status}" \
   "${evidence}/native-bridge-integrity.log" \
   >"${evidence}/result-integrity.log" 2>/dev/null || true
 find "${evidence}" -maxdepth 1 -type f ! -name evidence-integrity.log \
@@ -365,7 +379,7 @@ storage_guard_finalize
 finalize_status=$?
 [[ ${finalize_status} -eq 0 ]] || exit ${finalize_status}
 finalized=1
-cat "${evidence}/attempt74r1-result.json"
+cat "${evidence}/${run_id}-result.json"
 trap - EXIT
 [[ ${idle_status} -eq 0 ]] || exit ${idle_status}
 storage_guard_cleanup_scratch
