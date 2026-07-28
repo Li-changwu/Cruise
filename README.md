@@ -1,111 +1,110 @@
 # Cruise
 
-**Eliminating per-token Host round trips with device-resident decode epochs.**
+**简体中文** | [English](README_EN.md)
 
-Cruise is a research prototype for Ascend NPUs that moves the
-latency-sensitive inner loop of LLM decoding into a DataFlow Device UDF. The
-Host still owns admission, global scheduling, fairness, and recovery. Once a
-fixed batch has been admitted, the device can execute a bounded epoch of
-decoder steps, update Paged-KV state, perform greedy sampling, and stop on EOS
-or an epoch bound before returning to the Host.
+**通过设备驻留的解码 Epoch，消除逐 Token 的 Host 往返。**
 
-The project explores a control boundary above single-graph replay: graph
-execution removes per-operator launch overhead, while Cruise removes repeated
-Host coordination between a bounded number of decode iterations.
+Cruise 是面向昇腾 NPU 的研究原型。它利用 DataFlow Device UDF，将 LLM
+解码过程中对延迟最敏感的内层控制循环下沉到设备侧。Host 仍然负责请求准入、
+全局调度、公平性与故障恢复；固定批次完成准入后，设备可以连续执行一个有界的
+decoder epoch，在设备侧更新 Paged-KV 状态、执行 greedy sampling，并在遇到 EOS
+或达到 epoch 上限后再返回 Host。
 
-> Cruise is an experimental systems prototype, not a production inference
-> server. Its current support envelope is intentionally narrow and explicit.
+Cruise 探索的是单次图重放之上的控制边界：图执行优化消除了单次模型执行内部的
+逐算子下发开销，而 Cruise 进一步消除有界解码迭代之间反复发生的 Host 协调。
 
-## Architecture
+> Cruise 目前是实验性系统研究原型，并非生产级推理服务。现阶段支持范围经过
+> 明确约束，不应将实验结果外推到未验证的工作负载。
+
+## 系统架构
 
 ```mermaid
 flowchart LR
-    H["Host: vLLM admission and global scheduling"]
-    P["Resident-epoch plan"]
-    U["Device UDF controller"]
-    D["Full decoder AIR"]
-    S["Greedy sampling"]
-    K["Device-resident Paged-KV and slot state"]
-    R["Token spans and completion state"]
+    H["Host：vLLM 请求准入与全局调度"]
+    P["设备驻留 Epoch 计划"]
+    U["Device UDF 控制器"]
+    D["完整 Decoder AIR"]
+    S["Greedy Sampling"]
+    K["设备驻留 Paged-KV 与 Slot 状态"]
+    R["Token 序列与完成状态"]
 
-    H --> P -->|"one Feed"| U
-    U --> D --> S --> K
-    K -->|"next bounded step"| U
-    U -->|"one Fetch"| R --> H
+    H --> P
+    P -->|一次 Feed| U
+    U --> D
+    D --> S
+    S --> K
+    K -->|下一个有界 Step| U
+    U -->|一次 Fetch| R
+    R --> H
 ```
 
-The active implementation is the former **Attempt 74** snapshot. It provides:
+当前主线实现来自 **Attempt 74**，已经具备以下能力：
 
-- a vLLM V1 scheduler contract for fixed-shape resident epochs;
-- a dedicated worker that leaves model and KV ownership with DataFlow;
-- an EngineCore-to-native-sidecar path with one request/response per epoch;
-- a B=4 full Qwen2.5-7B decoder step with device-side greedy sampling;
-- persistent Paged-KV state, active-row masks, block tables, slot mappings,
-  row generations, and safe row reuse across epochs;
-- bounded epoch lengths selected from K=1,2,4,8 within the request budget;
-- EOS and maximum-step termination with per-request accounting returned to
-  vLLM;
-- pre-execution validation and input-preserving fallback status codes;
-- a minimal 8-input/2-output Host-UDF ABI, reduced from the earlier 10/10
-  boundary while retaining the internal 9-input/4-output decoder ABI;
-- storage guards for bounded logs, marker-protected scratch, free-space
-  admission, and cleanup.
+- 面向固定形状 resident epoch 的 vLLM V1 scheduler contract；
+- 由 DataFlow 持有模型与 KV 状态的专用 worker；
+- EngineCore 到 native sidecar 的执行路径，每个 epoch 只进行一次请求与响应；
+- B=4 的完整 Qwen2.5-7B decoder step，以及设备侧 greedy sampling；
+- 持久化 Paged-KV、active-row mask、block table、slot mapping、row generation，
+  以及跨 epoch 的安全行复用；
+- 根据请求剩余预算，在 K=1、2、4、8 中选择有界 epoch 长度；
+- 设备侧 EOS/最大步数终止，并将逐请求执行账目返回 vLLM；
+- 执行前合法性校验与输入状态保持不变的 fallback 状态码；
+- 最小化的 8 输入/2 输出 Host-UDF ABI；早期版本为 10 输入/10 输出，内部
+  decoder ABI 仍保持 9 输入/4 输出不变；
+- 对日志大小、marker-protected scratch、根盘剩余空间和清理流程的存储保护。
 
-The accepted multi-epoch cohort is `A -> [A,B] -> [A,C]`: request A retains its
-row and KV state, B occupies a second row, and C safely reuses B's row with a
-new generation. See [PROTOCOL.md](PROTOCOL.md) for the exact Attempt 74 gate.
+已经通过的多 epoch cohort 为 `A -> [A,B] -> [A,C]`：请求 A 始终保留原有 row
+和 KV 状态；B 使用第二个 row；B 离开后，C 通过新的 generation 安全复用该 row。
+Attempt 74 的严格实验门槛参见 [PROTOCOL.md](PROTOCOL.md)。
 
-## Current Evidence
+## 当前证据
 
-The full-decoder G4 experiments established exact Host/Device token and state
-agreement for the frozen workload and reduced K Host submissions to one
-DataFlow Feed/Fetch pair. The final blocked-ABBA B=4 study reported median
-paired speedups of 1.55x, 3.56x, and 5.36x for K=2,4,8 respectively, with the
-Device route winning all 15 paired samples at every K. Those measurements
-predate the minimal ABI and are documented in
-[`history/attempts/g4/G4-STATUS-20260724.md`](history/attempts/g4/G4-STATUS-20260724.md).
+完整 decoder 的 G4 实验在冻结工作负载下实现了 Host/Device token 与状态的精确
+一致，并将 K 次 Host 提交缩减为一组 DataFlow Feed/Fetch。最终的 blocked-ABBA
+B=4 实验在 K=2、4、8 时分别得到 1.55x、3.56x 和 5.36x 的配对中位加速；每个
+K 的 15 组配对样本均由 Device 路径胜出。这组测量早于最小 ABI，完整结果与
+claim boundary 记录在
+[`history/attempts/g4/G4-STATUS-20260724.md`](history/attempts/g4/G4-STATUS-20260724.md)。
 
-Attempt 74's source contract and local ABI tests pass. Its final per-epoch
-runtime-copy measurement was not completed because shared-NPU and root-storage
-readiness gates prevented a clean formal run. The repository therefore does
-not claim physical H2D/D2H byte reductions from the logical ABI reduction.
+Attempt 74 的源码约束和本地 ABI 测试已经通过。但由于共享 NPU 和根盘存储的
+readiness gate 未能提供干净的正式运行窗口，最终的逐 epoch runtime-copy 实验尚未
+完成。因此，本项目目前只报告逻辑 ABI payload 的缩减，不宣称已经证明物理
+H2D/D2H 传输字节数同比下降。
 
-## Support Boundary
+## 支持边界
 
-The currently validated envelope is:
+当前经过验证的环境与工作负载为：
 
-- Ascend 910B2 with CANN 9.0.0 and DataFlow Device UDF support;
-- Qwen2.5-7B-Instruct, TP=1, PP=1;
-- synchronous vLLM V1 scheduling;
-- one-token prompts followed by decode;
-- one static B=4 graph with inactive-row masking;
-- greedy sampling, bounded epochs, and a fixed two-block-per-row KV layout.
+- Ascend 910B2、CANN 9.0.0，并具备 DataFlow Device UDF 支持；
+- Qwen2.5-7B-Instruct，TP=1、PP=1；
+- vLLM V1 同步调度；
+- one-token prompt 后进入 decode；
+- 一个静态 B=4 图，通过 inactive-row mask 支持不足四路的批次；
+- greedy sampling、有界 epoch，以及每个 row 固定两个 block 的 KV 布局。
 
-Cruise does not yet establish general prefill, continuous batching, arbitrary
-sampling, speculative decoding, preemption, cancellation, LoRA, TP/PP,
-multi-card coordination, or API-server performance. These are research gates,
-not hidden compatibility assumptions.
+Cruise 尚未证明通用 prefill、continuous batching、任意 sampling、speculative
+decoding、preemption、cancellation、LoRA、TP/PP、多卡协调或 API server 性能。
+这些是后续研究门槛，而不是可以忽略的兼容性假设。
 
-## Repository Layout
+## 仓库结构
 
-| Path | Purpose |
+| 路径 | 用途 |
 |---|---|
-| `src/vllm_ascend_resident_epoch/` | vLLM scheduler, worker, contract, and backend integration |
-| `controller/` | current Device UDF controller |
-| `controller-old/` | old-ABI controller retained for controlled comparison |
-| `native/` | sidecar, bridge, AIR relocation, and runtime-copy tracing |
-| `config/` | DataFlow and graph configuration templates |
-| `tests/` | source-contract and integration unit tests |
-| `storage_guard/` | root-space, scratch, log, and cleanup safeguards |
-| `experiments/synthetic-p0/` | first synthetic feasibility experiment |
-| `history/attempts/` | source-only snapshots of Attempts 41-73 and G4 development |
-| `docs/` | project history and repository retention policy |
-| `scripts/audit_repository.py` | large-file, artifact, hostname, and secret guard |
+| `src/vllm_ascend_resident_epoch/` | vLLM scheduler、worker、contract 与 backend 接入 |
+| `controller/` | 当前 Device UDF 控制器 |
+| `controller-old/` | 为受控 ABI 对照保留的旧版控制器 |
+| `native/` | sidecar、bridge、AIR relocation 与 runtime-copy tracing |
+| `config/` | DataFlow 与 graph 配置模板 |
+| `tests/` | 源码约束与集成单元测试 |
+| `storage_guard/` | 根盘空间、scratch、日志与清理保护 |
+| `experiments/synthetic-p0/` | 最初的 synthetic feasibility 实验 |
+| `history/attempts/` | Attempt 41-73 以及 G4 阶段的纯源码快照 |
+| `docs/` | 项目演进与仓库存储策略 |
+| `scripts/audit_repository.py` | 大文件、生成物、主机名与敏感信息审计 |
 
-## Local Checks
+## 本地检查
 
-The dependency-light contract and result-verifier suite does not require an
-NPU, PyTorch, or vLLM:
+以下轻量 contract 与结果验证测试不依赖 NPU、PyTorch 或 vLLM：
 
 ```bash
 python -m pip install pytest
@@ -119,28 +118,24 @@ python verify_minimal_abi_source.py . \
   --baseline-source history/attempts/vllm-integration-attempt73-multi-epoch-cohort
 ```
 
-This subset currently contains 24 tests. The full 38-test suite additionally
-requires the frozen PyTorch, vLLM, and vLLM-Ascend environment; native execution
-also requires the exact Ascend/DataFlow toolchain, decoder AIR, and external
-weights used by the protocol. Generated models and measurements are
-deliberately not stored in this repository.
+该子集目前包含 24 项测试。完整的 38 项测试还需要冻结版本的 PyTorch、vLLM 和
+vLLM-Ascend 环境；native 执行还需要实验协议指定的 Ascend/DataFlow 工具链、
+decoder AIR 与外部权重。模型生成物和原始测量数据不会存入本仓库。
 
-## Reproducing the Hardware Gate
+## 复现硬件实验
 
-`run_attempt74.sh` is the frozen experiment driver. It expects the protected
-server layout described in `PROTOCOL.md`, stages all generated artifacts below
-marker-protected `/dev/shm` scratch, checks NPU and storage readiness, and
-retains only compact evidence. Adapt paths only as a new, explicitly versioned
-experiment; changing them in-place would invalidate comparison with the frozen
-gate.
+`run_attempt74.sh` 是冻结的实验驱动脚本。它依赖 `PROTOCOL.md` 中定义的受保护
+服务器布局，将所有生成物暂存到带 marker 的 `/dev/shm` scratch 中，在加载模型前
+检查 NPU 与存储 readiness，并且只在根盘保留精简证据。如需适配新的路径，应创建
+一个明确版本化的新实验；直接修改冻结脚本会破坏与原实验的可比性。
 
-## Project History
+## 项目演进
 
-The source archive records the progression from synthetic recurrence through
-full-decoder execution and vLLM integration. A concise map is available in
-[docs/PROJECT_HISTORY.md](docs/PROJECT_HISTORY.md). Historical snapshots are
-preserved for provenance and are not active release branches.
+源码档案记录了项目从 synthetic recurrence、完整 decoder 到 vLLM 集成的完整
+演进过程，简要阶段划分参见
+[docs/PROJECT_HISTORY.md](docs/PROJECT_HISTORY.md)。历史目录只用于保存研究来源，
+不作为当前维护的 release branch。
 
-Provisional paper title:
+暂定论文题目：
 
 > **Cruise: Eliminating Per-Token Host Round Trips with Device-Resident Decode Epochs**
