@@ -10,7 +10,11 @@ from verify_abi_comparison_result import validate_result
 from verify_minimal_abi_source import validate_source
 from vllm_ascend_resident_epoch.abi import (
     ABI_BYTES,
+    NEW_INPUTS,
+    NEW_OUTPUTS,
     NEW_TOTAL_BYTES,
+    OLD_INPUTS,
+    OLD_OUTPUTS,
     OLD_TOTAL_BYTES,
     TOTAL_REDUCTION_BYTES,
 )
@@ -27,6 +31,15 @@ def test_minimal_abi_source_and_byte_ledger():
     assert OLD_TOTAL_BYTES == 136_905_444
     assert NEW_TOTAL_BYTES == 628
     assert TOTAL_REDUCTION_BYTES == 136_904_816
+
+
+def test_attempt74_uses_relocatable_custom_opp_roots():
+    driver = (SOURCE / "run_attempt74.sh").read_text(encoding="utf-8")
+    assert 'dirname "$(dirname "${custom_set_env}")"' in driver
+    assert 'dirname "$(dirname "${barrier_set_env}")"' in driver
+    assert 'dirname "$(dirname "${materialize_set_env}")"' in driver
+    assert 'source "${custom_set_env}"' not in driver
+    assert "${materialize_opp_vendor}:${barrier_opp_vendor}:${custom_opp_vendor}" in driver
 
 
 def test_msprof_summary_never_substitutes_logical_bytes(tmp_path):
@@ -129,22 +142,64 @@ def _block(route: str) -> dict:
     }
 
 
-def _write_runtime_trace(path: Path, block: dict, route: str) -> None:
-    h2d = 1000 if route == "old" else 100
-    d2h = 400 if route == "old" else 40
+def _write_transfer_trace(
+    path: Path, block: dict, route: str, *, include_runtime: bool = False
+) -> None:
+    input_specs = OLD_INPUTS if route == "old" else NEW_INPUTS
+    output_specs = OLD_OUTPUTS if route == "old" else NEW_OUTPUTS
     rows = ["api\tpid\ttid\tstart_ns\tend_ns\tbytes\tdest_max\tkind\tstatus"]
+    rows.append("rtMemcpy\t1\t1\t1\t2\t1024\t1024\t1\t0")
     for sample in block["samples"]:
         start = sample["epoch_wall_clock_start_ns"]
-        rows.append(
-            f"rtMemcpy\t1\t1\t{start + 10}\t{start + 20}\t{h2d}\t{h2d}\t1\t0"
-        )
-        rows.append(
-            f"rtMemcpyAsync\t1\t1\t{start + 30}\t{start + 40}\t{d2h}\t{d2h}\t2\t0"
-        )
+        for spec in input_specs:
+            rows.append(
+                "\t".join(
+                    map(
+                        str,
+                        (
+                            "FeedDataFlowGraphTensor",
+                            1,
+                            1,
+                            start + 10,
+                            start + 20,
+                            spec.nbytes,
+                            spec.nbytes,
+                            -1,
+                            0,
+                        ),
+                    )
+                )
+            )
+        if include_runtime:
+            rows.append(
+                f"rtMemcpyEx\t1\t1\t{start + 30}\t{start + 40}\t100\t100\t1\t0"
+            )
+            rows.append(
+                f"rtsMemcpyAsync\t1\t1\t{start + 50}\t{start + 60}\t40\t40\t2\t0"
+            )
+        for spec in output_specs:
+            rows.append(
+                "\t".join(
+                    map(
+                        str,
+                        (
+                            "FetchDataFlowGraphTensor",
+                            1,
+                            1,
+                            start + 70,
+                            start + 80,
+                            spec.nbytes,
+                            spec.nbytes,
+                            -1,
+                            0,
+                        ),
+                    )
+                )
+            )
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
 
 
-def test_analyzer_and_independent_verifier_recompute_raw_medians(tmp_path):
+def test_analyzer_and_independent_verifier_recompute_dataflow_payload(tmp_path):
     routes = ("old", "new", "new", "old")
     paths = []
     traces: dict[str, Path] = {}
@@ -156,7 +211,7 @@ def test_analyzer_and_independent_verifier_recompute_raw_medians(tmp_path):
         path.write_text(json.dumps(block), encoding="utf-8")
         paths.append(path)
         trace = tmp_path / f"{label}.tsv"
-        _write_runtime_trace(trace, block, route)
+        _write_transfer_trace(trace, block, route)
         traces[label] = trace
         results[label] = path
     semantic = tmp_path / "semantic.json"
@@ -182,24 +237,30 @@ def test_analyzer_and_independent_verifier_recompute_raw_medians(tmp_path):
     )
     result = analyze(paths, semantic, source, profiler, runtime)
     assert result["pass"], result
-    assert result["runtime_memcpy_transfer"]["routes"]["old"]["total_bytes_median"] == 1400
-    assert result["runtime_memcpy_transfer"]["routes"]["new"]["total_bytes_median"] == 140
+    assert result["transfer_trace"]["routes"]["old"]["dataflow_total_bytes_median"] == 136_905_444
+    assert result["transfer_trace"]["routes"]["new"]["dataflow_total_bytes_median"] == 628
+    assert result["transfer_trace"]["routes"]["old"]["runtime_memcpy_statuses"] == [
+        "observed_zero"
+    ]
+    assert result["observed_dataflow_payload"]["reduction_bytes_per_epoch"] == 136_904_816
     result_path = tmp_path / "result.json"
     result_path.write_text(json.dumps(result), encoding="utf-8")
     summary = validate_result(result, require_artifacts=True)
     assert summary["pass"] is True
     assert summary["samples_per_route"] == 30
+    assert summary["runtime_memcpy_statuses"] == ["observed_zero"]
 
     filtered = tmp_path / "filtered" / "old-1.tsv"
     filtered.write_text(
-        filtered.read_text(encoding="utf-8") + "old-1\t0\thost_to_device\t1\t1\t1\t2\t1\t1\t1\t0\n",
+        filtered.read_text(encoding="utf-8")
+        + "old-1\t0\truntime_memcpy\thost_to_device\trtMemcpy\t1\t1\t2\t3\t1\t1\t1\t0\n",
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="filtered runtime trace SHA256 mismatch"):
+    with pytest.raises(ValueError, match="filtered transfer trace SHA256 mismatch"):
         validate_result(result, require_artifacts=True)
 
 
-def test_runtime_memcpy_rejects_epoch_boundary_crossing(tmp_path):
+def test_transfer_trace_rejects_epoch_boundary_crossing(tmp_path):
     traces: dict[str, Path] = {}
     results: dict[str, Path] = {}
     labels = ("old-1", "new-1", "new-2", "old-2")
@@ -208,7 +269,7 @@ def test_runtime_memcpy_rejects_epoch_boundary_crossing(tmp_path):
         result_path = tmp_path / f"{label}.json"
         result_path.write_text(json.dumps(block), encoding="utf-8")
         trace_path = tmp_path / f"{label}.tsv"
-        _write_runtime_trace(trace_path, block, route)
+        _write_transfer_trace(trace_path, block, route)
         traces[label] = trace_path
         results[label] = result_path
     old_trace = traces["old-1"]
@@ -221,7 +282,7 @@ def test_runtime_memcpy_rejects_epoch_boundary_crossing(tmp_path):
     assert result["blocks"]["old-1"]["boundary_crossing_calls"] == 1
 
 
-def test_runtime_memcpy_rejects_unknown_interposed_api(tmp_path):
+def test_transfer_trace_rejects_unknown_interposed_api(tmp_path):
     traces: dict[str, Path] = {}
     results: dict[str, Path] = {}
     labels = ("old-1", "new-1", "new-2", "old-2")
@@ -230,12 +291,59 @@ def test_runtime_memcpy_rejects_unknown_interposed_api(tmp_path):
         result_path = tmp_path / f"{label}.json"
         result_path.write_text(json.dumps(block), encoding="utf-8")
         trace_path = tmp_path / f"{label}.tsv"
-        _write_runtime_trace(trace_path, block, route)
+        _write_transfer_trace(trace_path, block, route)
         traces[label] = trace_path
         results[label] = result_path
     new_trace = traces["new-1"]
     contents = new_trace.read_text(encoding="utf-8")
-    new_trace.write_text(contents.replace("rtMemcpyAsync", "rtMemcpyFuture", 1), encoding="utf-8")
+    new_trace.write_text(
+        contents.replace("FeedDataFlowGraphTensor", "DataFlowFuture", 1),
+        encoding="utf-8",
+    )
 
-    with pytest.raises(ValueError, match="invalid rtMemcpy API"):
+    with pytest.raises(ValueError, match="invalid transfer trace API"):
         summarize_runtime(traces, results, tmp_path / "filtered")
+
+
+def test_transfer_trace_reports_runtime_memcpy_when_present(tmp_path):
+    traces: dict[str, Path] = {}
+    results: dict[str, Path] = {}
+    labels = ("old-1", "new-1", "new-2", "old-2")
+    for label, route in zip(labels, ("old", "new", "new", "old"), strict=True):
+        block = _block(route)
+        result_path = tmp_path / f"{label}.json"
+        result_path.write_text(json.dumps(block), encoding="utf-8")
+        trace_path = tmp_path / f"{label}.tsv"
+        _write_transfer_trace(trace_path, block, route, include_runtime=True)
+        traces[label] = trace_path
+        results[label] = result_path
+
+    result = summarize_runtime(traces, results, tmp_path / "filtered")
+
+    assert result["status"] == "observed"
+    assert result["blocks"]["new-1"]["runtime_memcpy_status"] == "observed"
+    assert result["routes"]["new"]["runtime_memcpy_records_median"] == 2
+    assert result["routes"]["new"]["runtime_memcpy_total_directional_bytes_median"] == 140
+
+
+def test_transfer_trace_requires_complete_dataflow_payload(tmp_path):
+    traces: dict[str, Path] = {}
+    results: dict[str, Path] = {}
+    labels = ("old-1", "new-1", "new-2", "old-2")
+    for label, route in zip(labels, ("old", "new", "new", "old"), strict=True):
+        block = _block(route)
+        result_path = tmp_path / f"{label}.json"
+        result_path.write_text(json.dumps(block), encoding="utf-8")
+        trace_path = tmp_path / f"{label}.tsv"
+        _write_transfer_trace(trace_path, block, route)
+        traces[label] = trace_path
+        results[label] = result_path
+    trace = traces["new-1"]
+    rows = trace.read_text(encoding="utf-8").splitlines()
+    del rows[2]
+    trace.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+    result = summarize_runtime(traces, results, tmp_path / "filtered")
+
+    assert result["status"] == "not_observed"
+    assert result["blocks"]["new-1"]["dataflow_tensor_payload_status"] == "not_observed"

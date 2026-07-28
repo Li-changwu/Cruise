@@ -102,15 +102,23 @@ def validate_source(source: Path, baseline_source: Path | None) -> dict[str, Any
         and NEW_TOTAL_BYTES == 628
         and TOTAL_REDUCTION_BYTES == 136_904_816
         and KV_ROUND_TRIP_BYTES == 117_440_512,
-        "runtime_memcpy_is_measured_not_declared": (
-            'dlsym(RTLD_NEXT, "rtMemcpy")' in trace_source
-            and 'dlsym(RTLD_NEXT, "rtMemcpyAsync")' in trace_source
+        "transfer_trace_is_measured_not_declared": (
+            "dlsym(RTLD_NEXT, name)" in trace_source
+            and 'Resolve<Memcpy>("rtMemcpy")' in trace_source
+            and 'Resolve<MemcpyAsync>("rtMemcpyAsync")' in trace_source
+            and 'Resolve<Memcpy>("rtMemcpyEx")' in trace_source
+            and 'Resolve<RtsMemcpy>("rtsMemcpy")' in trace_source
+            and "FeedDataFlowGraphTensor" in trace_source
+            and "FetchDataFlowGraphTensor" in trace_source
+            and "tensor.GetSize()" in trace_source
             and "CLOCK_REALTIME" in trace_source
             and "ASCEND_RT_MEMCPY_TRACE_PATH" in trace_source
             and "LD_PRELOAD" in sidecar
             and '"logical_abi_bytes_used_as_transfer": False' in trace_summary
-            and '"rtMemcpyAsync"' in trace_summary
-            and '"observed_both_directions"' in trace_summary
+            and '"dataflow_tensor_payload_is_physical_link_bytes": False'
+            in trace_summary
+            and '"runtime_memcpy_status"' in trace_summary
+            and '"observed_zero"' in trace_summary
         ),
     }
     hashes = {
@@ -120,7 +128,9 @@ def validate_source(source: Path, baseline_source: Path | None) -> dict[str, Any
         "old_bridge": _sha256(source / "native/resident_epoch_bridge_old.cpp"),
         "graph_config": _sha256(source / "config/graph_config.json"),
         "runtime_memcpy_trace": _sha256(source / "native/rt_memcpy_trace.cpp"),
-        "runtime_memcpy_summary": _sha256(source / "summarize_runtime_memcpy.py"),
+        "transfer_trace_summarizer": _sha256(
+            source / "summarize_runtime_memcpy.py"
+        ),
     }
     if baseline_source is not None:
         baseline_source = baseline_source.resolve(strict=True)

@@ -22,7 +22,7 @@ cache=${scratch}/cache
 profiler=${scratch}/profiler
 cann_logs=${scratch}/cann-logs
 tmp=${scratch}/t
-runtime_memcpy=${scratch}/rt-memcpy
+transfer_trace=${scratch}/transfer-trace
 runtime_workdir=${scratch}/runtime-workdir
 frozen_air=${CRUISE_FROZEN_AIR:-${root}/export-attempt69c-r2-b4/qwen_b4_decoder_step_attempt69c_r2.air}
 tiling=${CRUISE_TILING:-${root}/raw-attempt69d-r1-b4-native/native-inputs/case0/explicit_tiling.bin}
@@ -92,13 +92,13 @@ preflight_status=$?
 for heavy_path in "${build}" "${controller_new}" "${controller_old}" \
                   "${config_dir}" "${weights}" "${runtime_export}" \
                   "${runtime_air}" "${cache}" "${profiler}" \
-                  "${cann_logs}" "${tmp}" "${runtime_memcpy}" \
+                  "${cann_logs}" "${tmp}" "${transfer_trace}" \
                   "${runtime_workdir}"; do
   storage_guard_assert_scratch_path "${heavy_path}" || exit $?
 done
 mkdir -p "${build}" "${weights}" "${cache}" "${profiler}" \
   "${cann_logs}" "${tmp}" "${config_dir}" "${runtime_workdir}"
-mkdir -p "${runtime_memcpy}"
+mkdir -p "${transfer_trace}"
 if [[ "${msprof_mode}" == off ]]; then
   mkdir -p "${profiler}/old" "${profiler}/new"
   printf '%s\n' "${msprof_unavailable_reason}" \
@@ -199,10 +199,18 @@ materialize_set_env=${CRUISE_MATERIALIZE_SET_ENV:-$(find \
   "${root}/install-attempt56r1" -type f -name set_env.bash | head -1)}
 [[ -n "${custom_set_env}" && -n "${barrier_set_env}" && \
    -n "${materialize_set_env}" ]] || exit 94
-export ASCEND_CUSTOM_OPP_PATH=${ASCEND_CUSTOM_OPP_PATH:-}
-source "${custom_set_env}"
-source "${barrier_set_env}"
-source "${materialize_set_env}"
+custom_opp_vendor=${CRUISE_CUSTOM_OPP_VENDOR:-$(dirname "$(dirname "${custom_set_env}")")}
+barrier_opp_vendor=${CRUISE_BARRIER_OPP_VENDOR:-$(dirname "$(dirname "${barrier_set_env}")")}
+materialize_opp_vendor=${CRUISE_MATERIALIZE_OPP_VENDOR:-$(dirname "$(dirname "${materialize_set_env}")")}
+for vendor in "${custom_opp_vendor}" "${barrier_opp_vendor}" \
+              "${materialize_opp_vendor}"; do
+  [[ -d "${vendor}/op_impl" && -d "${vendor}/op_proto" && \
+     -d "${vendor}/op_api/lib" ]] || exit 94
+done
+# Generated set_env.bash files contain install-time absolute paths. Derive the
+# vendor roots from their current locations so archived OPP trees stay movable.
+export ASCEND_CUSTOM_OPP_PATH=${materialize_opp_vendor}:${barrier_opp_vendor}:${custom_opp_vendor}:${ASCEND_CUSTOM_OPP_PATH:-}
+export LD_LIBRARY_PATH=${materialize_opp_vendor}/op_api/lib:${barrier_opp_vendor}/op_api/lib:${custom_opp_vendor}/op_api/lib:${LD_LIBRARY_PATH:-}
 export RESOURCE_CONFIG_PATH=${resource_config}
 
 export PYTHONPATH=${src}/src:${src}:${vllm_root}:${vllm_ascend_root}:${PYTHONPATH:-}
@@ -301,7 +309,7 @@ configure_route() {
   export XDG_CACHE_HOME=${cache}/${label}/xdg
   export VLLM_ASCEND_RESIDENT_EPOCH_SOCKET=${scratch}/${label}.sock
   export VLLM_ASCEND_RESIDENT_EPOCH_MEMCPY_TRACE_LIBRARY=${build}/libresident_epoch_memcpy_trace.so
-  export VLLM_ASCEND_RESIDENT_EPOCH_MEMCPY_TRACE_PATH=${runtime_memcpy}/${label}.tsv
+  export VLLM_ASCEND_RESIDENT_EPOCH_MEMCPY_TRACE_PATH=${transfer_trace}/${label}.tsv
   if [[ "${route}" == new ]]; then
     export VLLM_ASCEND_RESIDENT_EPOCH_FUNC_CONFIG=${runtime_config_new}
     export VLLM_ASCEND_RESIDENT_EPOCH_LIBRARY=${build}/libresident_epoch_bridge.so
@@ -366,18 +374,18 @@ run_step summarize-msprof-transfers 600s python3 \
   "${msprof_reason_args[@]}" \
   --output "${evidence}/${run_id}-msprof-transfer-summary.json" || exit $?
 
-run_step summarize-runtime-memcpy 600s python3 \
+run_step summarize-transfer-trace 600s python3 \
   "${src}/summarize_runtime_memcpy.py" \
-  --old-1-trace "${runtime_memcpy}/old-1.tsv" \
+  --old-1-trace "${transfer_trace}/old-1.tsv" \
   --old-1-result "${evidence}/${run_id}-old-1.json" \
-  --new-1-trace "${runtime_memcpy}/new-1.tsv" \
+  --new-1-trace "${transfer_trace}/new-1.tsv" \
   --new-1-result "${evidence}/${run_id}-new-1.json" \
-  --new-2-trace "${runtime_memcpy}/new-2.tsv" \
+  --new-2-trace "${transfer_trace}/new-2.tsv" \
   --new-2-result "${evidence}/${run_id}-new-2.json" \
-  --old-2-trace "${runtime_memcpy}/old-2.tsv" \
+  --old-2-trace "${transfer_trace}/old-2.tsv" \
   --old-2-result "${evidence}/${run_id}-old-2.json" \
-  --filtered-dir "${evidence}/rt-memcpy-filtered" \
-  --output "${evidence}/${run_id}-runtime-memcpy-summary.json" || exit $?
+  --filtered-dir "${evidence}/transfer-trace-filtered" \
+  --output "${evidence}/${run_id}-transfer-trace-summary.json" || exit $?
 
 run_step analyze-abi-comparison 300s python3 \
   "${src}/analyze_abi_comparison.py" \
@@ -388,7 +396,7 @@ run_step analyze-abi-comparison 300s python3 \
   --semantic-result "${evidence}/${run_id}-multi-epoch-result.json" \
   --source-verification "${evidence}/${run_id}-source-verification.json" \
   --profiler-summary "${evidence}/${run_id}-msprof-transfer-summary.json" \
-  --runtime-memcpy-summary "${evidence}/${run_id}-runtime-memcpy-summary.json" \
+  --transfer-trace-summary "${evidence}/${run_id}-transfer-trace-summary.json" \
   --output "${evidence}/${run_id}-result.json" || exit $?
 run_step verify-abi-comparison 300s python3 \
   "${src}/verify_abi_comparison_result.py" \

@@ -54,9 +54,13 @@ target_link_libraries(resident_epoch_bridge_old PRIVATE
   -Wl,--no-whole-archive)
 
 add_library(resident_epoch_memcpy_trace SHARED rt_memcpy_trace.cpp)
+target_include_directories(resident_epoch_memcpy_trace PRIVATE
+  "${ASCEND_HOME_PATH}/include")
 target_compile_options(resident_epoch_memcpy_trace PRIVATE
   -O2 -std=c++11 -fstack-protector-all -fPIC)
-target_link_libraries(resident_epoch_memcpy_trace PRIVATE dl)
+target_link_libraries(resident_epoch_memcpy_trace PRIVATE
+  dl
+  "${ASCEND_HOME_PATH}/lib64/libgraph.so")
 
 add_executable(resident_epoch_server
   resident_epoch_server.cpp

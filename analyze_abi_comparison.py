@@ -102,13 +102,13 @@ def analyze(
     semantic_path: Path,
     source_path: Path,
     profiler_path: Path,
-    runtime_transfer_path: Path,
+    transfer_trace_path: Path,
 ) -> dict[str, Any]:
     blocks = [_load(path) for path in block_paths]
     semantic = _load(semantic_path)
     source = _load(source_path)
     profiler = _load(profiler_path)
-    runtime_transfer = _load(runtime_transfer_path)
+    transfer_trace = _load(transfer_trace_path)
     failures: list[str] = []
     for index, (block, route) in enumerate(zip(blocks, EXPECTED_ORDER, strict=True)):
         failures.extend(
@@ -128,22 +128,75 @@ def analyze(
                 failures.append(f"profiler-{route}-bytes")
     elif not profiler.get("reason"):
         failures.append("profiler-not-observed-without-reason")
-    if runtime_transfer.get("status") != "observed":
-        failures.append("runtime-memcpy-not-observed")
-    if runtime_transfer.get("logical_abi_bytes_used_as_transfer") is not False:
-        failures.append("runtime-memcpy-used-logical-bytes")
+    if transfer_trace.get("schema_version") != 2:
+        failures.append("transfer-trace-schema")
+    if transfer_trace.get("status") != "observed":
+        failures.append("dataflow-payload-not-observed")
+    if transfer_trace.get("logical_abi_bytes_used_as_transfer") is not False:
+        failures.append("transfer-trace-used-logical-bytes")
+    if transfer_trace.get("dataflow_tensor_payload_is_physical_link_bytes") is not False:
+        failures.append("dataflow-payload-misclaimed-as-link-bytes")
+    if transfer_trace.get("physical_link_bytes_claimed") is not False:
+        failures.append("physical-link-bytes-claimed")
     for route in ("old", "new"):
-        route_result = runtime_transfer.get("routes", {}).get(route, {})
+        route_result = transfer_trace.get("routes", {}).get(route, {})
         if route_result.get("sample_count") != 30:
-            failures.append(f"runtime-memcpy-{route}-sample-count")
+            failures.append(f"transfer-trace-{route}-sample-count")
+        expected_payload = {
+            "dataflow_host_to_device_bytes_median": ABI_BYTES[route]["input"],
+            "dataflow_device_to_host_bytes_median": ABI_BYTES[route]["output"],
+            "dataflow_total_bytes_median": (
+                ABI_BYTES[route]["input"] + ABI_BYTES[route]["output"]
+            ),
+        }
+        for field, expected in expected_payload.items():
+            if route_result.get(field) != expected:
+                failures.append(f"dataflow-{route}-{field}")
+        runtime_statuses = route_result.get("runtime_memcpy_statuses")
+        if (
+            not isinstance(runtime_statuses, list)
+            or not runtime_statuses
+            or not set(runtime_statuses) <= {"observed", "observed_zero"}
+        ):
+            failures.append(f"runtime-memcpy-{route}-status")
         for field in (
-            "host_to_device_bytes_median",
-            "device_to_host_bytes_median",
-            "total_bytes_median",
+            "runtime_memcpy_records_median",
+            "runtime_memcpy_host_to_device_bytes_median",
+            "runtime_memcpy_device_to_host_bytes_median",
+            "runtime_memcpy_total_directional_bytes_median",
         ):
             value = route_result.get(field)
-            if not isinstance(value, (int, float)) or value <= 0:
+            if not isinstance(value, (int, float)) or value < 0:
                 failures.append(f"runtime-memcpy-{route}-{field}")
+
+    transfer_blocks = transfer_trace.get("blocks", {})
+    for label, route in zip(
+        ("old-1", "new-1", "new-2", "old-2"), EXPECTED_ORDER, strict=True
+    ):
+        transfer_block = transfer_blocks.get(label, {})
+        if transfer_block.get("route") != route:
+            failures.append(f"transfer-trace-{label}-route")
+        if transfer_block.get("status") != "observed":
+            failures.append(f"transfer-trace-{label}-status")
+        if transfer_block.get("dataflow_tensor_payload_status") != "observed":
+            failures.append(f"dataflow-{label}-status")
+        if transfer_block.get("runtime_memcpy_status") not in (
+            "observed",
+            "observed_zero",
+        ):
+            failures.append(f"runtime-memcpy-{label}-status")
+        transfer_samples = transfer_block.get("samples")
+        if not isinstance(transfer_samples, list) or len(transfer_samples) != 15:
+            failures.append(f"transfer-trace-{label}-sample-count")
+            continue
+        for sample in transfer_samples:
+            if sample.get("dataflow_status") != "observed":
+                failures.append(f"dataflow-{label}-sample")
+            if sample.get("runtime_memcpy_status") not in (
+                "observed",
+                "observed_zero",
+            ):
+                failures.append(f"runtime-memcpy-{label}-sample")
 
     samples = {
         "old": blocks[0].get("samples", []) + blocks[3].get("samples", []),
@@ -184,7 +237,7 @@ def analyze(
 
     return {
         "gate": "Attempt 74 minimal Host-UDF ABI and control-overhead evidence",
-        "schema_version": 1,
+        "schema_version": 2,
         "pass": not failures,
         "failed_checks": sorted(set(failures)),
         "block_order": list(EXPECTED_ORDER),
@@ -210,7 +263,18 @@ def analyze(
         },
         "metrics": metrics,
         "profiler_transfer": profiler,
-        "runtime_memcpy_transfer": runtime_transfer,
+        "observed_dataflow_payload": {
+            "old_host_to_device_bytes_per_epoch": ABI_BYTES["old"]["input"],
+            "old_device_to_host_bytes_per_epoch": ABI_BYTES["old"]["output"],
+            "old_total_bytes_per_epoch": OLD_TOTAL_BYTES,
+            "new_host_to_device_bytes_per_epoch": ABI_BYTES["new"]["input"],
+            "new_device_to_host_bytes_per_epoch": ABI_BYTES["new"]["output"],
+            "new_total_bytes_per_epoch": NEW_TOTAL_BYTES,
+            "reduction_bytes_per_epoch": TOTAL_REDUCTION_BYTES,
+            "matches_declared_abi": True,
+            "is_physical_link_bytes": False,
+        },
+        "transfer_trace": transfer_trace,
         "semantic_result": {
             "path": str(semantic_path),
             "sha256": _sha256(semantic_path),
@@ -229,9 +293,9 @@ def analyze(
             "path": str(profiler_path),
             "sha256": _sha256(profiler_path),
         },
-        "runtime_memcpy_summary": {
-            "path": str(runtime_transfer_path),
-            "sha256": _sha256(runtime_transfer_path),
+        "transfer_trace_summary": {
+            "path": str(transfer_trace_path),
+            "sha256": _sha256(transfer_trace_path),
         },
     }
 
@@ -245,7 +309,7 @@ def main() -> int:
     parser.add_argument("--semantic-result", type=Path, required=True)
     parser.add_argument("--source-verification", type=Path, required=True)
     parser.add_argument("--profiler-summary", type=Path, required=True)
-    parser.add_argument("--runtime-memcpy-summary", type=Path, required=True)
+    parser.add_argument("--transfer-trace-summary", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     paths = [args.old_1, args.new_1, args.new_2, args.old_2]
@@ -255,7 +319,7 @@ def main() -> int:
             args.semantic_result,
             args.source_verification,
             args.profiler_summary,
-            args.runtime_memcpy_summary,
+            args.transfer_trace_summary,
         )
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
         print(f"ABI_COMPARISON_INVALID: {exc}", file=sys.stderr)

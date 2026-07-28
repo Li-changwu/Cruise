@@ -11,10 +11,11 @@ separately from profiler-observed Host-Device memcpy traffic.
 
 ## Single variable
 
-The decoder AIR, external weights, tiling, Qwen2.5-7B model, NPU 7, CANN
-9.0.0, B=4 graph, K=2 epoch, greedy sampling, warmup, vLLM classes, request
-inputs, and repetition budget remain fixed. Only the FlowGraph Host-UDF ABI
-changes.
+The decoder AIR, external weights, tiling, Qwen2.5-7B model, physical NPU,
+CANN release, B=4 graph, K=2 epoch, greedy sampling, warmup, vLLM classes,
+request inputs, and repetition budget remain fixed within a run. Only the
+FlowGraph Host-UDF ABI changes. The current deployment-validation target is
+physical NPU 7 on Ascend 910B2 with CANN 8.5.1.
 
 Old ABI has 10 inputs and 10 outputs. New ABI has 8 inputs and 2 outputs:
 
@@ -105,32 +106,62 @@ Application `msprof` covers initialization, warmup, and the measured epochs,
 so its byte totals, when available, are process-wide corroborating evidence;
 they are not divided by the epoch count.
 
-The frozen CANN 9.0.0 run uses `--storage-limit=2048`. CANN releases that
-require an explicit unit suffix can set `CRUISE_MSPROF_STORAGE_LIMIT=2048MB`;
-this changes only profiler retention syntax, not the measured workload.
+The frozen CANN 9.0.0 run uses `--storage-limit=2048`. Releases such as the
+current CANN 8.5.1 deployment that require an explicit unit suffix set
+`CRUISE_MSPROF_STORAGE_LIMIT=2048MB`; this changes only profiler retention
+syntax, not the measured workload.
+
+Custom OPP archives are relocatable. `CRUISE_CUSTOM_SET_ENV`,
+`CRUISE_BARRIER_SET_ENV`, and `CRUISE_MATERIALIZE_SET_ENV` identify the three
+installed `vendor/bin/set_env.bash` files, but the driver derives each current
+vendor root from the script location instead of sourcing its install-time
+absolute paths. The corresponding `CRUISE_*_OPP_VENDOR` variables can override
+that derivation explicitly. All three vendor trees must contain `op_impl`,
+`op_proto`, and `op_api/lib` before any model is loaded.
 
 If an installed CANN application profiler cannot initialize GE in the
 resident sidecar, set `CRUISE_MSPROF_MODE=off` together with a non-empty
 `CRUISE_MSPROF_UNAVAILABLE_REASON`. The driver then runs the same four ABBA
 blocks without application `msprof`, preserves the explicit reason, and
-reports the process-wide profiler metric as `not_observed`. This exception
-does not relax the per-epoch runtime-transfer gate below: the sidecar
-interposer must still observe both H2D and D2H calls in all 60 epochs.
+reports the process-wide profiler metric as `not_observed`. This does not
+relax the per-epoch DataFlow payload gate below.
 
-## Per-epoch runtime transfer rule
+## Per-epoch transfer-trace rule
 
-Every sidecar is launched with a small `LD_PRELOAD` interposer for the
-`rtMemcpy` and `rtMemcpyAsync` symbols used by `libge_executor`. The
-interposer records the API, `CLOCK_REALTIME` start/end timestamps, copy kind,
-requested byte count, and return status. These rows are joined to the absolute
-`time.time_ns` window of each measured `EngineCore.step` plus `post_step`.
+Every sidecar is launched with an `LD_PRELOAD` interposer that records three
+separate classes of events:
 
-An epoch is observed only when it contains at least one successful H2D and one
-successful D2H runtime memcpy call, with no copy crossing the epoch boundary. The four
-ABBA blocks must provide 15 such epochs each. Filtered per-epoch rows and their
-SHA256 values are retained in evidence. This metric is an observed CANN
-runtime-copy request count; it is not the declared ABI ledger and is not
-described as PCIe/HCCS wire traffic.
+- `dataflow_tensor`: `Tensor::GetSize()` for every actual tensor passed to
+  `DFlowSessionImpl::FeedDataFlowGraph` and returned by
+  `DFlowSessionImpl::FetchDataFlowGraph`;
+- `runtime_memcpy`: the CANN `rtMemcpy`/`rtsMemcpy` API families, including
+  synchronous, asynchronous, batch, descriptor, offset, and 2-D variants;
+- `mbuf_diagnostic`: selected Mbuf/Buff allocation and size APIs used only to
+  establish whether steady-state buffers are allocated again.
+
+Every record contains `CLOCK_REALTIME` start/end timestamps, requested tensor
+or copy bytes, kind when available, and return status. The records are joined
+to the absolute `time.time_ns` window of each measured `EngineCore.step` plus
+`post_step`.
+
+An epoch is observed only when it contains exactly one successful DataFlow
+Feed and one successful Fetch whose ordered tensor sizes match the route ABI.
+Thus every old epoch must expose 10 input and 10 output tensors totaling
+58,720,516 B and 78,184,928 B; every new epoch must expose 8 input and 2 output
+tensors totaling 260 B and 368 B. All four ABBA blocks must provide 15 such
+epochs, with no event crossing an epoch boundary.
+
+Runtime memcpy is reported independently as `observed` or `observed_zero`.
+Zero is a valid measurement: on CANN 8.5.1, startup uses `rtMemcpy`, while the
+steady-state DataFlow epochs reuse Mbufs and do not pass through any interposed
+runtime memcpy API. Filtered per-epoch rows, raw traces, and SHA256 values are
+retained, and the independent verifier reconstructs all 60 windows from the
+raw trace.
+
+The DataFlow tensor payload is an observed runtime API-boundary payload, not a
+declared constant substituted by the analyzer. It is also not claimed to be
+PCIe, HCCS, DMA, or other physical-link traffic. A physical-byte claim remains
+`not_observed` unless a profiler exposes both direction and byte fields.
 
 ## Pass rules
 
@@ -145,30 +176,27 @@ described as PCIe/HCCS wire traffic.
    speedup threshold is required; a slowdown is retained as a valid result.
 6. Profiler transfer status is either directly `observed` with byte/direction
    provenance or explicitly `not_observed` with preserved inspection evidence.
-7. Runtime memcpy bytes are observed in both directions for every one of
-   the 60 measured epochs and independently verified from filtered rows.
+7. All 60 epochs expose complete DataFlow Feed/Fetch tensor payloads matching
+   their ABI. Runtime memcpy activity is independently reported as observed or
+   observed-zero; neither result is replaced with declared ABI bytes.
 8. Independent verifiers, unit tests, SHA256 manifests, NPU idle checks,
    storage finalization, and scratch cleanup all pass.
 
 ## Storage and support boundary
 
-Formal execution is allowed only through:
-
-```bash
-/root/ascend-control-g4-20260723/storage-control/run_guarded_attempt.sh \
-  /root/ascend-control-g4-20260723/attempt74-src
-```
-
-Builds, relocated AIR, runtime and external weights, cache, CANN logs, profiler
-raw data, sockets, and temporary files live below marker-protected
-`/dev/shm/a74r1`. Root retains only source and compact evidence.
+Formal execution uses a clean GitHub checkout and `run_attempt74.sh`, with all
+machine-specific locations supplied through the documented `CRUISE_*`
+environment variables. Builds, relocated AIR, runtime and external weights,
+cache, CANN logs, profiler raw data, sockets, transfer traces, and temporary
+files live below a marker-protected `/dev/shm` scratch directory. Root retains
+only the source checkout, archived OPP inputs, and compact evidence.
 The model-running phase also uses a scratch working directory because some
 CANN releases emit `fusion_result.json` relative to the process cwd. When the
 source is a Git checkout, clean-worktree gates before and after execution
 reject any runtime artifact that escapes this boundary.
 
 Passing applies to Qwen2.5-7B-Instruct, TP=PP=1, synchronous scheduling,
-one-token prompts, static B=4, K=2, greedy sampling, and one 910B2/CANN 9.0.0
-server. It does not establish general sampling, prefill, preemption,
+one-token prompts, static B=4, K=2, greedy sampling, and the recorded
+910B2/CANN server configuration. It does not establish general sampling, prefill, preemption,
 continuous batching, API-server performance, or physical transfer bytes that
 the installed profiler does not expose.
