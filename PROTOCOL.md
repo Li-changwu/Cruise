@@ -109,6 +109,14 @@ The frozen CANN 9.0.0 run uses `--storage-limit=2048`. CANN releases that
 require an explicit unit suffix can set `CRUISE_MSPROF_STORAGE_LIMIT=2048MB`;
 this changes only profiler retention syntax, not the measured workload.
 
+If an installed CANN application profiler cannot initialize GE in the
+resident sidecar, set `CRUISE_MSPROF_MODE=off` together with a non-empty
+`CRUISE_MSPROF_UNAVAILABLE_REASON`. The driver then runs the same four ABBA
+blocks without application `msprof`, preserves the explicit reason, and
+reports the process-wide profiler metric as `not_observed`. This exception
+does not relax the per-epoch runtime-transfer gate below: the sidecar
+interposer must still observe both H2D and D2H calls in all 60 epochs.
+
 ## Per-epoch runtime transfer rule
 
 Every sidecar is launched with a small `LD_PRELOAD` interposer for the

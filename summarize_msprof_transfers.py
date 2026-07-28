@@ -131,7 +131,11 @@ def scan_route(root: Path) -> dict[str, Any]:
     }
 
 
-def summarize(old_root: Path, new_root: Path) -> dict[str, Any]:
+def summarize(
+    old_root: Path,
+    new_root: Path,
+    unavailable_reason: str | None = None,
+) -> dict[str, Any]:
     routes = {
         "old": scan_route(old_root),
         "new": scan_route(new_root),
@@ -142,16 +146,22 @@ def summarize(old_root: Path, new_root: Path) -> dict[str, Any]:
         reason = None
     else:
         status = "not_observed"
-        reason = "; ".join(
+        scan_reason = "; ".join(
             f"{name}: {route['reason']}"
             for name, route in routes.items()
             if route["status"] != "observed"
+        )
+        reason = (
+            f"{unavailable_reason}; {scan_reason}"
+            if unavailable_reason
+            else scan_reason
         )
     return {
         "schema_version": 1,
         "metric": "profiler-observed directional Host-Device memcpy bytes for the full profiled process",
         "status": status,
         "reason": reason,
+        "explicit_unavailable_reason": unavailable_reason,
         "routes": routes,
         "logical_abi_bytes_used_as_transfer": False,
     }
@@ -161,10 +171,18 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--old-root", type=Path, required=True)
     parser.add_argument("--new-root", type=Path, required=True)
+    parser.add_argument("--unavailable-reason-file", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
-        result = summarize(args.old_root, args.new_root)
+        unavailable_reason = None
+        if args.unavailable_reason_file is not None:
+            unavailable_reason = args.unavailable_reason_file.read_text(
+                encoding="utf-8"
+            ).strip()
+            if not unavailable_reason:
+                raise ValueError("msprof unavailable reason is empty")
+        result = summarize(args.old_root, args.new_root, unavailable_reason)
     except (OSError, ValueError, csv.Error) as exc:
         print(f"MSPROF_TRANSFER_SUMMARY_INVALID: {exc}", file=sys.stderr)
         return 1

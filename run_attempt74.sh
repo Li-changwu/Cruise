@@ -36,6 +36,16 @@ vllm_root=${CRUISE_VLLM_ROOT:-/root/vllm-hust}
 vllm_ascend_root=${CRUISE_VLLM_ASCEND_ROOT:-/root/vllm-ascend-hust}
 resource_config=${CRUISE_RESOURCE_CONFIG:-${g2g}/numa_config.physical7.json}
 msprof_storage_limit=${CRUISE_MSPROF_STORAGE_LIMIT:-2048}
+msprof_mode=${CRUISE_MSPROF_MODE:-application}
+msprof_unavailable_reason=${CRUISE_MSPROF_UNAVAILABLE_REASON:-}
+
+case "${msprof_mode}" in
+  application) ;;
+  off)
+    [[ -n "${msprof_unavailable_reason}" ]] || exit 94
+    ;;
+  *) exit 94 ;;
+esac
 
 guard=${src}/storage_guard/storage_guard.sh
 required=(
@@ -87,6 +97,11 @@ done
 mkdir -p "${build}" "${weights}" "${cache}" "${profiler}" \
   "${cann_logs}" "${tmp}" "${config_dir}"
 mkdir -p "${runtime_memcpy}"
+if [[ "${msprof_mode}" == off ]]; then
+  mkdir -p "${profiler}/old" "${profiler}/new"
+  printf '%s\n' "${msprof_unavailable_reason}" \
+    >"${evidence}/msprof-unavailable-reason.txt"
+fi
 
 status=${evidence}/status.tsv
 printf 'case\texit_status\n' >"${status}"
@@ -299,7 +314,7 @@ run_block() {
   wait_npu_ready "pre-${label}" || return $?
   configure_route "${label}" "${route}"
   local output=${evidence}/${run_id}-${label}.json
-  if [[ "${profile_route}" == yes ]]; then
+  if [[ "${profile_route}" == yes && "${msprof_mode}" == application ]]; then
     local profile_output=${profiler}/${route}
     run_step "benchmark-${label}" 14400s msprof \
       --output="${profile_output}" --ascendcl=on --ge-api=l1 \
@@ -323,9 +338,15 @@ run_block old-2 old no || exit $?
 
 find "${profiler}" -type f -printf '%P\t%s\n' | sort \
   >"${evidence}/msprof-files.tsv"
+msprof_reason_args=()
+if [[ -f "${evidence}/msprof-unavailable-reason.txt" ]]; then
+  msprof_reason_args=(--unavailable-reason-file \
+    "${evidence}/msprof-unavailable-reason.txt")
+fi
 run_step summarize-msprof-transfers 600s python3 \
   "${src}/summarize_msprof_transfers.py" \
   --old-root "${profiler}/old" --new-root "${profiler}/new" \
+  "${msprof_reason_args[@]}" \
   --output "${evidence}/${run_id}-msprof-transfer-summary.json" || exit $?
 
 run_step summarize-runtime-memcpy 600s python3 \

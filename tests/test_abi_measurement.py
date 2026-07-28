@@ -76,6 +76,23 @@ def test_msprof_summary_requires_both_directions(tmp_path):
     assert result["routes"]["old"]["device_to_host_bytes"] is None
 
 
+def test_msprof_summary_preserves_explicit_unavailable_reason(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+
+    result = summarize(
+        old,
+        new,
+        "CANN application profiler cannot initialize GE in the sidecar",
+    )
+
+    assert result["status"] == "not_observed"
+    assert result["explicit_unavailable_reason"].startswith("CANN")
+    assert "no CSV reports" in result["reason"]
+
+
 def _block(route: str) -> dict:
     sizes = ABI_BYTES[route]
     samples = []
