@@ -41,23 +41,37 @@ Attempt 74 的严格实验门槛参见 [PROTOCOL.md](PROTOCOL.md)。
 
 ## 当前证据
 
-完整 decoder 的 G4 实验在冻结工作负载下实现了 Host/Device token 与状态的精确
-一致，并将 K 次 Host 提交缩减为一组 DataFlow Feed/Fetch。最终的 blocked-ABBA
-B=4 实验在 K=2、4、8 时分别得到 1.55x、3.56x 和 5.36x 的配对中位加速；每个
-K 的 15 组配对样本均由 Device 路径胜出。这组测量早于最小 ABI，完整结果与
-claim boundary 记录在
-[`history/attempts/g4/G4-STATUS-20260724.md`](history/attempts/g4/G4-STATUS-20260724.md)。
+Attempt 74 的 CANN 8.5.1 正式实验采用 `old -> new -> new -> old`，包含 30 个 old
+和 30 个 new B=4/K=2 epoch。60 个样本均通过 token、请求状态、调用次数和时间窗
+校验。实际 DataFlow API 边界 payload 如下：
 
-Attempt 74 的源码约束和本地 ABI 测试已经通过。但由于共享 NPU 和根盘存储的
-readiness gate 未能提供干净的正式运行窗口，最终的逐 epoch runtime-copy 实验尚未
-完成。因此，本项目目前只报告逻辑 ABI payload 的缩减，不宣称已经证明物理
-H2D/D2H 传输字节数同比下降。
+| ABI | Feed/epoch | Fetch/epoch | 总计/epoch |
+|---|---:|---:|---:|
+| old 10/10 | 58,720,516 B | 78,184,928 B | 136,905,444 B |
+| new 8/2 | 260 B | 368 B | 628 B |
+
+每个 epoch 的 payload 减少 136,904,816 B。这里的数值来自实际
+`FeedDataFlowGraph`/`FetchDataFlowGraph` tensor 的 `Tensor::GetSize()`，与声明
+ledger 精确一致，并非由声明常量替代实测值。
+
+在同一批 60 个稳态窗口中，扩展 tracer 覆盖的 `rtMemcpy`/`rtsMemcpy` API 调用数
+均为 0；每个独立进程的 1,745 条 runtime memcpy 和 23 条 Mbuf 记录全部发生在
+测量窗口外的启动期。CANN 8.5.1 的 application `msprof` 无法初始化该 resident
+sidecar，因此上述 DataFlow payload **不是** PCIe、HCCS 或 DMA 物理链路字节，
+本项目不作物理链路流量下降的声明。
+
+30+30 样本的 Host 控制 wall time 中位数从 212.208 ms 降至 59.951 ms，对应
+3.54x；Python CPU time 从 2.368 ms 降至 1.045 ms，对应 2.27x。完整结果、独立
+验证范围与证据哈希见
+[`evidence/ATTEMPT74-CANN851-R5.md`](evidence/ATTEMPT74-CANN851-R5.md)。较早的
+G4 K-sweep 结果仍保留在
+[`history/attempts/g4/G4-STATUS-20260724.md`](history/attempts/g4/G4-STATUS-20260724.md)。
 
 ## 支持边界
 
 当前经过验证的环境与工作负载为：
 
-- Ascend 910B2、CANN 9.0.0，并具备 DataFlow Device UDF 支持；
+- Ascend 910B2，以及经过验证的 CANN 8.5.1/9.0.0 DataFlow Device UDF 路径；
 - Qwen2.5-7B-Instruct，TP=1、PP=1；
 - vLLM V1 同步调度；
 - one-token prompt 后进入 decode；
@@ -75,7 +89,7 @@ decoding、preemption、cancellation、LoRA、TP/PP、多卡协调或 API server
 | `src/vllm_ascend_resident_epoch/` | vLLM scheduler、worker、contract 与 backend 接入 |
 | `controller/` | 当前 Device UDF 控制器 |
 | `controller-old/` | 为受控 ABI 对照保留的旧版控制器 |
-| `native/` | sidecar、bridge、AIR relocation 与 runtime-copy tracing |
+| `native/` | sidecar、bridge、AIR relocation 与 DataFlow/runtime tracing |
 | `config/` | DataFlow 与 graph 配置模板 |
 | `tests/` | 源码约束与集成单元测试 |
 | `storage_guard/` | 根盘空间、scratch、日志与清理保护 |
@@ -100,16 +114,16 @@ python verify_minimal_abi_source.py . \
   --baseline-source history/attempts/vllm-integration-attempt73-multi-epoch-cohort
 ```
 
-该子集目前包含 24 项测试。完整的 38 项测试还需要冻结版本的 PyTorch、vLLM 和
+该子集目前包含 27 项测试。完整的 44 项测试还需要冻结版本的 PyTorch、vLLM 和
 vLLM-Ascend 环境；native 执行还需要实验协议指定的 Ascend/DataFlow 工具链、
 decoder AIR 与外部权重。模型生成物和原始测量数据不会存入本仓库。
 
 ## 复现硬件实验
 
-`run_attempt74.sh` 是冻结的实验驱动脚本。它依赖 `PROTOCOL.md` 中定义的受保护
-服务器布局，将所有生成物暂存到带 marker 的 `/dev/shm` scratch 中，在加载模型前
-检查 NPU 与存储 readiness，并且只在根盘保留精简证据。如需适配新的路径，应创建
-一个明确版本化的新实验；直接修改冻结脚本会破坏与原实验的可比性。
+`run_attempt74.sh` 是版本化的实验驱动脚本。它从干净 Git checkout 启动，通过
+`CRUISE_*` 环境变量接收机器相关的外部资产路径，将生成物暂存到带 marker 的
+`/dev/shm` scratch，在加载模型前检查 NPU 与存储 readiness，并且只在根盘保留
+带 SHA256 manifest 的精简证据。CANN 8.5.1 正式运行后 scratch 已自动清理。
 
 ## 项目演进
 

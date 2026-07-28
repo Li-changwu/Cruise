@@ -45,24 +45,40 @@ new generation. See [PROTOCOL.md](PROTOCOL.md) for the exact Attempt 74 gate.
 
 ## Current Evidence
 
-The full-decoder G4 experiments established exact Host/Device token and state
-agreement for the frozen workload and reduced K Host submissions to one
-DataFlow Feed/Fetch pair. The final blocked-ABBA B=4 study reported median
-paired speedups of 1.55x, 3.56x, and 5.36x for K=2,4,8 respectively, with the
-Device route winning all 15 paired samples at every K. Those measurements
-predate the minimal ABI and are documented in
-[`history/attempts/g4/G4-STATUS-20260724.md`](history/attempts/g4/G4-STATUS-20260724.md).
+The formal CANN 8.5.1 Attempt 74 run used `old -> new -> new -> old`, with 30
+old and 30 new B=4/K=2 epochs. All 60 samples passed token, request-state,
+call-count, and timing-window checks. The observed DataFlow API-boundary
+payloads were:
 
-Attempt 74's source contract and local ABI tests pass. Its final per-epoch
-runtime-copy measurement was not completed because shared-NPU and root-storage
-readiness gates prevented a clean formal run. The repository therefore does
-not claim physical H2D/D2H byte reductions from the logical ABI reduction.
+| ABI | Feed/epoch | Fetch/epoch | Total/epoch |
+|---|---:|---:|---:|
+| old 10/10 | 58,720,516 B | 78,184,928 B | 136,905,444 B |
+| new 8/2 | 260 B | 368 B | 628 B |
+
+The reduction is 136,904,816 B per epoch. These values come from
+`Tensor::GetSize()` on the actual `FeedDataFlowGraph` and
+`FetchDataFlowGraph` tensors and exactly match the declared ledger; the
+analyzer does not substitute declared constants for measured values.
+
+Across the same 60 steady-state windows, the expanded tracer observed zero
+calls to the covered `rtMemcpy`/`rtsMemcpy` APIs. All 1,745 runtime memcpy and
+23 Mbuf records per process occurred during startup, outside measured epochs.
+CANN 8.5.1 application `msprof` cannot initialize this resident sidecar, so
+the DataFlow payload is **not** a measurement of PCIe, HCCS, or DMA link bytes.
+Cruise makes no physical-link traffic reduction claim.
+
+Across 30+30 samples, median Host-control wall time fell from 212.208 ms to
+59.951 ms, or 3.54x; median Python CPU time fell from 2.368 ms to 1.045 ms, or
+2.27x. See
+[`evidence/ATTEMPT74-CANN851-R5.md`](evidence/ATTEMPT74-CANN851-R5.md) for the
+complete result boundary and hashes. The earlier G4 K-sweep remains in
+[`history/attempts/g4/G4-STATUS-20260724.md`](history/attempts/g4/G4-STATUS-20260724.md).
 
 ## Support Boundary
 
 The currently validated envelope is:
 
-- Ascend 910B2 with CANN 9.0.0 and DataFlow Device UDF support;
+- Ascend 910B2 with the validated CANN 8.5.1/9.0.0 DataFlow Device UDF paths;
 - Qwen2.5-7B-Instruct, TP=1, PP=1;
 - synchronous vLLM V1 scheduling;
 - one-token prompts followed by decode;
@@ -81,7 +97,7 @@ not hidden compatibility assumptions.
 | `src/vllm_ascend_resident_epoch/` | vLLM scheduler, worker, contract, and backend integration |
 | `controller/` | current Device UDF controller |
 | `controller-old/` | old-ABI controller retained for controlled comparison |
-| `native/` | sidecar, bridge, AIR relocation, and runtime-copy tracing |
+| `native/` | sidecar, bridge, AIR relocation, and DataFlow/runtime tracing |
 | `config/` | DataFlow and graph configuration templates |
 | `tests/` | source-contract and integration unit tests |
 | `storage_guard/` | root-space, scratch, log, and cleanup safeguards |
@@ -107,7 +123,7 @@ python verify_minimal_abi_source.py . \
   --baseline-source history/attempts/vllm-integration-attempt73-multi-epoch-cohort
 ```
 
-This subset currently contains 24 tests. The full 38-test suite additionally
+This subset currently contains 27 tests. The full 44-test suite additionally
 requires the frozen PyTorch, vLLM, and vLLM-Ascend environment; native execution
 also requires the exact Ascend/DataFlow toolchain, decoder AIR, and external
 weights used by the protocol. Generated models and measurements are
@@ -115,12 +131,12 @@ deliberately not stored in this repository.
 
 ## Reproducing the Hardware Gate
 
-`run_attempt74.sh` is the frozen experiment driver. It expects the protected
-server layout described in `PROTOCOL.md`, stages all generated artifacts below
+`run_attempt74.sh` is the versioned experiment driver. It starts from a clean
+Git checkout, accepts machine-specific external asset paths through
+`CRUISE_*` environment variables, stages generated artifacts below
 marker-protected `/dev/shm` scratch, checks NPU and storage readiness, and
-retains only compact evidence. Adapt paths only as a new, explicitly versioned
-experiment; changing them in-place would invalidate comparison with the frozen
-gate.
+retains compact evidence with a SHA256 manifest. The formal CANN 8.5.1 run
+automatically removed its scratch tree after finalization.
 
 ## Project History
 

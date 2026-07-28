@@ -63,6 +63,15 @@ diagnostic payloads. The boundary changes from 10 inputs/10 outputs and
 136,905,444 declared bytes per epoch to 8 inputs/2 outputs and 628 declared
 bytes. The decoder ABI and accepted Attempt 73 semantics remain fixed.
 
+The formal CANN 8.5.1 blocked-ABBA run then observed the same old/new byte
+counts on the actual DataFlow Feed/Fetch tensors for all 60 measured epochs.
+Median Host-control wall time changed from 212.208 ms to 59.951 ms (3.54x).
+No covered runtime memcpy or Mbuf event occurred inside any measured epoch;
+all such records were startup-only. Physical-link bytes remain unobserved
+because application `msprof` cannot initialize the resident sidecar on this
+CANN release. The accepted result boundary is recorded in
+`evidence/ATTEMPT74-CANN851-R5.md`.
+
 Sources: `history/attempts/vllm-integration-attempt71-*` through
 `history/attempts/vllm-integration-attempt73-*`, followed by the active root.
 
