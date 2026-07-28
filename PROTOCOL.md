@@ -158,6 +158,12 @@ runtime memcpy API. Filtered per-epoch rows, raw traces, and SHA256 values are
 retained, and the independent verifier reconstructs all 60 windows from the
 raw trace.
 
+The four formal ABBA raw traces are copied from scratch into compact evidence
+only after a 16 MiB per-file bound is enforced. Their hashes, the filtered
+rows, the Git source origin and commit, and every nested evidence file are
+covered by the final recursive integrity manifest. This keeps the result
+independently verifiable after scratch cleanup.
+
 The DataFlow tensor payload is an observed runtime API-boundary payload, not a
 declared constant substituted by the analyzer. It is also not claimed to be
 PCIe, HCCS, DMA, or other physical-link traffic. A physical-byte claim remains

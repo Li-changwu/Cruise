@@ -23,6 +23,7 @@ profiler=${scratch}/profiler
 cann_logs=${scratch}/cann-logs
 tmp=${scratch}/t
 transfer_trace=${scratch}/transfer-trace
+raw_transfer_evidence=${evidence}/transfer-trace-raw
 runtime_workdir=${scratch}/runtime-workdir
 frozen_air=${CRUISE_FROZEN_AIR:-${root}/export-attempt69c-r2-b4/qwen_b4_decoder_step_attempt69c_r2.air}
 tiling=${CRUISE_TILING:-${root}/raw-attempt69d-r1-b4-native/native-inputs/case0/explicit_tiling.bin}
@@ -112,6 +113,8 @@ finalized=0
 source_is_git=0
 if git -C "${src}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   source_is_git=1
+  git -C "${src}" rev-parse HEAD >"${evidence}/source-commit.txt"
+  git -C "${src}" remote get-url origin >"${evidence}/source-origin.txt"
   git -C "${src}" status --porcelain --untracked-files=all \
     >"${evidence}/source-worktree-pre.txt"
   if [[ -s "${evidence}/source-worktree-pre.txt" ]]; then
@@ -238,6 +241,23 @@ sha256sum "${model}/config.json" "${model}/model.safetensors.index.json" \
 git -C "${vllm_root}" rev-parse HEAD >"${evidence}/vllm-commit.txt"
 git -C "${vllm_ascend_root}" rev-parse HEAD \
   >"${evidence}/vllm-ascend-commit.txt"
+{
+  printf 'key\tvalue\n'
+  printf 'run_id\t%s\n' "${run_id}"
+  printf 'source_dir\t%s\n' "${src}"
+  printf 'conda_env\t%s\n' "${conda_env}"
+  printf 'python\t%s\n' "$(command -v python3)"
+  printf 'cann_set_env\t%s\n' "${cann_set_env}"
+  printf 'physical_npu\t%s\n' "${physical_npu}"
+  printf 'frozen_air\t%s\n' "${frozen_air}"
+  printf 'tiling\t%s\n' "${tiling}"
+  printf 'baseline_result\t%s\n' "${baseline}"
+  printf 'model_dir\t%s\n' "${model}"
+  printf 'resource_config\t%s\n' "${resource_config}"
+  printf 'scratch_dir\t%s\n' "${scratch}"
+  printf 'evidence_dir\t%s\n' "${evidence}"
+  printf 'msprof_mode\t%s\n' "${msprof_mode}"
+} >"${evidence}/deployment-config.tsv"
 
 run_step cann-python-smoke 120s python3 -c 'import tbe' || exit $?
 run_step unit-tests 600s python3 -m pytest -q "${src}/tests" || exit $?
@@ -361,6 +381,15 @@ run_block new-1 new yes || exit $?
 run_block new-2 new no || exit $?
 run_block old-2 old no || exit $?
 
+oversized_transfer_trace=$(find "${transfer_trace}" -maxdepth 1 -type f \
+  -size +16M -print -quit)
+if [[ -n "${oversized_transfer_trace}" ]]; then
+  printf 'archive-transfer-traces\t93\n' >>"${status}"
+  exit 93
+fi
+run_step archive-transfer-traces 120s cp -a "${transfer_trace}" \
+  "${raw_transfer_evidence}" || exit $?
+
 find "${profiler}" -type f -printf '%P\t%s\n' | sort \
   >"${evidence}/msprof-files.tsv"
 msprof_reason_args=()
@@ -376,13 +405,13 @@ run_step summarize-msprof-transfers 600s python3 \
 
 run_step summarize-transfer-trace 600s python3 \
   "${src}/summarize_runtime_memcpy.py" \
-  --old-1-trace "${transfer_trace}/old-1.tsv" \
+  --old-1-trace "${raw_transfer_evidence}/old-1.tsv" \
   --old-1-result "${evidence}/${run_id}-old-1.json" \
-  --new-1-trace "${transfer_trace}/new-1.tsv" \
+  --new-1-trace "${raw_transfer_evidence}/new-1.tsv" \
   --new-1-result "${evidence}/${run_id}-new-1.json" \
-  --new-2-trace "${transfer_trace}/new-2.tsv" \
+  --new-2-trace "${raw_transfer_evidence}/new-2.tsv" \
   --new-2-result "${evidence}/${run_id}-new-2.json" \
-  --old-2-trace "${transfer_trace}/old-2.tsv" \
+  --old-2-trace "${raw_transfer_evidence}/old-2.tsv" \
   --old-2-result "${evidence}/${run_id}-old-2.json" \
   --filtered-dir "${evidence}/transfer-trace-filtered" \
   --output "${evidence}/${run_id}-transfer-trace-summary.json" || exit $?
@@ -429,7 +458,7 @@ capture_after
 sha256sum "${evidence}/${run_id}-result.json" "${status}" \
   "${evidence}/native-bridge-integrity.log" \
   >"${evidence}/result-integrity.log" 2>/dev/null || true
-find "${evidence}" -maxdepth 1 -type f ! -name evidence-integrity.log \
+find "${evidence}" -type f ! -name evidence-integrity.log \
   -print0 | sort -z | xargs -0 sha256sum \
   >"${evidence}/evidence-integrity.log"
 storage_guard_finalize

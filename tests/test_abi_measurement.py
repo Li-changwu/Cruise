@@ -40,6 +40,11 @@ def test_attempt74_uses_relocatable_custom_opp_roots():
     assert 'dirname "$(dirname "${materialize_set_env}")"' in driver
     assert 'source "${custom_set_env}"' not in driver
     assert "${materialize_opp_vendor}:${barrier_opp_vendor}:${custom_opp_vendor}" in driver
+    assert 'git -C "${src}" rev-parse HEAD >"${evidence}/source-commit.txt"' in driver
+    assert 'git -C "${src}" remote get-url origin >"${evidence}/source-origin.txt"' in driver
+    assert 'run_step archive-transfer-traces 120s cp -a "${transfer_trace}"' in driver
+    assert '--old-1-trace "${raw_transfer_evidence}/old-1.tsv"' in driver
+    assert 'find "${evidence}" -type f ! -name evidence-integrity.log' in driver
 
 
 def test_msprof_summary_never_substitutes_logical_bytes(tmp_path):
