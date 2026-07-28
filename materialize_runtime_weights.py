@@ -12,6 +12,12 @@ from safetensors import safe_open
 
 
 MODEL_REVISION = "a09a35458c702b33eeacc393d103063234e8bc28"
+MODEL_CONFIG_SHA256 = (
+    "7463bb0ea78315365e6c6b74de4e73bbcc8359dfb0c5a737584e077d42c0b03c"
+)
+MODEL_INDEX_SHA256 = (
+    "624bf7c47cd12468fdc16e38a47cf4f19e0415b859a223ba3c027eed2f0e1028"
+)
 NUM_LAYERS = 28
 HIDDEN_SIZE = 3584
 INTERMEDIATE_SIZE = 18944
@@ -125,6 +131,16 @@ def write_tensor(path: Path, tensor: torch.Tensor) -> None:
         raise RuntimeError(f"short tensor write: {path}")
 
 
+def validate_model_identity(model_dir: Path) -> tuple[Path, Path]:
+    config_path = model_dir / "config.json"
+    index_path = model_dir / "model.safetensors.index.json"
+    if sha256(config_path) != MODEL_CONFIG_SHA256:
+        raise RuntimeError("model config hash does not match the frozen revision")
+    if sha256(index_path) != MODEL_INDEX_SHA256:
+        raise RuntimeError("model index hash does not match the frozen revision")
+    return config_path, index_path
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-dir", type=Path, required=True)
@@ -133,15 +149,12 @@ def main() -> int:
     args = parser.parse_args()
 
     model_dir = args.model_dir.resolve(strict=True)
-    if model_dir.name != MODEL_REVISION:
-        raise RuntimeError(f"unexpected model revision: {model_dir.name}")
     output_dir = args.output_dir.resolve()
     if not str(output_dir).startswith("/dev/shm/"):
         raise RuntimeError("runtime weights must be materialized under /dev/shm")
     output_dir.mkdir(parents=True, exist_ok=False)
 
-    config_path = model_dir / "config.json"
-    index_path = model_dir / "model.safetensors.index.json"
+    config_path, index_path = validate_model_identity(model_dir)
     config = json.loads(config_path.read_text(encoding="utf-8"))
     index = json.loads(index_path.read_text(encoding="utf-8"))
     destinations = checkpoint_destinations()
@@ -230,7 +243,8 @@ def main() -> int:
         "gate": "Attempt 71 runtime external-weight materialization",
         "pass": True,
         "model_revision": MODEL_REVISION,
-        "model_index_sha256": sha256(index_path),
+        "model_config_sha256": MODEL_CONFIG_SHA256,
+        "model_index_sha256": MODEL_INDEX_SHA256,
         "checkpoint_tensors": EXPECTED_CHECKPOINT_TENSORS,
         "derived_tensors": len(derived),
         "external_files": len(files),
