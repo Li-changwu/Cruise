@@ -1,0 +1,198 @@
+{
+  "checks": {
+    "cleanup_did_not_execute_model": true,
+    "exact_output_length": true,
+    "host_device_kv_checksum_equal": true,
+    "import_epoch_k2": true,
+    "one_feed_fetch_per_epoch": true,
+    "one_import_epoch": true,
+    "ownership_transferred": true,
+    "request_drained": true,
+    "steady_epoch_k1": true,
+    "steady_minimal_abi": true,
+    "stock_prefill_first": true,
+    "token_steps_executed_model": true
+  },
+  "max_tokens": 4,
+  "mode": "cruise",
+  "model": "/root/ascend-control-cruise-20260729/artifacts/model-frozen",
+  "pass": true,
+  "prompt_token_ids": [
+    9707,
+    11,
+    358
+  ],
+  "request_drained": true,
+  "resolved_classes": {
+    "runner": "vllm_ascend.worker.model_runner_v1.NPUModelRunner",
+    "scheduler": "vllm_ascend_resident_epoch.scheduler.ResidentEpochScheduler",
+    "worker": "vllm_ascend.worker.worker.NPUWorker"
+  },
+  "schema_version": 1,
+  "steps": [
+    {
+      "engine_outputs": [
+        {
+          "client_index": 0,
+          "finish_reason": null,
+          "request_id": "m1-cruise",
+          "stop_reason": null,
+          "tokens": [
+            2776
+          ]
+        }
+      ],
+      "index": 0,
+      "model_executed": true,
+      "new_tokens": [
+        2776
+      ],
+      "plan": null,
+      "result": null,
+      "scheduler_rejection": "not-single-token-decode"
+    },
+    {
+      "engine_outputs": [
+        {
+          "client_index": 0,
+          "finish_reason": null,
+          "request_id": "m1-cruise",
+          "stop_reason": null,
+          "tokens": [
+            4460,
+            311
+          ]
+        }
+      ],
+      "index": 1,
+      "model_executed": true,
+      "new_tokens": [
+        4460,
+        311
+      ],
+      "plan": {
+        "active_mask": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "max_steps": 2,
+        "requests": [
+          {
+            "device_block_ids": [
+              0,
+              1
+            ],
+            "generation": 1,
+            "kv_import_required": true,
+            "position": 3,
+            "req_id": "m1-cruise",
+            "row": 0,
+            "scheduler_block_ids": [
+              1
+            ],
+            "sequence_length": 4,
+            "state_owner": "host",
+            "token_id": 2776
+          }
+        ]
+      },
+      "result": {
+        "commit_state": "COMMITTED",
+        "computed_steps": {
+          "m1-cruise": 2
+        },
+        "declared_input_bytes": 29360372,
+        "declared_output_bytes": 368,
+        "device_kv_checksum": 3477654769,
+        "feed_calls": 1,
+        "fetch_calls": 1,
+        "host_kv_checksum": 3477654769,
+        "kv_imported": true,
+        "model_calls": 2,
+        "route": "device",
+        "status": 0
+      },
+      "scheduler_rejection": null
+    },
+    {
+      "engine_outputs": [
+        {
+          "client_index": 0,
+          "finish_reason": 1,
+          "request_id": "m1-cruise",
+          "stop_reason": null,
+          "tokens": [
+            1855
+          ]
+        }
+      ],
+      "index": 2,
+      "model_executed": true,
+      "new_tokens": [
+        1855
+      ],
+      "plan": {
+        "active_mask": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "max_steps": 1,
+        "requests": [
+          {
+            "device_block_ids": [
+              0,
+              1
+            ],
+            "generation": 1,
+            "kv_import_required": false,
+            "position": 5,
+            "req_id": "m1-cruise",
+            "row": 0,
+            "scheduler_block_ids": [
+              1
+            ],
+            "sequence_length": 6,
+            "state_owner": "device",
+            "token_id": 311
+          }
+        ]
+      },
+      "result": {
+        "commit_state": "COMMITTED",
+        "computed_steps": {
+          "m1-cruise": 1
+        },
+        "declared_input_bytes": 260,
+        "declared_output_bytes": 368,
+        "device_kv_checksum": 0,
+        "feed_calls": 1,
+        "fetch_calls": 1,
+        "host_kv_checksum": 0,
+        "kv_imported": false,
+        "model_calls": 1,
+        "route": "device",
+        "status": 0
+      },
+      "scheduler_rejection": null
+    },
+    {
+      "engine_outputs": [],
+      "index": 3,
+      "model_executed": false,
+      "new_tokens": [],
+      "plan": null,
+      "result": null,
+      "scheduler_rejection": "empty-schedule"
+    }
+  ],
+  "tokens": [
+    2776,
+    4460,
+    311,
+    1855
+  ]
+}

@@ -219,12 +219,14 @@ extern "C" int32_t resident_epoch_execute(
     int32_t *output_row_generations,
     int32_t *output_model_calls, int32_t *output_device_status,
     int32_t *output_feed_calls, int32_t *output_fetch_calls,
-    int32_t *output_commit_state,
+    int32_t *output_commit_state, int32_t *output_kv_import_checksum,
     int64_t *output_wall_us, int64_t *output_native_cpu_us,
     int64_t *output_declared_input_bytes,
-    int64_t *output_declared_output_bytes) {
+    int64_t *output_declared_output_bytes,
+    const char *transfer_path, uint64_t transfer_id) {
   if (output_commit_state == nullptr) return 10;
   *output_commit_state = CRUISE_EPOCH_PREPARED;
+  if (transfer_path != nullptr || transfer_id != 0) return 14;
   if (opaque == nullptr || request_count < 1 || request_count > kBatchSize ||
       max_steps < 1 || max_steps > kMaxEpochSteps ||
       input_token_ids == nullptr || input_positions == nullptr ||
@@ -234,6 +236,7 @@ extern "C" int32_t resident_epoch_execute(
       output_row_generations == nullptr ||
       output_model_calls == nullptr || output_device_status == nullptr ||
       output_feed_calls == nullptr || output_fetch_calls == nullptr ||
+      output_kv_import_checksum == nullptr ||
       output_wall_us == nullptr || output_native_cpu_us == nullptr ||
       output_declared_input_bytes == nullptr ||
       output_declared_output_bytes == nullptr) {
@@ -245,6 +248,7 @@ extern "C" int32_t resident_epoch_execute(
   *output_device_status = -1;
   *output_feed_calls = 0;
   *output_fetch_calls = 0;
+  *output_kv_import_checksum = 0;
   *output_wall_us = 0;
   *output_native_cpu_us = 0;
   *output_declared_input_bytes = kDeclaredInputBytes;

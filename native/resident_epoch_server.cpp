@@ -18,6 +18,7 @@ constexpr uint16_t kProtocolVersion = CRUISE_SIDECAR_PROTOCOL_VERSION;
 constexpr uint16_t kExecute = 1;
 constexpr uint16_t kWarmUp = 2;
 constexpr uint16_t kShutdown = 3;
+constexpr uint16_t kImportExecute = 4;
 constexpr int32_t kBatchSize = 4;
 constexpr int32_t kMaxEpochSteps = 8;
 
@@ -28,6 +29,7 @@ struct Request {
   uint16_t operation;
   int32_t request_count;
   int32_t max_steps;
+  uint64_t transfer_id;
   int64_t token_ids[kBatchSize];
   int64_t positions[kBatchSize];
   int32_t sequence_lengths[kBatchSize];
@@ -132,6 +134,7 @@ int main(int argc, char **argv) {
     return 64;
   }
   const char *socket_path = argv[1];
+  const std::string transfer_path = std::string(socket_path) + ".kv-transfer";
   const int listener = CreateListener(socket_path);
   if (listener < 0) return 65;
   const int client = accept(listener, nullptr, nullptr);
@@ -168,7 +171,8 @@ int main(int argc, char **argv) {
       if (!WriteAll(client, &response, sizeof(response))) exit_status = 70;
       break;
     } else if (request.operation != kExecute &&
-               request.operation != kWarmUp) {
+               request.operation != kWarmUp &&
+               request.operation != kImportExecute) {
       response.transport_status = 71;
     } else {
       response.transport_status = resident_epoch_execute(
@@ -176,10 +180,13 @@ int main(int argc, char **argv) {
           request.positions, request.sequence_lengths, request.eos_token_ids,
           request.row_generations, response.token_ids, response.executed,
           response.row_generations, &response.model_calls,
-          &response.device_status, &response.feed_calls,
-          &response.fetch_calls, &response.commit_state,
-          &response.wall_us, &response.native_cpu_us,
-          &response.declared_input_bytes, &response.declared_output_bytes);
+           &response.device_status, &response.feed_calls,
+           &response.fetch_calls, &response.commit_state, &response.reserved,
+           &response.wall_us, &response.native_cpu_us,
+           &response.declared_input_bytes, &response.declared_output_bytes,
+           request.operation == kImportExecute ? transfer_path.c_str() : nullptr,
+           request.transfer_id);
+      if (request.operation == kImportExecute) unlink(transfer_path.c_str());
     }
     if (!WriteAll(client, &response, sizeof(response))) {
       exit_status = 72;
@@ -191,5 +198,6 @@ int main(int argc, char **argv) {
   close(client);
   close(listener);
   unlink(socket_path);
+  unlink(transfer_path.c_str());
   return exit_status;
 }

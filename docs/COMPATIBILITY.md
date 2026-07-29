@@ -38,10 +38,10 @@ machine-readable profile and the Attempt 74 evidence.
 
 | Contract | Version or shape |
 |---|---:|
-| Python scheduler/result contract | 2 |
+| Python scheduler/result contract | 3 |
 | Runtime configuration schema | 1 |
-| Sidecar wire protocol | 4 |
-| Sidecar request / response | 128 B / 352 B |
+| Sidecar wire protocol | 5 |
+| Sidecar request / response | 136 B / 352 B |
 | Host-UDF ABI | 2, 8 inputs / 2 outputs |
 | Internal decoder ABI | 1, 9 inputs / 4 outputs |
 
@@ -74,6 +74,15 @@ architecture, NPU product and health. `runtime` additionally checks paths,
 executable permissions, UDF shape, hashes, weight count/bytes, OPP layout and
 scratch capacity. `--deep` hashes every external-weight file and is intended
 for deployment qualification rather than every process start.
+
+## M1 Validated Extension
+
+The 2026-07-29 M1 checkpoint extends the validated correctness envelope with
+one B=1 request using a three-token stock-vLLM prefill and four greedy output
+tokens. The first resident epoch imports one 128-token Paged-KV block for all
+28 layers and executes K=2; the following Device-owned epoch executes K=1
+through the steady 8-input/2-output ABI. This does not extend the profile to
+arbitrary prompt lengths, mixed batches, or continuous admission.
 
 ## Claim Boundary
 

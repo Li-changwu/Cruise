@@ -45,6 +45,7 @@ class ResidentEpochRequest:
     scheduler_block_ids: tuple[int, ...]
     device_block_ids: tuple[int, int]
     state_owner: Literal["host", "device"] = "host"
+    kv_import_required: bool = False
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,8 @@ class ResidentEpochPlan:
                 raise ValueError("sequence length and position disagree")
             if request.state_owner not in ("host", "device"):
                 raise ValueError("resident request has an invalid state owner")
+            if request.kv_import_required and request.state_owner != "host":
+                raise ValueError("KV import requires Host-owned request state")
             if request.position + self.max_steps > self.logical_capacity:
                 raise ValueError("epoch exceeds logical capacity")
         if tuple(expected_active) != self.active_mask:
@@ -127,6 +130,9 @@ class ResidentEpochResult:
     declared_output_bytes: int = 0
     socket_send_calls: int = 1
     socket_receive_calls: int = 1
+    kv_imported: bool = False
+    kv_import_checksum: int = 0
+    kv_snapshot_checksum: int = 0
 
     def validate_against(
         self,
@@ -152,6 +158,16 @@ class ResidentEpochResult:
             raise ValueError("device epoch must use exactly one Feed and one Fetch")
         if self.route == "device" and self.row_generations != plan.row_generations:
             raise ValueError("device resident generations disagree with the plan")
+        if self.route == "device" and any(
+            request.kv_import_required for request in plan.requests
+        ) and not self.kv_imported:
+            raise ValueError("device result did not commit the requested KV import")
+        if self.kv_imported and (
+            self.kv_import_checksum == 0
+            or self.kv_snapshot_checksum == 0
+            or self.kv_import_checksum != self.kv_snapshot_checksum
+        ):
+            raise ValueError("device result did not prove equivalent imported KV")
         if self.route == "host_fallback" and not self.fallback_safe:
             raise ValueError("host fallback must be declared input-preserving")
         if (

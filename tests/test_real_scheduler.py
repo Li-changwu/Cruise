@@ -148,3 +148,66 @@ def test_real_scheduler_to_dedicated_worker_control_path(monkeypatch):
         assert request.num_computed_tokens == 4
         assert request.num_output_tokens == 4
         assert request.status == RequestStatus.FINISHED_LENGTH_CAPPED
+
+
+def test_host_prefill_transitions_to_device_owned_decode():
+    scheduler = make_scheduler(1)
+    request = create_requests(
+        num_requests=1,
+        num_tokens=3,
+        max_tokens=4,
+        block_size=128,
+    )[0]
+    request.sampling_params.temperature = 0.0
+    request.sampling_params.update_from_generation_config({}, EOS_TOKEN_ID)
+    scheduler.add_request(request)
+
+    prefill = scheduler.schedule()
+    assert get_plan(prefill) is None
+    assert scheduler._resident_epoch_last_rejection == "not-single-token-decode"
+    prefill_output = ModelRunnerOutput(
+        req_ids=[request.request_id],
+        req_id_to_index={request.request_id: 0},
+        sampled_token_ids=[[101]],
+    )
+    scheduler.update_from_output(prefill, prefill_output)
+    assert request.num_computed_tokens == 3
+    assert request.num_output_tokens == 1
+
+    first_decode = scheduler.schedule()
+    plan = get_plan(first_decode)
+    assert plan is not None
+    assert plan.max_steps == 2
+    assert plan.requests[0].position == 3
+    assert plan.requests[0].sequence_length == 4
+    assert plan.requests[0].token_id == 101
+    assert plan.requests[0].state_owner == "host"
+    assert plan.requests[0].kv_import_required
+
+    decode_output = ModelRunnerOutput(
+        req_ids=[request.request_id],
+        req_id_to_index={request.request_id: 0},
+        sampled_token_ids=[[102, 103]],
+    )
+    attach_result(
+        decode_output,
+        ResidentEpochResult(
+            version=CONTRACT_VERSION,
+            route="device",
+            status=0,
+            model_calls=2,
+            computed_steps={request.request_id: 2},
+            row_generations=plan.row_generations,
+            kv_imported=True,
+            kv_import_checksum=1,
+            kv_snapshot_checksum=1,
+        ),
+    )
+    scheduler.update_from_output(first_decode, decode_output)
+    assert request.request_id in scheduler._resident_epoch_device_owned
+
+    next_decode = scheduler.schedule()
+    next_plan = get_plan(next_decode)
+    assert next_plan is not None
+    assert next_plan.requests[0].state_owner == "device"
+    assert not next_plan.requests[0].kv_import_required

@@ -13,6 +13,7 @@ from .contract import (
     ResidentEpochExecutionError,
     attach_result,
 )
+from .kv_transfer import ResidentKVSnapshot
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,8 @@ class NativeEpochOutput:
     declared_output_bytes: int = 0
     socket_send_calls: int = 1
     socket_receive_calls: int = 1
+    kv_imported: bool = False
+    kv_import_checksum: int = 0
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,10 @@ class NativeEpochEngine(Protocol):
 
     def execute(self, plan: ResidentEpochPlan) -> NativeEpochOutput: ...
 
+    def execute_with_import(
+        self, plan: ResidentEpochPlan, snapshot: ResidentKVSnapshot
+    ) -> NativeEpochOutput: ...
+
 
 class ResidentEpochBackend:
     def __init__(self, engine: NativeEpochEngine):
@@ -70,7 +77,16 @@ class ResidentEpochBackend:
             raise RuntimeError("resident warmup must execute one complete decoder step")
         return output
 
-    def execute(self, plan: ResidentEpochPlan) -> ModelRunnerOutput:
+    def close(self) -> None:
+        close = getattr(self.engine, "close", None)
+        if callable(close):
+            close()
+
+    def execute(
+        self,
+        plan: ResidentEpochPlan,
+        snapshot: ResidentKVSnapshot | None = None,
+    ) -> ModelRunnerOutput:
         try:
             plan.validate()
         except Exception as exc:
@@ -79,7 +95,16 @@ class ResidentEpochBackend:
                 commit_state=EpochCommitState.PREPARED,
             ) from exc
         try:
-            native_output = self.engine.execute(plan)
+            if snapshot is None:
+                native_output = self.engine.execute(plan)
+            else:
+                execute_with_import = getattr(self.engine, "execute_with_import", None)
+                if not callable(execute_with_import):
+                    raise ResidentEpochExecutionError(
+                        "resident backend does not support KV import",
+                        commit_state=EpochCommitState.PREPARED,
+                    )
+                native_output = execute_with_import(plan, snapshot)
         except ResidentEpochExecutionError:
             raise
         except Exception as exc:
@@ -98,6 +123,14 @@ class ResidentEpochBackend:
             raise ResidentEpochExecutionError(
                 "successful native resident epoch was not committed",
                 commit_state=native_output.commit_state,
+            )
+        if (
+            snapshot is not None
+            and native_output.kv_import_checksum != snapshot.checksum
+        ):
+            raise ResidentEpochExecutionError(
+                "resident KV import checksum disagrees with the Host snapshot",
+                commit_state=EpochCommitState.COMMITTED,
             )
         if set(native_output.token_ids) != set(plan.req_ids):
             raise ResidentEpochExecutionError(
@@ -125,6 +158,9 @@ class ResidentEpochBackend:
             declared_output_bytes=native_output.declared_output_bytes,
             socket_send_calls=native_output.socket_send_calls,
             socket_receive_calls=native_output.socket_receive_calls,
+            kv_imported=native_output.kv_imported,
+            kv_import_checksum=native_output.kv_import_checksum,
+            kv_snapshot_checksum=snapshot.checksum if snapshot is not None else 0,
         )
         try:
             result.validate_against(

@@ -196,3 +196,76 @@ def test_only_prepared_execution_error_is_input_preserving():
     assert prepared.input_preserving
     assert not executing.input_preserving
     assert not committed.input_preserving
+
+
+def test_kv_import_requires_host_ownership_and_commit_acknowledgement():
+    base = make_plan()
+    request = base.requests[0]
+    importing_request = ResidentEpochRequest(
+        req_id=request.req_id,
+        row=request.row,
+        generation=request.generation,
+        token_id=request.token_id,
+        position=request.position,
+        sequence_length=request.sequence_length,
+        eos_token_id=request.eos_token_id,
+        scheduler_block_ids=request.scheduler_block_ids,
+        device_block_ids=request.device_block_ids,
+        state_owner="host",
+        kv_import_required=True,
+    )
+    plan = ResidentEpochPlan(
+        version=base.version,
+        graph_batch_size=base.graph_batch_size,
+        max_steps=base.max_steps,
+        logical_capacity=base.logical_capacity,
+        requests=(importing_request,),
+        active_mask=base.active_mask,
+    )
+    plan.validate()
+    result = ResidentEpochResult(
+        version=CONTRACT_VERSION,
+        route="device",
+        status=0,
+        model_calls=4,
+        computed_steps={"r0": 4},
+        row_generations=plan.row_generations,
+    )
+    with pytest.raises(ValueError, match="did not commit"):
+        result.validate_against(plan, {"r0": [2, 3, 4, 5]})
+
+    proven_result = ResidentEpochResult(
+        **{
+            **result.__dict__,
+            "kv_imported": True,
+            "kv_import_checksum": 123,
+            "kv_snapshot_checksum": 123,
+        }
+    )
+    proven_result.validate_against(plan, {"r0": [2, 3, 4, 5]})
+
+    mismatched_result = ResidentEpochResult(
+        **{
+            **proven_result.__dict__,
+            "kv_import_checksum": 124,
+        }
+    )
+    with pytest.raises(ValueError, match="equivalent imported KV"):
+        mismatched_result.validate_against(plan, {"r0": [2, 3, 4, 5]})
+
+    invalid_request = ResidentEpochRequest(
+        **{
+            **importing_request.__dict__,
+            "state_owner": "device",
+        }
+    )
+    invalid_plan = ResidentEpochPlan(
+        version=base.version,
+        graph_batch_size=base.graph_batch_size,
+        max_steps=base.max_steps,
+        logical_capacity=base.logical_capacity,
+        requests=(invalid_request,),
+        active_mask=base.active_mask,
+    )
+    with pytest.raises(ValueError, match="Host-owned"):
+        invalid_plan.validate()

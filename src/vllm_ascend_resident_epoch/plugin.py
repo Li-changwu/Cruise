@@ -11,6 +11,7 @@ from .contract import (
     attach_result,
     get_plan,
 )
+from .kv_transfer import capture_kv_snapshot
 
 
 def _execute_model_with_fallback(
@@ -33,7 +34,14 @@ def _execute_model_with_fallback(
             return attach_host_fallback_result(output, plan.req_ids)
         worker._resident_epoch_backend = backend
     try:
-        return backend.execute(plan)
+        snapshot = (
+            capture_kv_snapshot(worker, plan)
+            if any(request.kv_import_required for request in plan.requests)
+            else None
+        )
+        if snapshot is None:
+            return backend.execute(plan)
+        return backend.execute(plan, snapshot=snapshot)
     except ResidentEpochExecutionError as exc:
         if not exc.input_preserving or not plan.host_replay_safe:
             raise
@@ -48,14 +56,26 @@ def register() -> None:
         return
 
     original_execute_model = NPUWorker.execute_model
+    original_shutdown = NPUWorker.shutdown
 
     def execute_model(self: Any, scheduler_output: Any):
         return _execute_model_with_fallback(
             self, scheduler_output, original_execute_model
         )
 
+    def shutdown(self: Any) -> None:
+        backend = getattr(self, "_resident_epoch_backend", None)
+        try:
+            if backend is not None:
+                backend.close()
+        finally:
+            self._resident_epoch_backend = None
+            original_shutdown(self)
+
     NPUWorker.execute_model = execute_model
+    NPUWorker.shutdown = shutdown
     NPUWorker._resident_epoch_original_execute_model = original_execute_model
+    NPUWorker._resident_epoch_original_shutdown = original_shutdown
 
 
 def attach_host_fallback_result(

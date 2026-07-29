@@ -156,7 +156,7 @@ leaves no untracked source files or unbounded persistent artifacts.
 
 ### M1: End-to-End Serving Semantics
 
-- [ ] Implement a real prefill-to-resident-decode ownership transition and
+- [x] Implement a real prefill-to-resident-decode ownership transition and
   prove token and Paged-KV equivalence against unmodified vLLM for nontrivial
   prompts.
 - [ ] Support continuous admission, completion, and row reuse at epoch
@@ -183,9 +183,24 @@ The dependency-light suite has 50 passing tests; the frozen server environment
 has 70 passing tests; and CANN 8.5.1 compiled both new/old bridge and server
 targets. The evidence is in
 [`M1-COMMIT-STATE-20260729.md`](../evidence/M1-COMMIT-STATE-20260729.md).
-M1 remains open because real prefill ownership transfer, streaming API
-semantics, continuous admission/row reuse, cancellation, and hardware fault
-injection have not yet been qualified.
+M1 second increment (2026-07-29): stock vLLM executed a real three-token
+prefill on `NPUWorker`, after which Cruise copied the scheduler-owned Paged-KV
+block once, imported it into the resident cache, executed K=2, transferred
+state ownership to the device, and executed the remaining K=1 epoch through
+the unchanged 260-byte/368-byte steady ABI. The Host snapshot and Device cache
+checksums both equalled `3477654769`; stock and Cruise produced the exact token
+sequence `[2776, 4460, 311, 1855]`. Python contract v3, sidecar protocol v5,
+generation-checked transfer files, checksum fail-stop behavior, child-only OPP
+environment isolation, and sidecar shutdown from stock `NPUWorker` are now in
+the active source. The dependency-light and frozen-environment suites report
+51 and 73 passing tests, respectively. Evidence is in
+[`M1-PREFILL-TRANSFER-20260729.md`](../evidence/M1-PREFILL-TRANSFER-20260729.md).
+
+M1 remains open. The next ordered gates are: simultaneous B=1-4 nontrivial
+prefills with mixed output budgets; continuous admission, completion, and
+generation-checked row reuse at epoch boundaries; unsupported-request routing
+before ownership transfer; API streaming and non-streaming ordering; then
+disconnect/cancellation and the 1,000-request differential exit suite.
 
 ### M2: Lifecycle, Recovery, and Resource Safety
 

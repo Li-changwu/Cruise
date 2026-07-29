@@ -26,6 +26,7 @@ class ResidentEpochScheduler(Scheduler):
         self._resident_epoch_last_result: Any | None = None
         self._resident_epoch_rows: dict[str, int] = {}
         self._resident_epoch_generations: dict[str, int] = {}
+        self._resident_epoch_device_owned: set[str] = set()
         self._resident_epoch_next_generation = 1
         if self.vllm_config.speculative_config is not None:
             raise ValueError("resident epoch scheduler cannot be combined with speculative decoding")
@@ -49,6 +50,8 @@ class ResidentEpochScheduler(Scheduler):
             self._resident_epoch_rows = {}
             self._resident_epoch_generations = {}
             self._resident_epoch_next_generation = 1
+        if not hasattr(self, "_resident_epoch_device_owned"):
+            self._resident_epoch_device_owned = set()
         return config
 
     def _assign_resident_rows(self, req_ids: tuple[str, ...]) -> None:
@@ -57,6 +60,7 @@ class ResidentEpochScheduler(Scheduler):
             if req_id not in requested:
                 del self._resident_epoch_rows[req_id]
                 del self._resident_epoch_generations[req_id]
+                self._resident_epoch_device_owned.discard(req_id)
 
         free_rows = sorted(
             set(range(self._resident_epoch_config.max_batch_size))
@@ -130,19 +134,22 @@ class ResidentEpochScheduler(Scheduler):
         if set(req_ids) != {request.request_id for request in self.running}:
             return None, "partial-running-set"
 
+        self._assign_resident_rows(req_ids)
         requests = [self.requests[req_id] for req_id in req_ids]
         remaining_steps: list[int] = []
         for request in requests:
             reason = request_rejection_reason(request)
             if reason is not None:
                 return None, reason
-            if request.num_prompt_tokens != 1:
-                return None, "native-kv-not-owned"
-            if (
-                request.num_output_tokens != 0
-                and request.request_id not in self._resident_epoch_rows
-            ):
-                return None, "native-kv-not-owned"
+            if request.num_prompt_tokens > config.logical_capacity:
+                return None, "prompt-exceeds-resident-capacity"
+            if request.num_prompt_tokens > 1 and request.num_output_tokens == 0:
+                return None, "host-prefill-in-progress"
+            if request.num_prompt_tokens > 1 and request.request_id not in self._resident_epoch_device_owned:
+                if request.num_output_tokens == 0:
+                    return None, "host-prefill-in-progress"
+                if len(self.kv_cache_manager.get_blocks(request.request_id).get_block_ids()) != 1:
+                    return None, "multiple-kv-cache-groups"
             if request.num_computed_tokens != request.num_tokens:
                 return None, "computed-token-accounting"
             remaining = request.max_tokens - request.num_output_tokens
@@ -154,7 +161,6 @@ class ResidentEpochScheduler(Scheduler):
         epoch_steps = max(
             step for step in (1, 2, 4, 8) if step <= epoch_budget
         )
-        self._assign_resident_rows(req_ids)
         # One B=4 GraphPp instance serves all admitted batch sizes. Loading
         # B=1/B=2/B=4 together would duplicate the 15 GB external-weight model.
         graph_batch_size = 4
@@ -192,7 +198,14 @@ class ResidentEpochScheduler(Scheduler):
                         row * config.blocks_per_request + 1,
                     ),
                     state_owner=(
-                        "host" if request.num_output_tokens == 0 else "device"
+                        "device"
+                        if request.request_id in self._resident_epoch_device_owned
+                        else "host"
+                    ),
+                    kv_import_required=(
+                        request.num_prompt_tokens > 1
+                        and request.request_id
+                        not in self._resident_epoch_device_owned
                     ),
                 )
             )
@@ -260,3 +273,9 @@ class ResidentEpochScheduler(Scheduler):
 
         for req_id, extra in extras.items():
             self.requests[req_id].num_computed_tokens += extra
+
+        if result.route == "device":
+            self._ensure_test_config()
+            for request in plan.requests:
+                if request.state_owner == "host":
+                    self._resident_epoch_device_owned.add(request.req_id)

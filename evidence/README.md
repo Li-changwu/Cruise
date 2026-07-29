@@ -20,3 +20,8 @@ The first M1 ownership/commit-state checkpoint is summarized in
 [`M1-COMMIT-STATE-20260729.md`](M1-COMMIT-STATE-20260729.md). It records the
 prepared/executing/committed boundary and explicitly excludes unqualified
 prefill, API streaming, cancellation, and hardware fault claims.
+
+The first real prefill ownership-transfer checkpoint is summarized in
+[`M1-PREFILL-TRANSFER-20260729.md`](M1-PREFILL-TRANSFER-20260729.md). It records
+the stock-vLLM token baseline, one-shot Paged-KV import checksum proof, first
+Device-owned steady epoch, lifecycle cleanup, and the remaining M1 boundary.

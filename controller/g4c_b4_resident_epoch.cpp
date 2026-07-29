@@ -22,6 +22,9 @@ constexpr int32_t kBlockSize = 128;
 constexpr int32_t kVocabSize = 152064;
 constexpr int32_t kRunModelTimeoutMs = 300000;
 constexpr int64_t kCacheElements = 28LL * 8 * 128 * 4 * 128;
+constexpr int64_t kImportCacheElements = 28LL * 4 * 128 * 4 * 128;
+constexpr int64_t kImportPayloadElements = 2 * kImportCacheElements * 2;
+constexpr int32_t kImportGraphFlag = 0x100;
 constexpr int32_t kControlInputElements = 1 + kBatchSize + 2 + kBatchSize;
 constexpr int32_t kControlOutputElements = 6 + 4 * kBatchSize + 2 + kBatchSize;
 constexpr int32_t kControlGenerationInputOffset = 3 + kBatchSize;
@@ -142,6 +145,22 @@ bool ClearCacheRow(const std::shared_ptr<FlowMsg> &cache, int32_t row) {
   }
   return true;
 }
+
+void Adler32Update(const uint8_t *data, size_t bytes,
+                   uint32_t &first, uint32_t &second) {
+  constexpr uint32_t kModulus = 65521;
+  while (bytes > 0) {
+    const size_t chunk = bytes > 5552 ? 5552 : bytes;
+    for (size_t index = 0; index < chunk; ++index) {
+      first += data[index];
+      second += first;
+    }
+    first %= kModulus;
+    second %= kModulus;
+    data += chunk;
+    bytes -= chunk;
+  }
+}
 }  // namespace
 
 class G4cB4ResidentEpoch : public MetaFlowFunc {
@@ -182,20 +201,45 @@ class G4cB4ResidentEpoch : public MetaFlowFunc {
     std::memset(control, 0,
                 static_cast<size_t>(kControlOutputElements) * sizeof(int32_t));
 
-    if (!IsTensor(inputs[kTokenInput], TensorDataType::DT_INT64, kBatchSize) ||
-        !IsTensor(inputs[kPositionInput], TensorDataType::DT_INT64,
-                  kBatchSize) ||
-        !IsTensor(inputs[kSequenceLengthInput], TensorDataType::DT_INT32,
-                  kBatchSize) ||
-        !IsTensor(inputs[kSlotMappingInput], TensorDataType::DT_INT32,
-                  kBatchSize) ||
-        !IsTensor(inputs[kActiveMaskInput], TensorDataType::DT_INT32,
-                  kBatchSize) ||
-        !IsTensor(inputs[kBlockTableInput], TensorDataType::DT_INT32,
-                  kBatchSize * kBlocksPerRequest) ||
-        !IsTensor(inputs[kTilingInput], TensorDataType::DT_UINT8, 72) ||
-        !IsTensor(inputs[kControlInput], TensorDataType::DT_INT32,
+    if (!IsTensor(inputs[kControlInput], TensorDataType::DT_INT32,
                   kControlInputElements)) {
+      FLOW_FUNC_LOG_ERROR("Invalid G4c B4 control ABI.");
+      return FLOW_FUNC_FAILED;
+    }
+    const auto *input_control = static_cast<const int32_t *>(
+        inputs[kControlInput]->GetTensor()->GetData());
+    const int32_t encoded_graph_variant = input_control[2 + kBatchSize];
+    const bool importing = (encoded_graph_variant & kImportGraphFlag) != 0;
+    const int32_t import_mask =
+        importing ? encoded_graph_variant & (kImportGraphFlag - 1) : 0;
+    const int32_t graph_variant =
+        importing ? encoded_graph_variant & ~(kImportGraphFlag | 0xF) :
+                    encoded_graph_variant;
+
+    auto token_input = inputs[importing ? 1 : kTokenInput];
+    auto position_input = inputs[importing ? 2 : kPositionInput];
+    auto sequence_length_input =
+        inputs[importing ? 3 : kSequenceLengthInput];
+    auto active_mask_input = inputs[importing ? 4 : kActiveMaskInput];
+    auto block_table_input = inputs[importing ? 5 : kBlockTableInput];
+    auto tiling_input = inputs[importing ? 6 : kTilingInput];
+    auto slot_mapping_input = importing
+                                  ? context_->AllocTensorMsg(
+                                        {kBatchSize}, TensorDataType::DT_INT32)
+                                  : inputs[kSlotMappingInput];
+    const bool common_inputs_valid =
+        IsTensor(token_input, TensorDataType::DT_INT64, kBatchSize) &&
+        IsTensor(position_input, TensorDataType::DT_INT64, kBatchSize) &&
+        IsTensor(sequence_length_input, TensorDataType::DT_INT32, kBatchSize) &&
+        IsTensor(slot_mapping_input, TensorDataType::DT_INT32, kBatchSize) &&
+        IsTensor(active_mask_input, TensorDataType::DT_INT32, kBatchSize) &&
+        IsTensor(block_table_input, TensorDataType::DT_INT32,
+                 kBatchSize * kBlocksPerRequest) &&
+        IsTensor(tiling_input, TensorDataType::DT_UINT8, 72);
+    if (!common_inputs_valid ||
+        (importing &&
+         !IsTensor(inputs[0], TensorDataType::DT_UINT8,
+                   kImportPayloadElements))) {
       FLOW_FUNC_LOG_ERROR("Invalid G4c B4 tensor ABI.");
       return FLOW_FUNC_FAILED;
     }
@@ -217,33 +261,37 @@ class G4cB4ResidentEpoch : public MetaFlowFunc {
                   resident_value_->GetTensor()->GetDataSize());
     }
 
-    const auto *input_control = static_cast<const int32_t *>(
-        inputs[kControlInput]->GetTensor()->GetData());
     const int32_t max_steps = input_control[0];
     std::array<int32_t, kBatchSize> eos{};
     for (int32_t request = 0; request < kBatchSize; ++request) {
       eos[request] = input_control[1 + request];
     }
     const int32_t sampling_mode = input_control[1 + kBatchSize];
-    const int32_t graph_variant = input_control[2 + kBatchSize];
     const auto *row_generation =
         input_control + kControlGenerationInputOffset;
     const auto *initial_token = static_cast<const int64_t *>(
-        inputs[kTokenInput]->GetTensor()->GetData());
+        token_input->GetTensor()->GetData());
     const auto *initial_position = static_cast<const int64_t *>(
-        inputs[kPositionInput]->GetTensor()->GetData());
+        position_input->GetTensor()->GetData());
     const auto *initial_length = static_cast<const int32_t *>(
-        inputs[kSequenceLengthInput]->GetTensor()->GetData());
-    const auto *initial_slot = static_cast<const int32_t *>(
-        inputs[kSlotMappingInput]->GetTensor()->GetData());
+        sequence_length_input->GetTensor()->GetData());
+    auto *initial_slot = static_cast<int32_t *>(
+        slot_mapping_input->GetTensor()->GetData());
     const auto *initial_active = static_cast<const int32_t *>(
-        inputs[kActiveMaskInput]->GetTensor()->GetData());
+        active_mask_input->GetTensor()->GetData());
     const auto *block_table = static_cast<const int32_t *>(
-        inputs[kBlockTableInput]->GetTensor()->GetData());
+        block_table_input->GetTensor()->GetData());
+    if (importing) {
+      for (int32_t request = 0; request < kBatchSize; ++request) {
+        initial_slot[request] =
+            ComputeSlot(block_table, request, initial_position[request]);
+      }
+    }
 
     std::array<int32_t, kBatchSize> executed{};
     std::array<int32_t, kBatchSize> finish_reason{};
     int32_t model_calls = 0;
+    uint32_t import_checksum = 0;
 
     auto emit = [&](int32_t status,
                     const std::shared_ptr<FlowMsg> &final_active) -> int32_t {
@@ -254,7 +302,8 @@ class G4cB4ResidentEpoch : public MetaFlowFunc {
       control[2] = graph_variant;
       control[3] = status;
       control[4] = model_calls;
-      control[5] = status == kStatusOk ? 0 : 1;
+      control[5] = importing ? static_cast<int32_t>(import_checksum) :
+                               (status == kStatusOk ? 0 : 1);
       for (int32_t request = 0; request < kBatchSize; ++request) {
         control[kControlEosOffset + request] = eos[request];
         control[kControlInitialActiveOffset + request] = initial_active[request];
@@ -280,7 +329,7 @@ class G4cB4ResidentEpoch : public MetaFlowFunc {
       }
       FLOW_FUNC_LOG_ERROR("G4c B4 fallback status[%d] calls[%d].", status,
                           model_calls);
-      return emit(status, inputs[kActiveMaskInput]);
+      return emit(status, active_mask_input);
     };
 
     if (max_steps < 1 || max_steps > kMaxEpochSteps || sampling_mode != 0 ||
@@ -335,6 +384,67 @@ class G4cB4ResidentEpoch : public MetaFlowFunc {
       }
     }
 
+    if (importing) {
+      if (import_mask <= 0 || import_mask >= (1 << kBatchSize)) {
+        return fallback(kStatusInvalidMetadata);
+      }
+      constexpr size_t kBlockBytes =
+          kBlockSize * 4ULL * 128ULL * sizeof(uint16_t);
+      const auto *payload = static_cast<const uint8_t *>(
+          inputs[0]->GetTensor()->GetData());
+      const auto *import_key = payload;
+      const auto *import_value =
+          payload + kImportCacheElements * sizeof(uint16_t);
+      auto *resident_key = static_cast<uint8_t *>(
+          resident_key_->GetTensor()->GetData());
+      auto *resident_value = static_cast<uint8_t *>(
+          resident_value_->GetTensor()->GetData());
+      for (int32_t request = 0; request < kBatchSize; ++request) {
+        if ((import_mask & (1 << request)) == 0) continue;
+        if (initial_active[request] != 1 || row_generation[request] <= 0) {
+          return fallback(kStatusInvalidMetadata);
+        }
+        if (!ClearCacheRow(resident_key_, request) ||
+            !ClearCacheRow(resident_value_, request)) {
+          return fallback(kStatusAllocationFailure);
+        }
+        for (int32_t layer = 0; layer < 28; ++layer) {
+          const size_t source_offset =
+              (static_cast<size_t>(layer) * kBatchSize + request) *
+              kBlockBytes;
+          const size_t destination_offset =
+              (static_cast<size_t>(layer) * kPhysicalBlocks +
+               request * kBlocksPerRequest) *
+              kBlockBytes;
+          std::memcpy(resident_key + destination_offset,
+                      import_key + source_offset, kBlockBytes);
+          std::memcpy(resident_value + destination_offset,
+                      import_value + source_offset, kBlockBytes);
+        }
+        resident_generation_[request] = row_generation[request];
+        resident_token_[request] = initial_token[request];
+        resident_position_[request] = initial_position[request];
+        resident_length_[request] = initial_length[request];
+        resident_valid_[request] = 1;
+      }
+      uint32_t checksum_first = 1;
+      uint32_t checksum_second = 0;
+      for (auto *cache : {resident_key, resident_value}) {
+        for (int32_t layer = 0; layer < 28; ++layer) {
+          for (int32_t request = 0; request < kBatchSize; ++request) {
+            if ((import_mask & (1 << request)) == 0) continue;
+            const size_t destination_offset =
+                (static_cast<size_t>(layer) * kPhysicalBlocks +
+                 request * kBlocksPerRequest) *
+                kBlockBytes;
+            Adler32Update(cache + destination_offset, kBlockBytes,
+                          checksum_first, checksum_second);
+          }
+        }
+      }
+      import_checksum = (checksum_second << 16) | checksum_first;
+    }
+
     std::array<int32_t, kBatchSize> new_generation{};
     for (int32_t request = 0; request < kBatchSize; ++request) {
       if (initial_active[request] == 0) continue;
@@ -360,11 +470,11 @@ class G4cB4ResidentEpoch : public MetaFlowFunc {
       }
     }
 
-    auto current_token = inputs[kTokenInput];
-    auto current_position = inputs[kPositionInput];
-    auto current_length = inputs[kSequenceLengthInput];
-    auto current_slot = inputs[kSlotMappingInput];
-    auto current_active = inputs[kActiveMaskInput];
+    auto current_token = token_input;
+    auto current_position = position_input;
+    auto current_length = sequence_length_input;
+    auto current_slot = slot_mapping_input;
+    auto current_active = active_mask_input;
     auto current_key = resident_key_;
     auto current_value = resident_value_;
     std::array<int64_t, kBatchSize> current_position_values{};
@@ -378,8 +488,8 @@ class G4cB4ResidentEpoch : public MetaFlowFunc {
       if (CountActive(active_values) == 0) break;
       const std::vector<std::shared_ptr<FlowMsg>> model_inputs = {
           current_token, current_position, current_length, current_key,
-          current_slot, current_active, inputs[kBlockTableInput], current_value,
-          inputs[kTilingInput]};
+          current_slot, current_active, block_table_input, current_value,
+          tiling_input};
       std::vector<std::shared_ptr<FlowMsg>> model_outputs;
       const auto ret = context_->RunFlowModel(
           "decode_graph_0", model_inputs, model_outputs, kRunModelTimeoutMs);

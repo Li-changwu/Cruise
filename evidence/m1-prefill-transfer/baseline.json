@@ -1,0 +1,128 @@
+{
+  "checks": {
+    "cleanup_did_not_execute_model": true,
+    "exact_output_length": true,
+    "no_resident_plans": true,
+    "one_output_per_host_step": true,
+    "request_drained": true,
+    "stock_scheduler": true,
+    "token_steps_executed_model": true
+  },
+  "max_tokens": 4,
+  "mode": "baseline",
+  "model": "/root/ascend-control-cruise-20260729/artifacts/model-frozen",
+  "pass": true,
+  "prompt_token_ids": [
+    9707,
+    11,
+    358
+  ],
+  "request_drained": true,
+  "resolved_classes": {
+    "runner": "vllm_ascend.worker.model_runner_v1.NPUModelRunner",
+    "scheduler": "vllm.v1.core.sched.scheduler.Scheduler",
+    "worker": "vllm_ascend.worker.worker.NPUWorker"
+  },
+  "schema_version": 1,
+  "steps": [
+    {
+      "engine_outputs": [
+        {
+          "client_index": 0,
+          "finish_reason": null,
+          "request_id": "m1-baseline",
+          "stop_reason": null,
+          "tokens": [
+            2776
+          ]
+        }
+      ],
+      "index": 0,
+      "model_executed": true,
+      "new_tokens": [
+        2776
+      ],
+      "plan": null,
+      "result": null,
+      "scheduler_rejection": null
+    },
+    {
+      "engine_outputs": [
+        {
+          "client_index": 0,
+          "finish_reason": null,
+          "request_id": "m1-baseline",
+          "stop_reason": null,
+          "tokens": [
+            4460
+          ]
+        }
+      ],
+      "index": 1,
+      "model_executed": true,
+      "new_tokens": [
+        4460
+      ],
+      "plan": null,
+      "result": null,
+      "scheduler_rejection": null
+    },
+    {
+      "engine_outputs": [
+        {
+          "client_index": 0,
+          "finish_reason": null,
+          "request_id": "m1-baseline",
+          "stop_reason": null,
+          "tokens": [
+            311
+          ]
+        }
+      ],
+      "index": 2,
+      "model_executed": true,
+      "new_tokens": [
+        311
+      ],
+      "plan": null,
+      "result": null,
+      "scheduler_rejection": null
+    },
+    {
+      "engine_outputs": [
+        {
+          "client_index": 0,
+          "finish_reason": 1,
+          "request_id": "m1-baseline",
+          "stop_reason": null,
+          "tokens": [
+            1855
+          ]
+        }
+      ],
+      "index": 3,
+      "model_executed": true,
+      "new_tokens": [
+        1855
+      ],
+      "plan": null,
+      "result": null,
+      "scheduler_rejection": null
+    },
+    {
+      "engine_outputs": [],
+      "index": 4,
+      "model_executed": false,
+      "new_tokens": [],
+      "plan": null,
+      "result": null,
+      "scheduler_rejection": null
+    }
+  ],
+  "tokens": [
+    2776,
+    4460,
+    311,
+    1855
+  ]
+}

@@ -26,6 +26,8 @@ Cruise 探索的是单次图重放之上的控制边界：图执行优化消除�
 - 由 DataFlow 持有模型与 KV 状态的专用 worker；
 - EngineCore 到 native sidecar 的执行路径，每个 epoch 只进行一次请求与响应；
 - B=4 的完整 Qwen2.5-7B decoder step，以及设备侧 greedy sampling；
+- 真实 stock vLLM prefill，以及一次性、带 generation 校验的 Paged-KV 导入和
+  显式 Host-to-Device 状态所有权迁移；
 - 持久化 Paged-KV、active-row mask、block table、slot mapping、row generation，
   以及跨 epoch 的安全行复用；
 - 根据请求剩余预算，在 K=1、2、4、8 中选择有界 epoch 长度；
@@ -67,6 +69,12 @@ sidecar，因此上述 DataFlow payload **不是** PCIe、HCCS 或 DMA 物理链
 G4 K-sweep 结果仍保留在
 [`history/attempts/g4/G4-STATUS-20260724.md`](history/attempts/g4/G4-STATUS-20260724.md)。
 
+首个 M1 所有权迁移实验采用三 token 的 stock vLLM prefill 和四个 greedy 输出
+token。stock vLLM 与 Cruise 均生成 `[2776, 4460, 311, 1855]`。首个 resident
+epoch 在 Host 与 Device Paged-KV checksum 同为 `3477654769` 后执行 K=2；随后
+Device-owned 的 K=1 epoch 继续使用 260 B/368 B 稳态 ABI。完整边界见
+[`evidence/M1-PREFILL-TRANSFER-20260729.md`](evidence/M1-PREFILL-TRANSFER-20260729.md)。
+
 ## 支持边界
 
 当前经过验证的环境与工作负载为：
@@ -74,11 +82,11 @@ G4 K-sweep 结果仍保留在
 - Ascend 910B2，以及经过验证的 CANN 8.5.1/9.0.0 DataFlow Device UDF 路径；
 - Qwen2.5-7B-Instruct，TP=1、PP=1；
 - vLLM V1 同步调度；
-- one-token prompt 后进入 decode；
+- one-token resident-only 路径，以及已验证的三 token prefill 所有权迁移用例；
 - 一个静态 B=4 图，通过 inactive-row mask 支持不足四路的批次；
 - greedy sampling、有界 epoch，以及每个 row 固定两个 block 的 KV 布局。
 
-Cruise 尚未证明通用 prefill、continuous batching、任意 sampling、speculative
+Cruise 尚未证明上述用例之外的通用 prefill、continuous batching、任意 sampling、speculative
 decoding、preemption、cancellation、LoRA、TP/PP、多卡协调或 API server 性能。
 这些是后续研究门槛，而不是可以忽略的兼容性假设。
 
@@ -109,14 +117,16 @@ python -m pytest -q \
   tests/test_contract.py \
   tests/test_engine_core_result_verifier.py \
   tests/test_multi_epoch_result_verifier.py \
-  tests/test_productization_m0.py
+  tests/test_productization_m0.py \
+  tests/test_kv_transfer.py
 python scripts/audit_repository.py
 python verify_minimal_abi_source.py . \
   --baseline-source history/attempts/vllm-integration-attempt73-multi-epoch-cohort
 ```
 
-该子集目前包含 50 项测试。完整的 70 项测试还需要冻结版本的 PyTorch、vLLM 和
-vLLM-Ascend 环境；native 执行还需要实验协议指定的 Ascend/DataFlow 工具链、
+该子集目前有 51 项测试通过，另有 1 项依赖 Torch 的测试跳过。完整服务器套件有
+73 项测试通过，并需要冻结版本的 PyTorch、vLLM 和 vLLM-Ascend 环境；native
+执行还需要实验协议指定的 Ascend/DataFlow 工具链、
 decoder AIR 与外部权重。模型生成物和原始测量数据不会存入本仓库。
 
 ## 复现硬件实验

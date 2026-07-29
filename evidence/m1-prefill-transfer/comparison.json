@@ -1,0 +1,25 @@
+{
+  "baseline": "/dev/shm/cruise-m1-build-WL85kU/m1-run/baseline.json",
+  "baseline_tokens": [
+    2776,
+    4460,
+    311,
+    1855
+  ],
+  "checks": {
+    "baseline_passed": true,
+    "cruise_passed": true,
+    "same_output_tokens": true,
+    "same_prompt": true
+  },
+  "cruise": "/dev/shm/cruise-m1-build-WL85kU/m1-run/cruise.json",
+  "cruise_tokens": [
+    2776,
+    4460,
+    311,
+    1855
+  ],
+  "gate": "M1 stock-prefill to device-resident paged-KV ownership transfer",
+  "pass": true,
+  "schema_version": 1
+}

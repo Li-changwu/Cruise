@@ -36,6 +36,8 @@ constexpr size_t kTokenHistoryBytes =
     kMaxEpochSteps * kBatchSize * sizeof(int64_t);
 constexpr int64_t kDeclaredInputBytes = 260;
 constexpr int64_t kDeclaredOutputBytes = 368;
+constexpr int64_t kImportDeclaredInputBytes =
+    CRUISE_RESIDENT_IMPORT_INPUT_BYTES;
 constexpr int32_t kFeedTimeoutMs = 600000;
 constexpr int32_t kFetchTimeoutMs = 3600000;
 
@@ -62,6 +64,28 @@ struct ResidentEpochEngine {
   std::mutex execute_mutex;
 };
 
+#pragma pack(push, 1)
+struct TransferHeader {
+  uint64_t magic;
+  uint32_t version;
+  uint32_t header_bytes;
+  uint64_t transfer_id;
+  uint64_t payload_bytes;
+  uint32_t import_mask;
+  int32_t row_generations[kBatchSize];
+  uint32_t layers;
+  uint32_t batch_size;
+  uint32_t block_size;
+  uint32_t kv_heads;
+  uint32_t head_size;
+  uint32_t element_bytes;
+  uint32_t checksum;
+};
+#pragma pack(pop)
+
+static_assert(sizeof(TransferHeader) == CRUISE_RESIDENT_TRANSFER_HEADER_BYTES,
+              "resident KV transfer header ABI changed");
+
 std::mutex g_lifecycle_mutex;
 bool g_engine_active = false;
 
@@ -74,6 +98,54 @@ bool ReadTiling(const char *path, std::array<uint8_t, 72> &tiling) {
   stream.seekg(0, std::ios::beg);
   stream.read(reinterpret_cast<char *>(tiling.data()), tiling.size());
   return static_cast<bool>(stream);
+}
+
+bool ReadTransfer(const char *path, uint64_t transfer_id,
+                  const int32_t *input_row_generations,
+                  std::vector<uint8_t> &payload, int32_t &import_mask,
+                  uint32_t &expected_checksum) {
+  if (path == nullptr || input_row_generations == nullptr || transfer_id == 0 ||
+      std::strncmp(path, "/dev/shm/", 9) != 0) {
+    return false;
+  }
+  std::ifstream stream(path, std::ios::binary | std::ios::ate);
+  const size_t expected_bytes = CRUISE_RESIDENT_TRANSFER_HEADER_BYTES +
+                                CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES;
+  if (!stream || static_cast<size_t>(stream.tellg()) != expected_bytes) {
+    return false;
+  }
+  stream.seekg(0, std::ios::beg);
+  TransferHeader header{};
+  stream.read(reinterpret_cast<char *>(&header), sizeof(header));
+  if (!stream || header.magic != CRUISE_RESIDENT_TRANSFER_MAGIC ||
+      header.version != CRUISE_RESIDENT_TRANSFER_VERSION ||
+      header.header_bytes != CRUISE_RESIDENT_TRANSFER_HEADER_BYTES ||
+      header.transfer_id != transfer_id ||
+      header.payload_bytes != CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES ||
+      header.import_mask == 0 || header.import_mask >= (1U << kBatchSize) ||
+      header.layers != 28 || header.batch_size != kBatchSize ||
+      header.block_size != kBlockSize || header.kv_heads != 4 ||
+      header.head_size != 128 || header.element_bytes != sizeof(uint16_t) ||
+      header.checksum == 0) {
+    return false;
+  }
+  for (int32_t row = 0; row < kBatchSize; ++row) {
+    const bool selected = (header.import_mask & (1U << row)) != 0;
+    if (selected) {
+      if (header.row_generations[row] <= 0 ||
+          header.row_generations[row] != input_row_generations[row]) {
+        return false;
+      }
+    } else if (header.row_generations[row] != 0) {
+      return false;
+    }
+  }
+  payload.resize(CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES);
+  stream.read(reinterpret_cast<char *>(payload.data()), payload.size());
+  if (!stream) return false;
+  import_mask = static_cast<int32_t>(header.import_mask);
+  expected_checksum = header.checksum;
+  return true;
 }
 
 ge::Tensor MakeTensor(std::vector<uint8_t> &data,
@@ -210,12 +282,14 @@ extern "C" int32_t resident_epoch_execute(
     int32_t *output_row_generations,
     int32_t *output_model_calls, int32_t *output_device_status,
     int32_t *output_feed_calls, int32_t *output_fetch_calls,
-    int32_t *output_commit_state,
+    int32_t *output_commit_state, int32_t *output_kv_import_checksum,
     int64_t *output_wall_us, int64_t *output_native_cpu_us,
     int64_t *output_declared_input_bytes,
-    int64_t *output_declared_output_bytes) {
+    int64_t *output_declared_output_bytes,
+    const char *transfer_path, uint64_t transfer_id) {
   if (output_commit_state == nullptr) return 10;
   *output_commit_state = CRUISE_EPOCH_PREPARED;
+  const bool importing = transfer_path != nullptr;
   if (opaque == nullptr || request_count < 1 || request_count > kBatchSize ||
       max_steps < 1 || max_steps > kMaxEpochSteps ||
       input_token_ids == nullptr || input_positions == nullptr ||
@@ -225,10 +299,21 @@ extern "C" int32_t resident_epoch_execute(
       output_row_generations == nullptr ||
       output_model_calls == nullptr || output_device_status == nullptr ||
       output_feed_calls == nullptr || output_fetch_calls == nullptr ||
+      output_kv_import_checksum == nullptr ||
       output_wall_us == nullptr || output_native_cpu_us == nullptr ||
       output_declared_input_bytes == nullptr ||
-      output_declared_output_bytes == nullptr) {
+      output_declared_output_bytes == nullptr ||
+      (importing && transfer_id == 0) || (!importing && transfer_id != 0)) {
     return 10;
+  }
+  std::vector<uint8_t> transfer_payload;
+  int32_t import_mask = 0;
+  uint32_t expected_import_checksum = 0;
+  if (importing &&
+      !ReadTransfer(transfer_path, transfer_id, input_row_generations,
+                    transfer_payload, import_mask,
+                    expected_import_checksum)) {
+    return 13;
   }
   auto *engine = static_cast<ResidentEpochEngine *>(opaque);
   std::lock_guard<std::mutex> execute_lock(engine->execute_mutex);
@@ -236,9 +321,11 @@ extern "C" int32_t resident_epoch_execute(
   *output_device_status = -1;
   *output_feed_calls = 0;
   *output_fetch_calls = 0;
+  *output_kv_import_checksum = 0;
   *output_wall_us = 0;
   *output_native_cpu_us = 0;
-  *output_declared_input_bytes = kDeclaredInputBytes;
+  *output_declared_input_bytes =
+      importing ? kImportDeclaredInputBytes : kDeclaredInputBytes;
   *output_declared_output_bytes = kDeclaredOutputBytes;
   const int64_t cpu_start = ProcessCpuUs();
   std::fill(output_token_ids,
@@ -248,13 +335,28 @@ extern "C" int32_t resident_epoch_execute(
             output_row_generations + kBatchSize, 0);
 
   std::array<std::vector<uint8_t>, 7> buffers;
-  for (size_t index = 0; index < buffers.size(); ++index) {
-    buffers[index].resize(kInputSpecs[index].bytes, 0);
+  if (importing) {
+    buffers[0] = std::move(transfer_payload);
+    buffers[1].resize(kBatchSize * sizeof(int64_t), 0);
+    buffers[2].resize(kBatchSize * sizeof(int64_t), 0);
+    buffers[3].resize(kBatchSize * sizeof(int32_t), 0);
+    buffers[4].resize(kBatchSize * sizeof(int32_t), 0);
+    buffers[5].resize(kBatchSize * kBlocksPerRequest * sizeof(int32_t), 0);
+    buffers[6].resize(engine->tiling.size(), 0);
+  } else {
+    for (size_t index = 0; index < buffers.size(); ++index) {
+      buffers[index].resize(kInputSpecs[index].bytes, 0);
+    }
   }
-  auto *tokens = reinterpret_cast<int64_t *>(buffers[0].data());
-  auto *positions = reinterpret_cast<int64_t *>(buffers[1].data());
-  auto *lengths = reinterpret_cast<int32_t *>(buffers[2].data());
-  auto *slots = reinterpret_cast<int32_t *>(buffers[3].data());
+  auto *tokens = reinterpret_cast<int64_t *>(
+      buffers[importing ? 1 : 0].data());
+  auto *positions = reinterpret_cast<int64_t *>(
+      buffers[importing ? 2 : 1].data());
+  auto *lengths = reinterpret_cast<int32_t *>(
+      buffers[importing ? 3 : 2].data());
+  auto *slots = importing
+                    ? nullptr
+                    : reinterpret_cast<int32_t *>(buffers[3].data());
   auto *active = reinterpret_cast<int32_t *>(buffers[4].data());
   auto *blocks = reinterpret_cast<int32_t *>(buffers[5].data());
   for (int32_t row = 0; row < kBatchSize; ++row) {
@@ -263,7 +365,7 @@ extern "C" int32_t resident_epoch_execute(
     tokens[row] = 0;
     positions[row] = 0;
     lengths[row] = 0;
-    slots[row] = ComputeSlot(row, 0);
+    if (slots != nullptr) slots[row] = ComputeSlot(row, 0);
     active[row] = 0;
   }
   int32_t active_count = 0;
@@ -282,7 +384,7 @@ extern "C" int32_t resident_epoch_execute(
     tokens[row] = input_token_ids[row];
     positions[row] = input_positions[row];
     lengths[row] = input_sequence_lengths[row];
-    slots[row] = ComputeSlot(row, input_positions[row]);
+    if (slots != nullptr) slots[row] = ComputeSlot(row, input_positions[row]);
     active[row] = 1;
   }
   if (active_count != request_count) return 12;
@@ -296,7 +398,8 @@ extern "C" int32_t resident_epoch_execute(
                            : kConfiguredEos;
   }
   control[1 + kBatchSize] = 0;
-  control[2 + kBatchSize] = 0;
+  control[2 + kBatchSize] =
+      importing ? CRUISE_RESIDENT_IMPORT_GRAPH_FLAG | import_mask : 0;
   for (int32_t row = 0; row < kBatchSize; ++row) {
     control[3 + kBatchSize + row] = input_row_generations[row];
   }
@@ -305,9 +408,20 @@ extern "C" int32_t resident_epoch_execute(
 
   std::vector<ge::Tensor> inputs;
   inputs.reserve(8);
-  for (size_t index = 0; index < buffers.size(); ++index) {
-    inputs.push_back(MakeTensor(buffers[index], kInputSpecs[index].shape,
-                                kInputSpecs[index].dtype));
+  if (importing) {
+    inputs.push_back(MakeTensor(
+        buffers[0], {CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES}, ge::DT_UINT8));
+    inputs.push_back(MakeTensor(buffers[1], {4, 1}, ge::DT_INT64));
+    inputs.push_back(MakeTensor(buffers[2], {4}, ge::DT_INT64));
+    inputs.push_back(MakeTensor(buffers[3], {4, 1}, ge::DT_INT32));
+    inputs.push_back(MakeTensor(buffers[4], {4}, ge::DT_INT32));
+    inputs.push_back(MakeTensor(buffers[5], {4, 2}, ge::DT_INT32));
+    inputs.push_back(MakeTensor(buffers[6], {72}, ge::DT_UINT8));
+  } else {
+    for (size_t index = 0; index < buffers.size(); ++index) {
+      inputs.push_back(MakeTensor(buffers[index], kInputSpecs[index].shape,
+                                  kInputSpecs[index].dtype));
+    }
   }
   inputs.push_back(
       MakeTensor(control_bytes, {kControlInputElements}, ge::DT_INT32));
@@ -338,6 +452,12 @@ extern "C" int32_t resident_epoch_execute(
       reinterpret_cast<const int32_t *>(outputs[1].GetData());
   *output_device_status = result_control[3];
   *output_model_calls = result_control[4];
+  *output_kv_import_checksum = result_control[5];
+  if (importing && *output_device_status == 0 &&
+      static_cast<uint32_t>(*output_kv_import_checksum) !=
+          expected_import_checksum) {
+    return 34;
+  }
   for (int32_t row = 0; row < kBatchSize; ++row) {
     const int32_t executed = result_control[kControlExecutedOffset + row];
     if (executed < 0 || executed > max_steps) return 33;

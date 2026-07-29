@@ -28,6 +28,8 @@ The active implementation is the former **Attempt 74** snapshot. It provides:
 - a dedicated worker that leaves model and KV ownership with DataFlow;
 - an EngineCore-to-native-sidecar path with one request/response per epoch;
 - a B=4 full Qwen2.5-7B decoder step with device-side greedy sampling;
+- stock-vLLM prefill followed by a one-shot, generation-checked Paged-KV import
+  and an explicit Host-to-Device ownership transition;
 - persistent Paged-KV state, active-row masks, block tables, slot mappings,
   row generations, and safe row reuse across epochs;
 - bounded epoch lengths selected from K=1,2,4,8 within the request budget;
@@ -74,6 +76,13 @@ Across 30+30 samples, median Host-control wall time fell from 212.208 ms to
 complete result boundary and hashes. The earlier G4 K-sweep remains in
 [`history/attempts/g4/G4-STATUS-20260724.md`](history/attempts/g4/G4-STATUS-20260724.md).
 
+The first M1 ownership-transfer run used a three-token stock-vLLM prefill and
+four greedy output tokens. Stock vLLM and Cruise both produced
+`[2776, 4460, 311, 1855]`. The import epoch executed K=2 after matching Host
+and Device Paged-KV checksums (`3477654769`), and the following Device-owned
+K=1 epoch retained the 260-byte/368-byte steady ABI. See
+[`evidence/M1-PREFILL-TRANSFER-20260729.md`](evidence/M1-PREFILL-TRANSFER-20260729.md).
+
 ## Support Boundary
 
 The currently validated envelope is:
@@ -81,11 +90,12 @@ The currently validated envelope is:
 - Ascend 910B2 with the validated CANN 8.5.1/9.0.0 DataFlow Device UDF paths;
 - Qwen2.5-7B-Instruct, TP=1, PP=1;
 - synchronous vLLM V1 scheduling;
-- one-token prompts followed by decode;
+- one-token resident-only prompts and the qualified three-token prefill
+  ownership-transfer case;
 - one static B=4 graph with inactive-row masking;
 - greedy sampling, bounded epochs, and a fixed two-block-per-row KV layout.
 
-Cruise does not yet establish general prefill, continuous batching, arbitrary
+Cruise does not yet establish general prefill beyond that case, continuous batching, arbitrary
 sampling, speculative decoding, preemption, cancellation, LoRA, TP/PP,
 multi-card coordination, or API-server performance. These are research gates,
 not hidden compatibility assumptions.
@@ -118,14 +128,16 @@ python -m pytest -q \
   tests/test_contract.py \
   tests/test_engine_core_result_verifier.py \
   tests/test_multi_epoch_result_verifier.py \
-  tests/test_productization_m0.py
+  tests/test_productization_m0.py \
+  tests/test_kv_transfer.py
 python scripts/audit_repository.py
 python verify_minimal_abi_source.py . \
   --baseline-source history/attempts/vllm-integration-attempt73-multi-epoch-cohort
 ```
 
-This subset currently contains 50 tests. The full 70-test suite additionally
-requires the frozen PyTorch, vLLM, and vLLM-Ascend environment; native execution
+This subset currently passes 51 tests, with one Torch-dependent test skipped.
+The full server suite passes 73 tests and additionally requires the frozen
+PyTorch, vLLM, and vLLM-Ascend environment; native execution
 also requires the exact Ascend/DataFlow toolchain, decoder AIR, and external
 weights used by the protocol. Generated models and measurements are
 deliberately not stored in this repository.

@@ -12,6 +12,7 @@ from .contract import (
     ResidentEpochPlan,
 )
 from .version import SIDECAR_PROTOCOL_VERSION
+from .kv_transfer import ResidentKVSnapshot, write_kv_snapshot
 
 
 REQUEST_MAGIC = 0x71317131
@@ -20,10 +21,11 @@ PROTOCOL_VERSION = SIDECAR_PROTOCOL_VERSION
 EXECUTE = 1
 WARM_UP = 2
 SHUTDOWN = 3
+IMPORT_EXECUTE = 4
 GRAPH_BATCH_SIZE = 4
 MAX_EPOCH_STEPS = 8
 WARMUP_GENERATION = 2**31 - 1
-REQUEST = struct.Struct("<IHHii4q4q4i4i4i")
+REQUEST = struct.Struct("<IHHiiQ4q4q4i4i4i")
 RESPONSE = struct.Struct("<Iiiiiiii4q4i4i32q")
 
 
@@ -74,8 +76,39 @@ class SidecarDataFlowEngine:
             raise RuntimeError("resident epoch socket must be under /dev/shm")
         if not str(weights).startswith("/dev/shm/"):
             raise RuntimeError("resident epoch external weights must be in /dev/shm")
+        self.transfer_path = self.socket_path.with_name(
+            f"{self.socket_path.name}.kv-transfer"
+        )
+        if not str(self.transfer_path).startswith("/dev/shm/"):
+            raise RuntimeError("resident KV transfer file must be under /dev/shm")
 
         child_env = os.environ.copy()
+        child_custom_opp = os.getenv(
+            "VLLM_ASCEND_RESIDENT_EPOCH_CHILD_ASCEND_CUSTOM_OPP_PATH"
+        )
+        if child_custom_opp:
+            opp_roots = [Path(item).resolve() for item in child_custom_opp.split(":")]
+            if not all(path.is_dir() for path in opp_roots):
+                raise RuntimeError("resident sidecar custom OPP path is invalid")
+            child_env["ASCEND_CUSTOM_OPP_PATH"] = ":".join(
+                str(path) for path in opp_roots
+            )
+        child_library_path = os.getenv(
+            "VLLM_ASCEND_RESIDENT_EPOCH_CHILD_LIBRARY_PATH"
+        )
+        if child_library_path:
+            library_roots = [
+                Path(item).resolve() for item in child_library_path.split(":")
+            ]
+            if not all(path.is_dir() for path in library_roots):
+                raise RuntimeError("resident sidecar library path is invalid")
+            inherited = child_env.get("LD_LIBRARY_PATH")
+            child_env["LD_LIBRARY_PATH"] = ":".join(
+                [
+                    *(str(path) for path in library_roots),
+                    *([inherited] if inherited else []),
+                ]
+            )
         trace_library_raw = os.getenv(
             "VLLM_ASCEND_RESIDENT_EPOCH_MEMCPY_TRACE_LIBRARY"
         )
@@ -104,6 +137,7 @@ class SidecarDataFlowEngine:
 
         try:
             self.socket_path.unlink(missing_ok=True)
+            self.transfer_path.unlink(missing_ok=True)
         except OSError as exc:
             raise RuntimeError(f"cannot reset sidecar socket: {exc}") from exc
 
@@ -184,6 +218,7 @@ class SidecarDataFlowEngine:
             WARM_UP,
             1,
             1,
+            0,
             11690,
             0,
             0,
@@ -231,6 +266,42 @@ class SidecarDataFlowEngine:
         )
 
     def execute(self, plan: ResidentEpochPlan) -> NativeEpochOutput:
+        return self._execute(plan, operation=EXECUTE, transfer_id=0)
+
+    def execute_with_import(
+        self, plan: ResidentEpochPlan, snapshot: ResidentKVSnapshot
+    ) -> NativeEpochOutput:
+        snapshot.validate()
+        expected_mask = sum(
+            1 << request.row
+            for request in plan.requests
+            if request.kv_import_required
+        )
+        if snapshot.import_mask != expected_mask:
+            raise ValueError("KV snapshot mask does not match the resident plan")
+        expected_generations = [0] * GRAPH_BATCH_SIZE
+        for request in plan.requests:
+            if request.kv_import_required:
+                expected_generations[request.row] = request.generation
+        if snapshot.row_generations != tuple(expected_generations):
+            raise ValueError("KV snapshot generations do not match the resident plan")
+        write_kv_snapshot(self.transfer_path, snapshot)
+        try:
+            return self._execute(
+                plan,
+                operation=IMPORT_EXECUTE,
+                transfer_id=snapshot.transfer_id,
+            )
+        finally:
+            self.transfer_path.unlink(missing_ok=True)
+
+    def _execute(
+        self,
+        plan: ResidentEpochPlan,
+        *,
+        operation: int,
+        transfer_id: int,
+    ) -> NativeEpochOutput:
         if self.socket is None:
             raise ResidentEpochExecutionError(
                 "resident epoch sidecar is closed",
@@ -242,9 +313,10 @@ class SidecarDataFlowEngine:
         payload = REQUEST.pack(
             REQUEST_MAGIC,
             PROTOCOL_VERSION,
-            EXECUTE,
+            operation,
             len(requests),
             plan.max_steps,
+            transfer_id,
             *_by_row(plan, "token_id", 0),
             *_by_row(plan, "position", 0),
             *_by_row(plan, "sequence_length", 0),
@@ -302,6 +374,8 @@ class SidecarDataFlowEngine:
             native_cpu_us=native_cpu_us,
             declared_input_bytes=declared_input_bytes,
             declared_output_bytes=declared_output_bytes,
+            kv_imported=operation == IMPORT_EXECUTE,
+            kv_import_checksum=values[7] & 0xFFFFFFFF,
         )
 
     def _stop_process(self) -> None:
@@ -324,6 +398,7 @@ class SidecarDataFlowEngine:
                             SHUTDOWN,
                             0,
                             0,
+                            0,
                             *([0] * 20),
                         )
                     )
@@ -341,6 +416,7 @@ class SidecarDataFlowEngine:
                 self._stop_process()
         try:
             self.socket_path.unlink(missing_ok=True)
+            self.transfer_path.unlink(missing_ok=True)
         except OSError:
             pass
 
