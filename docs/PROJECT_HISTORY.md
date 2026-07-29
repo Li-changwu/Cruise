@@ -159,7 +159,7 @@ leaves no untracked source files or unbounded persistent artifacts.
 - [x] Implement a real prefill-to-resident-decode ownership transition and
   prove token and Paged-KV equivalence against unmodified vLLM for nontrivial
   prompts.
-- [ ] Support continuous admission, completion, and row reuse at epoch
+- [x] Support continuous admission, completion, and row reuse at epoch
   boundaries for mixed arrival times and output lengths while retaining the
   generation-checked row lease.
 - [ ] Preserve OpenAI-compatible streaming and non-streaming response order,
@@ -206,11 +206,21 @@ completion-driven active-count shrink while surviving row generations remained
 stable. The frozen server suite has 78 passing tests. Evidence is in
 [`M1-BATCHED-PREFILL-20260729.md`](../evidence/M1-BATCHED-PREFILL-20260729.md).
 
-M1 remains open. The next ordered gates are: continuous admission and
-generation-checked row reuse after nontrivial prefills at epoch boundaries;
-unsupported-request routing before ownership transfer; API streaming and
-non-streaming ordering; then disconnect/cancellation and the 1,000-request
-differential exit suite.
+M1 fourth increment (2026-07-29): A remained Device-owned while B and then C
+each executed an isolated stock prefill. The two mixed resident epochs imported
+only the new row; A retained row 0/generation 1, while B used row 1/generation
+2 and C reused row 1/generation 3 after B completed. All three output token
+sequences, terminal reasons, and final scheduler accounting matched stock
+vLLM. All three Host/Device Paged-KV checksum pairs matched, and every Device
+epoch retained one Feed and one Fetch. The scheduler now fail-stops before a
+Host step can execute stale Device-owned state. The frozen server suite has 83
+passing tests. Evidence is in
+[`M1-CONTINUOUS-ADMISSION-20260729.md`](../evidence/M1-CONTINUOUS-ADMISSION-20260729.md).
+
+M1 remains open. The next ordered gates are: stock-equivalent unsupported
+request routing before ownership transfer; API streaming and non-streaming
+ordering; then EOS, disconnect/cancellation, simultaneous-arrival expansion,
+and the 1,000-request differential exit suite.
 
 ### M2: Lifecycle, Recovery, and Resource Safety
 

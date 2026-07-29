@@ -2,9 +2,10 @@ from pathlib import Path
 
 import pytest
 
+from vllm import SamplingParams
 from tests.v1.core.utils import create_requests, create_scheduler
 from vllm.v1.outputs import ModelRunnerOutput
-from vllm.v1.request import RequestStatus
+from vllm.v1.request import Request, RequestStatus
 
 from vllm_ascend_resident_epoch.config import ResidentEpochConfig
 from vllm_ascend_resident_epoch.contract import (
@@ -48,6 +49,49 @@ def add_greedy_requests(scheduler, batch_size: int, max_tokens: int = 8):
         request.sampling_params.update_from_generation_config({}, EOS_TOKEN_ID)
         scheduler.add_request(request)
     return requests
+
+
+def make_prefill_request(
+    request_id: str, prompt_token_ids: list[int], max_tokens: int
+) -> Request:
+    params = SamplingParams(temperature=0.0, max_tokens=max_tokens)
+    params.update_from_generation_config({}, EOS_TOKEN_ID)
+    return Request(
+        request_id=request_id,
+        client_index=0,
+        prompt_token_ids=prompt_token_ids,
+        sampling_params=params,
+        pooling_params=None,
+    )
+
+
+def commit_device_epoch(scheduler, scheduler_output, tokens_by_req):
+    plan = get_plan(scheduler_output)
+    assert plan is not None
+    req_ids = list(plan.req_ids)
+    output = ModelRunnerOutput(
+        req_ids=req_ids,
+        req_id_to_index={req_id: index for index, req_id in enumerate(req_ids)},
+        sampled_token_ids=[tokens_by_req[req_id] for req_id in req_ids],
+    )
+    importing = any(request.kv_import_required for request in plan.requests)
+    attach_result(
+        output,
+        ResidentEpochResult(
+            version=CONTRACT_VERSION,
+            route="device",
+            status=0,
+            model_calls=plan.max_steps,
+            computed_steps={
+                req_id: len(tokens_by_req[req_id]) for req_id in req_ids
+            },
+            row_generations=plan.row_generations,
+            kv_imported=importing,
+            kv_import_checksum=1 if importing else 0,
+            kv_snapshot_checksum=1 if importing else 0,
+        ),
+    )
+    scheduler.update_from_output(scheduler_output, output)
 
 
 @pytest.mark.parametrize(
@@ -211,3 +255,128 @@ def test_host_prefill_transitions_to_device_owned_decode():
     assert next_plan is not None
     assert next_plan.requests[0].state_owner == "device"
     assert not next_plan.requests[0].kv_import_required
+
+
+def test_nontrivial_continuous_admission_isolates_host_prefill_and_reuses_row():
+    scheduler = make_scheduler(2)
+    scheduler._resident_epoch_config = ResidentEpochConfig(max_steps=2)
+    request_a = make_prefill_request("A", [9707, 11], max_tokens=7)
+    scheduler.add_request(request_a)
+
+    prefill_a = scheduler.schedule()
+    assert get_plan(prefill_a) is None
+    scheduler.update_from_output(
+        prefill_a,
+        ModelRunnerOutput(
+            req_ids=["A"],
+            req_id_to_index={"A": 0},
+            sampled_token_ids=[[101]],
+        ),
+    )
+    import_a = scheduler.schedule()
+    plan_a = get_plan(import_a)
+    assert plan_a is not None
+    assert plan_a.max_steps == 2
+    commit_device_epoch(scheduler, import_a, {"A": [102, 103]})
+
+    request_b = make_prefill_request("B", [9707, 11, 358], max_tokens=2)
+    scheduler.add_request(request_b)
+    prefill_b = scheduler.schedule()
+    assert get_plan(prefill_b) is None
+    assert prefill_b.num_scheduled_tokens == {"B": 3}
+    assert scheduler._resident_epoch_last_rejection == "host-prefill-admission"
+    assert [request.request_id for request in scheduler.running] == ["A", "B"]
+    scheduler.update_from_output(
+        prefill_b,
+        ModelRunnerOutput(
+            req_ids=["B"],
+            req_id_to_index={"B": 0},
+            sampled_token_ids=[[201]],
+        ),
+    )
+
+    import_b = scheduler.schedule()
+    plan_b = get_plan(import_b)
+    assert plan_b is not None
+    assert plan_b.max_steps == 1
+    plan_b_rows = [
+        (request.req_id, request.row, request.generation)
+        for request in plan_b.requests
+    ]
+    assert plan_b_rows == [
+        ("A", 0, 1),
+        ("B", 1, 2),
+    ]
+    assert plan_b.requests[0].state_owner == "device"
+    assert not plan_b.requests[0].kv_import_required
+    assert plan_b.requests[1].state_owner == "host"
+    assert plan_b.requests[1].kv_import_required
+    commit_device_epoch(scheduler, import_b, {"A": [104], "B": [202]})
+    assert request_b.status == RequestStatus.FINISHED_LENGTH_CAPPED
+
+    request_c = make_prefill_request(
+        "C", [9707, 11, 358, 374], max_tokens=2
+    )
+    scheduler.add_request(request_c)
+    prefill_c = scheduler.schedule()
+    assert get_plan(prefill_c) is None
+    assert prefill_c.num_scheduled_tokens == {"C": 4}
+    assert scheduler._resident_epoch_last_rejection == "host-prefill-admission"
+    scheduler.update_from_output(
+        prefill_c,
+        ModelRunnerOutput(
+            req_ids=["C"],
+            req_id_to_index={"C": 0},
+            sampled_token_ids=[[301]],
+        ),
+    )
+
+    import_c = scheduler.schedule()
+    plan_c = get_plan(import_c)
+    assert plan_c is not None
+    plan_c_rows = [
+        (request.req_id, request.row, request.generation)
+        for request in plan_c.requests
+    ]
+    assert plan_c_rows == [
+        ("A", 0, 1),
+        ("C", 1, 3),
+    ]
+    assert plan_c.requests[0].state_owner == "device"
+    assert plan_c.requests[1].state_owner == "host"
+    assert plan_c.requests[1].kv_import_required
+    commit_device_epoch(scheduler, import_c, {"A": [105], "C": [302]})
+    assert request_c.status == RequestStatus.FINISHED_LENGTH_CAPPED
+
+    finish_a = scheduler.schedule()
+    finish_plan = get_plan(finish_a)
+    assert finish_plan is not None
+    assert finish_plan.req_ids == ("A",)
+    assert finish_plan.max_steps == 2
+    commit_device_epoch(scheduler, finish_a, {"A": [106, 107]})
+    assert request_a.status == RequestStatus.FINISHED_LENGTH_CAPPED
+
+
+def test_ineligible_admission_cannot_route_device_owned_request_to_host():
+    scheduler = make_scheduler(2)
+    scheduler._resident_epoch_config = ResidentEpochConfig(max_steps=2)
+    request_a = make_prefill_request("A", [9707, 11], max_tokens=7)
+    scheduler.add_request(request_a)
+    prefill_a = scheduler.schedule()
+    scheduler.update_from_output(
+        prefill_a,
+        ModelRunnerOutput(
+            req_ids=["A"],
+            req_id_to_index={"A": 0},
+            sampled_token_ids=[[101]],
+        ),
+    )
+    import_a = scheduler.schedule()
+    commit_device_epoch(scheduler, import_a, {"A": [102, 103]})
+
+    unsupported = make_prefill_request("unsupported", [9707, 11], max_tokens=2)
+    unsupported.sampling_params.temperature = 0.8
+    scheduler.add_request(unsupported)
+
+    with pytest.raises(RuntimeError, match="refusing Host execution"):
+        scheduler.schedule()

@@ -93,13 +93,82 @@ class ResidentEpochScheduler(Scheduler):
                 return f"{field}={getattr(hf_config, field, None)!r}"
         return None
 
+    def _host_prefill_admission(self) -> tuple[Any, ...]:
+        """Return the single waiting prefill that can safely join the cohort."""
+
+        device_running = tuple(
+            request
+            for request in self.running
+            if request.request_id in self._resident_epoch_device_owned
+        )
+        if (
+            not device_running
+            or len(device_running) != len(self.running)
+            or len(self.running) >= self.max_num_running_reqs
+        ):
+            return ()
+        waiting = tuple(self.waiting) + tuple(self.skipped_waiting)
+        if len(waiting) != 1:
+            return ()
+        request = waiting[0]
+        if (
+            request.num_prompt_tokens <= 1
+            or request.num_prompt_tokens > self._resident_epoch_config.logical_capacity
+            or request_rejection_reason(request) is not None
+        ):
+            return ()
+        return (request,)
+
+    def _schedule_with_host_prefill_isolation(self) -> tuple[Any, tuple[str, ...]]:
+        admission = self._host_prefill_admission()
+        if not admission:
+            return super().schedule(), ()
+
+        paused = tuple(
+            request
+            for request in self.running
+            if request.request_id in self._resident_epoch_device_owned
+        )
+        paused_ids = tuple(request.request_id for request in paused)
+        original_max_running = self.max_num_running_reqs
+        self.running[:] = [
+            request for request in self.running if request not in paused
+        ]
+        self.max_num_running_reqs = original_max_running - len(paused)
+        try:
+            scheduler_output = super().schedule()
+        finally:
+            current = list(self.running)
+            self.running[:] = [*paused, *current]
+            self.max_num_running_reqs = original_max_running
+
+        if set(scheduler_output.num_scheduled_tokens) != {
+            request.request_id for request in admission
+        }:
+            raise RuntimeError(
+                "isolated Host prefill scheduled an unexpected request set"
+            )
+        return scheduler_output, paused_ids
+
     def schedule(self):
         self._ensure_test_config()
         if self.num_lookahead_tokens != 0:
             raise RuntimeError("resident epoch lookahead conflicts with another feature")
-        scheduler_output = super().schedule()
+        scheduler_output, paused_ids = self._schedule_with_host_prefill_isolation()
 
         plan, rejection = self._make_resident_epoch_plan(scheduler_output)
+        if plan is None:
+            scheduled_device_owned = (
+                set(scheduler_output.num_scheduled_tokens)
+                & self._resident_epoch_device_owned
+            )
+            if scheduled_device_owned:
+                raise RuntimeError(
+                    "refusing Host execution for Device-owned requests: "
+                    + ",".join(sorted(scheduled_device_owned))
+                )
+        if paused_ids:
+            rejection = "host-prefill-admission"
         self._resident_epoch_last_rejection = rejection
         self._resident_epoch_last_plan = plan
         self._resident_epoch_last_result = None

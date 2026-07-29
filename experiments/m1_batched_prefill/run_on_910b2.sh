@@ -19,8 +19,8 @@ frozen=${artifacts}/frozen
 frozen_air=${frozen}/qwen_b4_decoder_step_attempt69c_r2.air
 tiling=${frozen}/explicit_tiling.bin
 old_weight_prefix=${CRUISE_OLD_WEIGHT_PREFIX:-/root/ascend-control-g4-20260723/export-attempt69c-b4}
-case_manifest=${source_dir}/experiments/m1_batched_prefill/cases.json
-runner=${source_dir}/experiments/m1_batched_prefill/run_differential.py
+case_manifest=${CRUISE_CASE_MANIFEST:-${source_dir}/experiments/m1_batched_prefill/cases.json}
+runner=${CRUISE_DIFFERENTIAL_RUNNER:-${source_dir}/experiments/m1_batched_prefill/run_differential.py}
 resource_config=${source_dir}/experiments/synthetic-p0/numa_config.physical7.json
 
 build=${scratch}/native-build

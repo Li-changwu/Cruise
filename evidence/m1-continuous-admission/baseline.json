@@ -1,0 +1,318 @@
+{
+  "checks": {
+    "cleanup_did_not_execute_model": true,
+    "exact_output_lengths": true,
+    "expected_scheduler": true,
+    "final_state_per_request": true,
+    "request_drained": true,
+    "stock_only": true,
+    "terminal_reason_per_request": true
+  },
+  "final_request_state": {
+    "A": {
+      "num_computed_tokens": 8,
+      "num_output_tokens": 7,
+      "status": "FINISHED_LENGTH_CAPPED"
+    },
+    "B": {
+      "num_computed_tokens": 4,
+      "num_output_tokens": 2,
+      "status": "FINISHED_LENGTH_CAPPED"
+    },
+    "C": {
+      "num_computed_tokens": 5,
+      "num_output_tokens": 2,
+      "status": "FINISHED_LENGTH_CAPPED"
+    }
+  },
+  "gate": "M1 continuous nontrivial-prefill admission and row reuse",
+  "mode": "baseline",
+  "model": "/root/ascend-control-cruise-20260729/artifacts/model-frozen",
+  "pass": true,
+  "request_drained": true,
+  "resolved_classes": {
+    "scheduler": "vllm.v1.core.sched.scheduler.Scheduler",
+    "worker": "vllm_ascend.worker.worker.NPUWorker"
+  },
+  "scenario": [
+    {
+      "max_tokens": 7,
+      "prompt_token_ids": [
+        9707,
+        11
+      ],
+      "request_id": "A"
+    },
+    {
+      "max_tokens": 2,
+      "prompt_token_ids": [
+        9707,
+        11,
+        358
+      ],
+      "request_id": "B"
+    },
+    {
+      "max_tokens": 2,
+      "prompt_token_ids": [
+        9707,
+        11,
+        358,
+        374
+      ],
+      "request_id": "C"
+    }
+  ],
+  "schema_version": 1,
+  "steps": [
+    {
+      "engine_outputs": [
+        {
+          "client_index": 0,
+          "finish_reason": null,
+          "request_id": "A",
+          "stop_reason": null,
+          "tokens": [
+            358
+          ]
+        }
+      ],
+      "index": 0,
+      "model_executed": true,
+      "new_tokens_by_request": {
+        "A": [
+          358
+        ]
+      },
+      "plan": null,
+      "result": null,
+      "scheduler_rejection": null
+    },
+    {
+      "engine_outputs": [
+        {
+          "client_index": 0,
+          "finish_reason": null,
+          "request_id": "A",
+          "stop_reason": null,
+          "tokens": [
+            2776
+          ]
+        }
+      ],
+      "index": 1,
+      "model_executed": true,
+      "new_tokens_by_request": {
+        "A": [
+          2776
+        ]
+      },
+      "plan": null,
+      "result": null,
+      "scheduler_rejection": null
+    },
+    {
+      "admitted_after_step": "B",
+      "engine_outputs": [
+        {
+          "client_index": 0,
+          "finish_reason": null,
+          "request_id": "A",
+          "stop_reason": null,
+          "tokens": [
+            4460
+          ]
+        }
+      ],
+      "index": 2,
+      "model_executed": true,
+      "new_tokens_by_request": {
+        "A": [
+          4460
+        ]
+      },
+      "plan": null,
+      "result": null,
+      "scheduler_rejection": null
+    },
+    {
+      "engine_outputs": [
+        {
+          "client_index": 0,
+          "finish_reason": null,
+          "request_id": "A",
+          "stop_reason": null,
+          "tokens": [
+            311
+          ]
+        },
+        {
+          "client_index": 1,
+          "finish_reason": null,
+          "request_id": "B",
+          "stop_reason": null,
+          "tokens": [
+            2776
+          ]
+        }
+      ],
+      "index": 3,
+      "model_executed": true,
+      "new_tokens_by_request": {
+        "A": [
+          311
+        ],
+        "B": [
+          2776
+        ]
+      },
+      "plan": null,
+      "result": null,
+      "scheduler_rejection": null
+    },
+    {
+      "admitted_after_step": "C",
+      "engine_outputs": [
+        {
+          "client_index": 0,
+          "finish_reason": null,
+          "request_id": "A",
+          "stop_reason": null,
+          "tokens": [
+            1855
+          ]
+        },
+        {
+          "client_index": 1,
+          "finish_reason": 1,
+          "request_id": "B",
+          "stop_reason": null,
+          "tokens": [
+            4460
+          ]
+        }
+      ],
+      "index": 4,
+      "model_executed": true,
+      "new_tokens_by_request": {
+        "A": [
+          1855
+        ],
+        "B": [
+          4460
+        ]
+      },
+      "plan": null,
+      "result": null,
+      "scheduler_rejection": null
+    },
+    {
+      "engine_outputs": [
+        {
+          "client_index": 0,
+          "finish_reason": null,
+          "request_id": "A",
+          "stop_reason": null,
+          "tokens": [
+            264
+          ]
+        },
+        {
+          "client_index": 2,
+          "finish_reason": null,
+          "request_id": "C",
+          "stop_reason": null,
+          "tokens": [
+            264
+          ]
+        }
+      ],
+      "index": 5,
+      "model_executed": true,
+      "new_tokens_by_request": {
+        "A": [
+          264
+        ],
+        "C": [
+          264
+        ]
+      },
+      "plan": null,
+      "result": null,
+      "scheduler_rejection": null
+    },
+    {
+      "engine_outputs": [
+        {
+          "client_index": 0,
+          "finish_reason": 1,
+          "request_id": "A",
+          "stop_reason": null,
+          "tokens": [
+            2025
+          ]
+        },
+        {
+          "client_index": 2,
+          "finish_reason": 1,
+          "request_id": "C",
+          "stop_reason": null,
+          "tokens": [
+            220
+          ]
+        }
+      ],
+      "index": 6,
+      "model_executed": true,
+      "new_tokens_by_request": {
+        "A": [
+          2025
+        ],
+        "C": [
+          220
+        ]
+      },
+      "plan": null,
+      "result": null,
+      "scheduler_rejection": null
+    },
+    {
+      "engine_outputs": [],
+      "index": 7,
+      "model_executed": false,
+      "new_tokens_by_request": {},
+      "plan": null,
+      "result": null,
+      "scheduler_rejection": null
+    }
+  ],
+  "terminal_finish_reasons": {
+    "A": 1,
+    "B": 1,
+    "C": 1
+  },
+  "terminal_stop_reasons": {
+    "A": null,
+    "B": null,
+    "C": null
+  },
+  "tokens": {
+    "A": [
+      358,
+      2776,
+      4460,
+      311,
+      1855,
+      264,
+      2025
+    ],
+    "B": [
+      2776,
+      4460
+    ],
+    "C": [
+      264,
+      220
+    ]
+  }
+}

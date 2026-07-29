@@ -31,3 +31,8 @@ The batched prefill checkpoint is summarized in
 simultaneous B=1-4 nontrivial prefills, mixed prompt/output lengths, multi-row
 KV import checksums, completion-driven batch shrink, and exact stock-vLLM
 differential results.
+
+The continuous-admission checkpoint is summarized in
+[`M1-CONTINUOUS-ADMISSION-20260729.md`](M1-CONTINUOUS-ADMISSION-20260729.md).
+It covers isolated stock prefills while another request remains Device-owned,
+selective Paged-KV import, completion, and generation-checked row reuse.

@@ -1,0 +1,16 @@
+{
+  "baseline": "/root/ascend-control-cruise-20260729/evidence-m1-continuous-admission-20260729-r1/baseline.json",
+  "checks": {
+    "baseline_passed": true,
+    "cruise_passed": true,
+    "same_final_request_state": true,
+    "same_finish_reasons": true,
+    "same_scenario": true,
+    "same_stop_reasons": true,
+    "same_tokens": true
+  },
+  "cruise": "/root/ascend-control-cruise-20260729/evidence-m1-continuous-admission-20260729-r1/cruise.json",
+  "gate": "M1 continuous-admission differential",
+  "pass": true,
+  "schema_version": 1
+}
