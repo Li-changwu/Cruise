@@ -165,7 +165,7 @@ leaves no untracked source files or unbounded persistent artifacts.
 - [ ] Preserve OpenAI-compatible streaming and non-streaming response order,
   EOS, `max_tokens`, disconnect, cancellation, and request-finalization
   semantics.
-- [ ] Define explicit `prepared`, `executing`, and `committed` states. Only a
+- [x] Define explicit `prepared`, `executing`, and `committed` states. Only a
   proven pre-execution failure may replay on the Host; an ambiguous
   post-mutation failure must never duplicate token or KV advancement.
 - [ ] Route unsupported sampling or features to an unmodified Host path before
@@ -175,6 +175,17 @@ Exit evidence: a differential suite of at least 1,000 deterministic requests
 spanning prompt/output-length bins, batch sizes 1-4, EOS and cancellation
 boundaries has exact token IDs, finish reasons, streaming order, and scheduler
 accounting. All ineligible cases preserve baseline behavior.
+
+M1 first increment (2026-07-29): commit `857c007` adds the state-owner field,
+the `prepared -> executing -> committed` Python contract, sidecar protocol v4,
+native bridge transitions around Feed/Fetch, and a fail-safe fallback adapter.
+The dependency-light suite has 50 passing tests; the frozen server environment
+has 70 passing tests; and CANN 8.5.1 compiled both new/old bridge and server
+targets. The evidence is in
+[`M1-COMMIT-STATE-20260729.md`](../evidence/M1-COMMIT-STATE-20260729.md).
+M1 remains open because real prefill ownership transfer, streaming API
+semantics, continuous admission/row reuse, cancellation, and hardware fault
+injection have not yet been qualified.
 
 ### M2: Lifecycle, Recovery, and Resource Safety
 

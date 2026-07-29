@@ -15,3 +15,8 @@ The current productization checkpoint is summarized in
 [`M0-PRODUCT-READINESS-20260729.md`](M0-PRODUCT-READINESS-20260729.md). It
 records both the completed contract/package checks and the still-open M0
 real-model lifecycle condition.
+
+The first M1 ownership/commit-state checkpoint is summarized in
+[`M1-COMMIT-STATE-20260729.md`](M1-COMMIT-STATE-20260729.md). It records the
+prepared/executing/committed boundary and explicitly excludes unqualified
+prefill, API streaming, cancellation, and hardware fault claims.

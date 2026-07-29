@@ -115,7 +115,7 @@ python verify_minimal_abi_source.py . \
   --baseline-source history/attempts/vllm-integration-attempt73-multi-epoch-cohort
 ```
 
-该子集目前包含 44 项测试。完整的 60 项测试还需要冻结版本的 PyTorch、vLLM 和
+该子集目前包含 50 项测试。完整的 70 项测试还需要冻结版本的 PyTorch、vLLM 和
 vLLM-Ascend 环境；native 执行还需要实验协议指定的 Ascend/DataFlow 工具链、
 decoder AIR 与外部权重。模型生成物和原始测量数据不会存入本仓库。
 

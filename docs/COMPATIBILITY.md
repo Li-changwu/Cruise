@@ -38,10 +38,10 @@ machine-readable profile and the Attempt 74 evidence.
 
 | Contract | Version or shape |
 |---|---:|
-| Python scheduler/result contract | 1 |
+| Python scheduler/result contract | 2 |
 | Runtime configuration schema | 1 |
-| Sidecar wire protocol | 3 |
-| Sidecar request / response | 128 B / 344 B |
+| Sidecar wire protocol | 4 |
+| Sidecar request / response | 128 B / 352 B |
 | Host-UDF ABI | 2, 8 inputs / 2 outputs |
 | Internal decoder ABI | 1, 9 inputs / 4 outputs |
 

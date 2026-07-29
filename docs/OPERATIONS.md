@@ -51,10 +51,13 @@ does not change the exit code; any failed check returns nonzero.
 | Device error after execution begins | Treat the request as ambiguous; do not duplicate token/KV advancement |
 | Unmarked scratch content | Investigate ownership; Cruise intentionally refuses deletion |
 
-Current runtime exceptions remain fail-stop because the native bridge cannot
-yet prove a post-error commit point. M1 must add the explicit
-`prepared -> executing -> committed` protocol before automatic Host fallback
-is enabled.
+The sidecar protocol reports an explicit `prepared -> executing -> committed`
+state. Host replay is permitted only when the response is `prepared` and every
+request in the plan was still Host-owned before the epoch. A Feed/Fetch error,
+socket interruption after submission, invalid committed output, or any batch
+containing a device-owned row is fail-stop; the scheduler must not duplicate
+token or KV advancement. The dedicated resident worker has no stock Host model
+to replay and therefore remains fail-stop even for a prepared error.
 
 ## Logging and Data Handling
 
@@ -63,4 +66,3 @@ per-run `/dev/shm` directory. Prompt text, generated text, credentials and raw
 model tensors are not intentionally logged by the Cruise control layer. Formal
 profiling remains opt-in and must follow `docs/REPOSITORY_POLICY.md`; it is not
 a normal product-health mechanism.
-
