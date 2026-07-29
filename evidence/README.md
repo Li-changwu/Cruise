@@ -25,3 +25,9 @@ The first real prefill ownership-transfer checkpoint is summarized in
 [`M1-PREFILL-TRANSFER-20260729.md`](M1-PREFILL-TRANSFER-20260729.md). It records
 the stock-vLLM token baseline, one-shot Paged-KV import checksum proof, first
 Device-owned steady epoch, lifecycle cleanup, and the remaining M1 boundary.
+
+The batched prefill checkpoint is summarized in
+[`M1-BATCHED-PREFILL-20260729.md`](M1-BATCHED-PREFILL-20260729.md). It covers
+simultaneous B=1-4 nontrivial prefills, mixed prompt/output lengths, multi-row
+KV import checksums, completion-driven batch shrink, and exact stock-vLLM
+differential results.

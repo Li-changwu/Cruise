@@ -77,12 +77,14 @@ for deployment qualification rather than every process start.
 
 ## M1 Validated Extension
 
-The 2026-07-29 M1 checkpoint extends the validated correctness envelope with
-one B=1 request using a three-token stock-vLLM prefill and four greedy output
-tokens. The first resident epoch imports one 128-token Paged-KV block for all
-28 layers and executes K=2; the following Device-owned epoch executes K=1
-through the steady 8-input/2-output ABI. This does not extend the profile to
-arbitrary prompt lengths, mixed batches, or continuous admission.
+The 2026-07-29 M1 checkpoints extend the validated correctness envelope to
+simultaneous stock-vLLM prefills at B=1,2,3,4, prompt lengths 2-5, and greedy
+output budgets 2-5. Each admitted request imports one 128-token Paged-KV block
+for all 28 layers exactly once. Mixed-budget B=3 and B=4 cohorts shrink as
+requests complete while surviving rows keep their generations and continue
+through the steady 8-input/2-output ABI. This bounded matrix does not establish
+arbitrary prompt lengths, admission of new requests into a Device-owned cohort,
+or row reuse after a nontrivial prefill.
 
 ## Claim Boundary
 

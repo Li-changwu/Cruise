@@ -68,3 +68,51 @@ def test_capture_stock_paged_kv_uses_scheduler_block_and_resident_row():
         "<H", snapshot.payload, value_base + imported_key_offset
     )[0] == 0x4000
     assert struct.unpack_from("<H", snapshot.payload, 0)[0] == 0
+
+
+def test_capture_stock_paged_kv_imports_multiple_scheduler_blocks_by_row():
+    key = torch.zeros((4, 128, 4, 128), dtype=torch.bfloat16)
+    value = torch.zeros_like(key)
+    for block in range(4):
+        key[block].fill_(block + 1)
+        value[block].fill_(block + 5)
+    worker = SimpleNamespace(
+        model_runner=SimpleNamespace(kv_caches=[(key, value)] * 28)
+    )
+
+    requests = []
+    scheduler_blocks = {0: 2, 2: 0, 3: 3}
+    for row, scheduler_block in scheduler_blocks.items():
+        requests.append(
+            ResidentEpochRequest(
+                req_id=f"r{row}",
+                row=row,
+                generation=row + 10,
+                token_id=42 + row,
+                position=3 + row,
+                sequence_length=4 + row,
+                eos_token_id=151645,
+                scheduler_block_ids=(scheduler_block,),
+                device_block_ids=(row * 2, row * 2 + 1),
+                state_owner="host",
+                kv_import_required=True,
+            )
+        )
+    plan = ResidentEpochPlan(
+        version=CONTRACT_VERSION,
+        graph_batch_size=4,
+        max_steps=1,
+        logical_capacity=8,
+        requests=tuple(requests),
+        active_mask=(1, 0, 1, 1),
+    )
+
+    snapshot = capture_kv_snapshot(worker, plan)
+
+    assert snapshot.import_mask == 0b1101
+    assert snapshot.row_generations == (10, 0, 12, 13)
+    row_bytes = BLOCK_ELEMENTS * ELEMENT_BYTES
+    expected_key_words = {0: 0x4040, 1: 0, 2: 0x3F80, 3: 0x4080}
+    for row, expected in expected_key_words.items():
+        actual = struct.unpack_from("<H", snapshot.payload, row * row_bytes)[0]
+        assert actual == expected

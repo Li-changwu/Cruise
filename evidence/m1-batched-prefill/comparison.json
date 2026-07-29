@@ -1,0 +1,40 @@
+{
+  "baseline": "/root/ascend-control-cruise-20260729/evidence-m1-batched-prefill-20260729-r2/baseline.json",
+  "case_checks": {
+    "b1": {
+      "same_final_request_state": true,
+      "same_finish_reasons": true,
+      "same_stop_reasons": true,
+      "same_tokens": true
+    },
+    "b2-mixed": {
+      "same_final_request_state": true,
+      "same_finish_reasons": true,
+      "same_stop_reasons": true,
+      "same_tokens": true
+    },
+    "b3-mixed": {
+      "same_final_request_state": true,
+      "same_finish_reasons": true,
+      "same_stop_reasons": true,
+      "same_tokens": true
+    },
+    "b4-mixed": {
+      "same_final_request_state": true,
+      "same_finish_reasons": true,
+      "same_stop_reasons": true,
+      "same_tokens": true
+    }
+  },
+  "checks": {
+    "all_cases_equivalent": true,
+    "baseline_passed": true,
+    "cruise_passed": true,
+    "same_case_set": true,
+    "same_manifest": true
+  },
+  "cruise": "/root/ascend-control-cruise-20260729/evidence-m1-batched-prefill-20260729-r2/cruise.json",
+  "gate": "M1 B=1-4 batched prefill differential",
+  "pass": true,
+  "schema_version": 1
+}

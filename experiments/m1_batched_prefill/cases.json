@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "logical_capacity": 8,
+  "cases": [
+    {
+      "name": "b1",
+      "requests": [
+        {
+          "request_id": "b1-r0",
+          "prompt_token_ids": [9707, 11, 358],
+          "max_tokens": 4
+        }
+      ]
+    },
+    {
+      "name": "b2-mixed",
+      "requests": [
+        {
+          "request_id": "b2-r0",
+          "prompt_token_ids": [9707, 11],
+          "max_tokens": 5
+        },
+        {
+          "request_id": "b2-r1",
+          "prompt_token_ids": [9707, 11, 358, 374],
+          "max_tokens": 3
+        }
+      ]
+    },
+    {
+      "name": "b3-mixed",
+      "requests": [
+        {
+          "request_id": "b3-r0",
+          "prompt_token_ids": [9707, 11],
+          "max_tokens": 2
+        },
+        {
+          "request_id": "b3-r1",
+          "prompt_token_ids": [9707, 11, 358],
+          "max_tokens": 3
+        },
+        {
+          "request_id": "b3-r2",
+          "prompt_token_ids": [9707, 11, 358, 374, 264],
+          "max_tokens": 4
+        }
+      ]
+    },
+    {
+      "name": "b4-mixed",
+      "requests": [
+        {
+          "request_id": "b4-r0",
+          "prompt_token_ids": [9707, 11],
+          "max_tokens": 2
+        },
+        {
+          "request_id": "b4-r1",
+          "prompt_token_ids": [9707, 11, 358],
+          "max_tokens": 3
+        },
+        {
+          "request_id": "b4-r2",
+          "prompt_token_ids": [9707, 11, 358, 374],
+          "max_tokens": 4
+        },
+        {
+          "request_id": "b4-r3",
+          "prompt_token_ids": [9707, 11, 358, 374, 264],
+          "max_tokens": 4
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1098 @@
+{
+  "cases": [
+    {
+      "batch_size": 1,
+      "checks": {
+        "all_requests_finished": true,
+        "cleanup_did_not_execute_model": true,
+        "exact_output_lengths": true,
+        "exact_request_set": true,
+        "first_step_prefilled_all_requests": true,
+        "no_resident_plans": true,
+        "no_resident_results": true,
+        "request_drained": true
+      },
+      "final_request_state": {
+        "b1-r0": {
+          "num_computed_tokens": 6,
+          "num_output_tokens": 4,
+          "status": "FINISHED_LENGTH_CAPPED"
+        }
+      },
+      "name": "b1",
+      "pass": true,
+      "request_drained": true,
+      "requests": [
+        {
+          "max_tokens": 4,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358
+          ],
+          "request_id": "b1-r0"
+        }
+      ],
+      "steps": [
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": null,
+              "request_id": "b1-r0",
+              "stop_reason": null,
+              "tokens": [
+                2776
+              ]
+            }
+          ],
+          "index": 0,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b1-r0": [
+              2776
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": null,
+              "request_id": "b1-r0",
+              "stop_reason": null,
+              "tokens": [
+                4460
+              ]
+            }
+          ],
+          "index": 1,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b1-r0": [
+              4460
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": null,
+              "request_id": "b1-r0",
+              "stop_reason": null,
+              "tokens": [
+                311
+              ]
+            }
+          ],
+          "index": 2,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b1-r0": [
+              311
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": 1,
+              "request_id": "b1-r0",
+              "stop_reason": null,
+              "tokens": [
+                1855
+              ]
+            }
+          ],
+          "index": 3,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b1-r0": [
+              1855
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [],
+          "index": 4,
+          "model_executed": false,
+          "new_tokens_by_request": {},
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        }
+      ],
+      "terminal_finish_reasons": {
+        "b1-r0": 1
+      },
+      "terminal_stop_reasons": {
+        "b1-r0": null
+      },
+      "tokens": {
+        "b1-r0": [
+          2776,
+          4460,
+          311,
+          1855
+        ]
+      }
+    },
+    {
+      "batch_size": 2,
+      "checks": {
+        "all_requests_finished": true,
+        "cleanup_did_not_execute_model": true,
+        "exact_output_lengths": true,
+        "exact_request_set": true,
+        "first_step_prefilled_all_requests": true,
+        "no_resident_plans": true,
+        "no_resident_results": true,
+        "request_drained": true
+      },
+      "final_request_state": {
+        "b2-r0": {
+          "num_computed_tokens": 6,
+          "num_output_tokens": 5,
+          "status": "FINISHED_LENGTH_CAPPED"
+        },
+        "b2-r1": {
+          "num_computed_tokens": 6,
+          "num_output_tokens": 3,
+          "status": "FINISHED_LENGTH_CAPPED"
+        }
+      },
+      "name": "b2-mixed",
+      "pass": true,
+      "request_drained": true,
+      "requests": [
+        {
+          "max_tokens": 5,
+          "prompt_token_ids": [
+            9707,
+            11
+          ],
+          "request_id": "b2-r0"
+        },
+        {
+          "max_tokens": 3,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358,
+            374
+          ],
+          "request_id": "b2-r1"
+        }
+      ],
+      "steps": [
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": null,
+              "request_id": "b2-r0",
+              "stop_reason": null,
+              "tokens": [
+                358
+              ]
+            },
+            {
+              "client_index": 1,
+              "finish_reason": null,
+              "request_id": "b2-r1",
+              "stop_reason": null,
+              "tokens": [
+                264
+              ]
+            }
+          ],
+          "index": 0,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b2-r0": [
+              358
+            ],
+            "b2-r1": [
+              264
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": null,
+              "request_id": "b2-r0",
+              "stop_reason": null,
+              "tokens": [
+                2776
+              ]
+            },
+            {
+              "client_index": 1,
+              "finish_reason": null,
+              "request_id": "b2-r1",
+              "stop_reason": null,
+              "tokens": [
+                220
+              ]
+            }
+          ],
+          "index": 1,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b2-r0": [
+              2776
+            ],
+            "b2-r1": [
+              220
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": null,
+              "request_id": "b2-r0",
+              "stop_reason": null,
+              "tokens": [
+                4460
+              ]
+            },
+            {
+              "client_index": 1,
+              "finish_reason": 1,
+              "request_id": "b2-r1",
+              "stop_reason": null,
+              "tokens": [
+                16
+              ]
+            }
+          ],
+          "index": 2,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b2-r0": [
+              4460
+            ],
+            "b2-r1": [
+              16
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": null,
+              "request_id": "b2-r0",
+              "stop_reason": null,
+              "tokens": [
+                311
+              ]
+            }
+          ],
+          "index": 3,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b2-r0": [
+              311
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": 1,
+              "request_id": "b2-r0",
+              "stop_reason": null,
+              "tokens": [
+                1855
+              ]
+            }
+          ],
+          "index": 4,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b2-r0": [
+              1855
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [],
+          "index": 5,
+          "model_executed": false,
+          "new_tokens_by_request": {},
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        }
+      ],
+      "terminal_finish_reasons": {
+        "b2-r0": 1,
+        "b2-r1": 1
+      },
+      "terminal_stop_reasons": {
+        "b2-r0": null,
+        "b2-r1": null
+      },
+      "tokens": {
+        "b2-r0": [
+          358,
+          2776,
+          4460,
+          311,
+          1855
+        ],
+        "b2-r1": [
+          264,
+          220,
+          16
+        ]
+      }
+    },
+    {
+      "batch_size": 3,
+      "checks": {
+        "all_requests_finished": true,
+        "cleanup_did_not_execute_model": true,
+        "exact_output_lengths": true,
+        "exact_request_set": true,
+        "first_step_prefilled_all_requests": true,
+        "no_resident_plans": true,
+        "no_resident_results": true,
+        "request_drained": true
+      },
+      "final_request_state": {
+        "b3-r0": {
+          "num_computed_tokens": 3,
+          "num_output_tokens": 2,
+          "status": "FINISHED_LENGTH_CAPPED"
+        },
+        "b3-r1": {
+          "num_computed_tokens": 5,
+          "num_output_tokens": 3,
+          "status": "FINISHED_LENGTH_CAPPED"
+        },
+        "b3-r2": {
+          "num_computed_tokens": 8,
+          "num_output_tokens": 4,
+          "status": "FINISHED_LENGTH_CAPPED"
+        }
+      },
+      "name": "b3-mixed",
+      "pass": true,
+      "request_drained": true,
+      "requests": [
+        {
+          "max_tokens": 2,
+          "prompt_token_ids": [
+            9707,
+            11
+          ],
+          "request_id": "b3-r0"
+        },
+        {
+          "max_tokens": 3,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358
+          ],
+          "request_id": "b3-r1"
+        },
+        {
+          "max_tokens": 4,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358,
+            374,
+            264
+          ],
+          "request_id": "b3-r2"
+        }
+      ],
+      "steps": [
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": null,
+              "request_id": "b3-r0",
+              "stop_reason": null,
+              "tokens": [
+                358
+              ]
+            },
+            {
+              "client_index": 1,
+              "finish_reason": null,
+              "request_id": "b3-r1",
+              "stop_reason": null,
+              "tokens": [
+                2776
+              ]
+            },
+            {
+              "client_index": 2,
+              "finish_reason": null,
+              "request_id": "b3-r2",
+              "stop_reason": null,
+              "tokens": [
+                220
+              ]
+            }
+          ],
+          "index": 0,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b3-r0": [
+              358
+            ],
+            "b3-r1": [
+              2776
+            ],
+            "b3-r2": [
+              220
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": 1,
+              "request_id": "b3-r0",
+              "stop_reason": null,
+              "tokens": [
+                2776
+              ]
+            },
+            {
+              "client_index": 1,
+              "finish_reason": null,
+              "request_id": "b3-r1",
+              "stop_reason": null,
+              "tokens": [
+                4460
+              ]
+            },
+            {
+              "client_index": 2,
+              "finish_reason": null,
+              "request_id": "b3-r2",
+              "stop_reason": null,
+              "tokens": [
+                16
+              ]
+            }
+          ],
+          "index": 1,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b3-r0": [
+              2776
+            ],
+            "b3-r1": [
+              4460
+            ],
+            "b3-r2": [
+              16
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 1,
+              "finish_reason": 1,
+              "request_id": "b3-r1",
+              "stop_reason": null,
+              "tokens": [
+                311
+              ]
+            },
+            {
+              "client_index": 2,
+              "finish_reason": null,
+              "request_id": "b3-r2",
+              "stop_reason": null,
+              "tokens": [
+                19
+              ]
+            }
+          ],
+          "index": 2,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b3-r1": [
+              311
+            ],
+            "b3-r2": [
+              19
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 2,
+              "finish_reason": 1,
+              "request_id": "b3-r2",
+              "stop_reason": null,
+              "tokens": [
+                1042
+              ]
+            }
+          ],
+          "index": 3,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b3-r2": [
+              1042
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [],
+          "index": 4,
+          "model_executed": false,
+          "new_tokens_by_request": {},
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        }
+      ],
+      "terminal_finish_reasons": {
+        "b3-r0": 1,
+        "b3-r1": 1,
+        "b3-r2": 1
+      },
+      "terminal_stop_reasons": {
+        "b3-r0": null,
+        "b3-r1": null,
+        "b3-r2": null
+      },
+      "tokens": {
+        "b3-r0": [
+          358,
+          2776
+        ],
+        "b3-r1": [
+          2776,
+          4460,
+          311
+        ],
+        "b3-r2": [
+          220,
+          16,
+          19,
+          1042
+        ]
+      }
+    },
+    {
+      "batch_size": 4,
+      "checks": {
+        "all_requests_finished": true,
+        "cleanup_did_not_execute_model": true,
+        "exact_output_lengths": true,
+        "exact_request_set": true,
+        "first_step_prefilled_all_requests": true,
+        "no_resident_plans": true,
+        "no_resident_results": true,
+        "request_drained": true
+      },
+      "final_request_state": {
+        "b4-r0": {
+          "num_computed_tokens": 3,
+          "num_output_tokens": 2,
+          "status": "FINISHED_LENGTH_CAPPED"
+        },
+        "b4-r1": {
+          "num_computed_tokens": 5,
+          "num_output_tokens": 3,
+          "status": "FINISHED_LENGTH_CAPPED"
+        },
+        "b4-r2": {
+          "num_computed_tokens": 7,
+          "num_output_tokens": 4,
+          "status": "FINISHED_LENGTH_CAPPED"
+        },
+        "b4-r3": {
+          "num_computed_tokens": 8,
+          "num_output_tokens": 4,
+          "status": "FINISHED_LENGTH_CAPPED"
+        }
+      },
+      "name": "b4-mixed",
+      "pass": true,
+      "request_drained": true,
+      "requests": [
+        {
+          "max_tokens": 2,
+          "prompt_token_ids": [
+            9707,
+            11
+          ],
+          "request_id": "b4-r0"
+        },
+        {
+          "max_tokens": 3,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358
+          ],
+          "request_id": "b4-r1"
+        },
+        {
+          "max_tokens": 4,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358,
+            374
+          ],
+          "request_id": "b4-r2"
+        },
+        {
+          "max_tokens": 4,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358,
+            374,
+            264
+          ],
+          "request_id": "b4-r3"
+        }
+      ],
+      "steps": [
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": null,
+              "request_id": "b4-r0",
+              "stop_reason": null,
+              "tokens": [
+                358
+              ]
+            },
+            {
+              "client_index": 1,
+              "finish_reason": null,
+              "request_id": "b4-r1",
+              "stop_reason": null,
+              "tokens": [
+                2776
+              ]
+            },
+            {
+              "client_index": 2,
+              "finish_reason": null,
+              "request_id": "b4-r2",
+              "stop_reason": null,
+              "tokens": [
+                264
+              ]
+            },
+            {
+              "client_index": 3,
+              "finish_reason": null,
+              "request_id": "b4-r3",
+              "stop_reason": null,
+              "tokens": [
+                220
+              ]
+            }
+          ],
+          "index": 0,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b4-r0": [
+              358
+            ],
+            "b4-r1": [
+              2776
+            ],
+            "b4-r2": [
+              264
+            ],
+            "b4-r3": [
+              220
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": 1,
+              "request_id": "b4-r0",
+              "stop_reason": null,
+              "tokens": [
+                2776
+              ]
+            },
+            {
+              "client_index": 1,
+              "finish_reason": null,
+              "request_id": "b4-r1",
+              "stop_reason": null,
+              "tokens": [
+                4460
+              ]
+            },
+            {
+              "client_index": 2,
+              "finish_reason": null,
+              "request_id": "b4-r2",
+              "stop_reason": null,
+              "tokens": [
+                220
+              ]
+            },
+            {
+              "client_index": 3,
+              "finish_reason": null,
+              "request_id": "b4-r3",
+              "stop_reason": null,
+              "tokens": [
+                16
+              ]
+            }
+          ],
+          "index": 1,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b4-r0": [
+              2776
+            ],
+            "b4-r1": [
+              4460
+            ],
+            "b4-r2": [
+              220
+            ],
+            "b4-r3": [
+              16
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 1,
+              "finish_reason": 1,
+              "request_id": "b4-r1",
+              "stop_reason": null,
+              "tokens": [
+                311
+              ]
+            },
+            {
+              "client_index": 2,
+              "finish_reason": null,
+              "request_id": "b4-r2",
+              "stop_reason": null,
+              "tokens": [
+                16
+              ]
+            },
+            {
+              "client_index": 3,
+              "finish_reason": null,
+              "request_id": "b4-r3",
+              "stop_reason": null,
+              "tokens": [
+                19
+              ]
+            }
+          ],
+          "index": 2,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b4-r1": [
+              311
+            ],
+            "b4-r2": [
+              16
+            ],
+            "b4-r3": [
+              19
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 2,
+              "finish_reason": 1,
+              "request_id": "b4-r2",
+              "stop_reason": null,
+              "tokens": [
+                19
+              ]
+            },
+            {
+              "client_index": 3,
+              "finish_reason": 1,
+              "request_id": "b4-r3",
+              "stop_reason": null,
+              "tokens": [
+                1042
+              ]
+            }
+          ],
+          "index": 3,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b4-r2": [
+              19
+            ],
+            "b4-r3": [
+              1042
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [],
+          "index": 4,
+          "model_executed": false,
+          "new_tokens_by_request": {},
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": null
+        }
+      ],
+      "terminal_finish_reasons": {
+        "b4-r0": 1,
+        "b4-r1": 1,
+        "b4-r2": 1,
+        "b4-r3": 1
+      },
+      "terminal_stop_reasons": {
+        "b4-r0": null,
+        "b4-r1": null,
+        "b4-r2": null,
+        "b4-r3": null
+      },
+      "tokens": {
+        "b4-r0": [
+          358,
+          2776
+        ],
+        "b4-r1": [
+          2776,
+          4460,
+          311
+        ],
+        "b4-r2": [
+          264,
+          220,
+          16,
+          19
+        ],
+        "b4-r3": [
+          220,
+          16,
+          19,
+          1042
+        ]
+      }
+    }
+  ],
+  "checks": {
+    "all_batch_sizes_executed": true,
+    "all_cases_passed": true,
+    "expected_scheduler": true
+  },
+  "gate": "M1 simultaneous B=1-4 nontrivial stock-prefill transfer",
+  "manifest": [
+    {
+      "batch_size": 1,
+      "name": "b1",
+      "requests": [
+        {
+          "max_tokens": 4,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358
+          ],
+          "request_id": "b1-r0"
+        }
+      ]
+    },
+    {
+      "batch_size": 2,
+      "name": "b2-mixed",
+      "requests": [
+        {
+          "max_tokens": 5,
+          "prompt_token_ids": [
+            9707,
+            11
+          ],
+          "request_id": "b2-r0"
+        },
+        {
+          "max_tokens": 3,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358,
+            374
+          ],
+          "request_id": "b2-r1"
+        }
+      ]
+    },
+    {
+      "batch_size": 3,
+      "name": "b3-mixed",
+      "requests": [
+        {
+          "max_tokens": 2,
+          "prompt_token_ids": [
+            9707,
+            11
+          ],
+          "request_id": "b3-r0"
+        },
+        {
+          "max_tokens": 3,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358
+          ],
+          "request_id": "b3-r1"
+        },
+        {
+          "max_tokens": 4,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358,
+            374,
+            264
+          ],
+          "request_id": "b3-r2"
+        }
+      ]
+    },
+    {
+      "batch_size": 4,
+      "name": "b4-mixed",
+      "requests": [
+        {
+          "max_tokens": 2,
+          "prompt_token_ids": [
+            9707,
+            11
+          ],
+          "request_id": "b4-r0"
+        },
+        {
+          "max_tokens": 3,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358
+          ],
+          "request_id": "b4-r1"
+        },
+        {
+          "max_tokens": 4,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358,
+            374
+          ],
+          "request_id": "b4-r2"
+        },
+        {
+          "max_tokens": 4,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358,
+            374,
+            264
+          ],
+          "request_id": "b4-r3"
+        }
+      ]
+    }
+  ],
+  "mode": "baseline",
+  "model": "/root/ascend-control-cruise-20260729/artifacts/model-frozen",
+  "pass": true,
+  "resolved_classes": {
+    "runner": "vllm_ascend.worker.model_runner_v1.NPUModelRunner",
+    "scheduler": "vllm.v1.core.sched.scheduler.Scheduler",
+    "worker": "vllm_ascend.worker.worker.NPUWorker"
+  },
+  "schema_version": 1
+}

@@ -1,0 +1,1760 @@
+{
+  "cases": [
+    {
+      "batch_size": 1,
+      "checks": {
+        "all_requests_finished": true,
+        "cleanup_did_not_execute_model": true,
+        "exact_output_lengths": true,
+        "exact_request_set": true,
+        "first_step_prefilled_all_requests": true,
+        "one_complete_batch_import": true,
+        "one_feed_fetch_per_device_epoch": true,
+        "only_prefill_used_host_execution": true,
+        "request_drained": true,
+        "stable_row_generation": true,
+        "steady_epochs_device_owned": true
+      },
+      "final_request_state": {
+        "b1-r0": {
+          "num_computed_tokens": 6,
+          "num_output_tokens": 4,
+          "status": "FINISHED_LENGTH_CAPPED"
+        }
+      },
+      "name": "b1",
+      "pass": true,
+      "request_drained": true,
+      "requests": [
+        {
+          "max_tokens": 4,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358
+          ],
+          "request_id": "b1-r0"
+        }
+      ],
+      "steps": [
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": null,
+              "request_id": "b1-r0",
+              "stop_reason": null,
+              "tokens": [
+                2776
+              ]
+            }
+          ],
+          "index": 0,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b1-r0": [
+              2776
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": "not-single-token-decode"
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": null,
+              "request_id": "b1-r0",
+              "stop_reason": null,
+              "tokens": [
+                4460,
+                311
+              ]
+            }
+          ],
+          "index": 1,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b1-r0": [
+              4460,
+              311
+            ]
+          },
+          "plan": {
+            "active_mask": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "max_steps": 2,
+            "requests": [
+              {
+                "device_block_ids": [
+                  0,
+                  1
+                ],
+                "generation": 1,
+                "kv_import_required": true,
+                "position": 3,
+                "req_id": "b1-r0",
+                "row": 0,
+                "scheduler_block_ids": [
+                  1
+                ],
+                "sequence_length": 4,
+                "state_owner": "host",
+                "token_id": 2776
+              }
+            ],
+            "row_generations": [
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "result": {
+            "commit_state": "COMMITTED",
+            "computed_steps": {
+              "b1-r0": 2
+            },
+            "declared_input_bytes": 29360372,
+            "declared_output_bytes": 368,
+            "device_kv_checksum": 3477654769,
+            "feed_calls": 1,
+            "fetch_calls": 1,
+            "host_kv_checksum": 3477654769,
+            "kv_imported": true,
+            "model_calls": 2,
+            "route": "device",
+            "row_generations": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "status": 0
+          },
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": 1,
+              "request_id": "b1-r0",
+              "stop_reason": null,
+              "tokens": [
+                1855
+              ]
+            }
+          ],
+          "index": 2,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b1-r0": [
+              1855
+            ]
+          },
+          "plan": {
+            "active_mask": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "max_steps": 1,
+            "requests": [
+              {
+                "device_block_ids": [
+                  0,
+                  1
+                ],
+                "generation": 1,
+                "kv_import_required": false,
+                "position": 5,
+                "req_id": "b1-r0",
+                "row": 0,
+                "scheduler_block_ids": [
+                  1
+                ],
+                "sequence_length": 6,
+                "state_owner": "device",
+                "token_id": 311
+              }
+            ],
+            "row_generations": [
+              1,
+              0,
+              0,
+              0
+            ]
+          },
+          "result": {
+            "commit_state": "COMMITTED",
+            "computed_steps": {
+              "b1-r0": 1
+            },
+            "declared_input_bytes": 260,
+            "declared_output_bytes": 368,
+            "device_kv_checksum": 0,
+            "feed_calls": 1,
+            "fetch_calls": 1,
+            "host_kv_checksum": 0,
+            "kv_imported": false,
+            "model_calls": 1,
+            "route": "device",
+            "row_generations": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "status": 0
+          },
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [],
+          "index": 3,
+          "model_executed": false,
+          "new_tokens_by_request": {},
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": "empty-schedule"
+        }
+      ],
+      "terminal_finish_reasons": {
+        "b1-r0": 1
+      },
+      "terminal_stop_reasons": {
+        "b1-r0": null
+      },
+      "tokens": {
+        "b1-r0": [
+          2776,
+          4460,
+          311,
+          1855
+        ]
+      }
+    },
+    {
+      "batch_size": 2,
+      "checks": {
+        "all_requests_finished": true,
+        "cleanup_did_not_execute_model": true,
+        "exact_output_lengths": true,
+        "exact_request_set": true,
+        "first_step_prefilled_all_requests": true,
+        "mixed_completion_shrinks_batch": true,
+        "one_complete_batch_import": true,
+        "one_feed_fetch_per_device_epoch": true,
+        "only_prefill_used_host_execution": true,
+        "request_drained": true,
+        "stable_row_generation": true,
+        "steady_epochs_device_owned": true
+      },
+      "final_request_state": {
+        "b2-r0": {
+          "num_computed_tokens": 6,
+          "num_output_tokens": 5,
+          "status": "FINISHED_LENGTH_CAPPED"
+        },
+        "b2-r1": {
+          "num_computed_tokens": 6,
+          "num_output_tokens": 3,
+          "status": "FINISHED_LENGTH_CAPPED"
+        }
+      },
+      "name": "b2-mixed",
+      "pass": true,
+      "request_drained": true,
+      "requests": [
+        {
+          "max_tokens": 5,
+          "prompt_token_ids": [
+            9707,
+            11
+          ],
+          "request_id": "b2-r0"
+        },
+        {
+          "max_tokens": 3,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358,
+            374
+          ],
+          "request_id": "b2-r1"
+        }
+      ],
+      "steps": [
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": null,
+              "request_id": "b2-r0",
+              "stop_reason": null,
+              "tokens": [
+                358
+              ]
+            },
+            {
+              "client_index": 1,
+              "finish_reason": null,
+              "request_id": "b2-r1",
+              "stop_reason": null,
+              "tokens": [
+                264
+              ]
+            }
+          ],
+          "index": 0,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b2-r0": [
+              358
+            ],
+            "b2-r1": [
+              264
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": "not-single-token-decode"
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": null,
+              "request_id": "b2-r0",
+              "stop_reason": null,
+              "tokens": [
+                2776,
+                4460
+              ]
+            },
+            {
+              "client_index": 1,
+              "finish_reason": 1,
+              "request_id": "b2-r1",
+              "stop_reason": null,
+              "tokens": [
+                220,
+                16
+              ]
+            }
+          ],
+          "index": 1,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b2-r0": [
+              2776,
+              4460
+            ],
+            "b2-r1": [
+              220,
+              16
+            ]
+          },
+          "plan": {
+            "active_mask": [
+              1,
+              1,
+              0,
+              0
+            ],
+            "max_steps": 2,
+            "requests": [
+              {
+                "device_block_ids": [
+                  0,
+                  1
+                ],
+                "generation": 2,
+                "kv_import_required": true,
+                "position": 2,
+                "req_id": "b2-r0",
+                "row": 0,
+                "scheduler_block_ids": [
+                  2
+                ],
+                "sequence_length": 3,
+                "state_owner": "host",
+                "token_id": 358
+              },
+              {
+                "device_block_ids": [
+                  2,
+                  3
+                ],
+                "generation": 3,
+                "kv_import_required": true,
+                "position": 4,
+                "req_id": "b2-r1",
+                "row": 1,
+                "scheduler_block_ids": [
+                  3
+                ],
+                "sequence_length": 5,
+                "state_owner": "host",
+                "token_id": 264
+              }
+            ],
+            "row_generations": [
+              2,
+              3,
+              0,
+              0
+            ]
+          },
+          "result": {
+            "commit_state": "COMMITTED",
+            "computed_steps": {
+              "b2-r0": 2,
+              "b2-r1": 2
+            },
+            "declared_input_bytes": 29360372,
+            "declared_output_bytes": 368,
+            "device_kv_checksum": 4081853333,
+            "feed_calls": 1,
+            "fetch_calls": 1,
+            "host_kv_checksum": 4081853333,
+            "kv_imported": true,
+            "model_calls": 2,
+            "route": "device",
+            "row_generations": [
+              2,
+              3,
+              0,
+              0
+            ],
+            "status": 0
+          },
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": 1,
+              "request_id": "b2-r0",
+              "stop_reason": null,
+              "tokens": [
+                311,
+                1855
+              ]
+            }
+          ],
+          "index": 2,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b2-r0": [
+              311,
+              1855
+            ]
+          },
+          "plan": {
+            "active_mask": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "max_steps": 2,
+            "requests": [
+              {
+                "device_block_ids": [
+                  0,
+                  1
+                ],
+                "generation": 2,
+                "kv_import_required": false,
+                "position": 4,
+                "req_id": "b2-r0",
+                "row": 0,
+                "scheduler_block_ids": [
+                  2
+                ],
+                "sequence_length": 5,
+                "state_owner": "device",
+                "token_id": 4460
+              }
+            ],
+            "row_generations": [
+              2,
+              0,
+              0,
+              0
+            ]
+          },
+          "result": {
+            "commit_state": "COMMITTED",
+            "computed_steps": {
+              "b2-r0": 2
+            },
+            "declared_input_bytes": 260,
+            "declared_output_bytes": 368,
+            "device_kv_checksum": 0,
+            "feed_calls": 1,
+            "fetch_calls": 1,
+            "host_kv_checksum": 0,
+            "kv_imported": false,
+            "model_calls": 2,
+            "route": "device",
+            "row_generations": [
+              2,
+              0,
+              0,
+              0
+            ],
+            "status": 0
+          },
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [],
+          "index": 3,
+          "model_executed": false,
+          "new_tokens_by_request": {},
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": "empty-schedule"
+        }
+      ],
+      "terminal_finish_reasons": {
+        "b2-r0": 1,
+        "b2-r1": 1
+      },
+      "terminal_stop_reasons": {
+        "b2-r0": null,
+        "b2-r1": null
+      },
+      "tokens": {
+        "b2-r0": [
+          358,
+          2776,
+          4460,
+          311,
+          1855
+        ],
+        "b2-r1": [
+          264,
+          220,
+          16
+        ]
+      }
+    },
+    {
+      "batch_size": 3,
+      "checks": {
+        "all_requests_finished": true,
+        "cleanup_did_not_execute_model": true,
+        "exact_output_lengths": true,
+        "exact_request_set": true,
+        "first_step_prefilled_all_requests": true,
+        "mixed_completion_shrinks_batch": true,
+        "one_complete_batch_import": true,
+        "one_feed_fetch_per_device_epoch": true,
+        "only_prefill_used_host_execution": true,
+        "request_drained": true,
+        "stable_row_generation": true,
+        "steady_epochs_device_owned": true
+      },
+      "final_request_state": {
+        "b3-r0": {
+          "num_computed_tokens": 3,
+          "num_output_tokens": 2,
+          "status": "FINISHED_LENGTH_CAPPED"
+        },
+        "b3-r1": {
+          "num_computed_tokens": 5,
+          "num_output_tokens": 3,
+          "status": "FINISHED_LENGTH_CAPPED"
+        },
+        "b3-r2": {
+          "num_computed_tokens": 8,
+          "num_output_tokens": 4,
+          "status": "FINISHED_LENGTH_CAPPED"
+        }
+      },
+      "name": "b3-mixed",
+      "pass": true,
+      "request_drained": true,
+      "requests": [
+        {
+          "max_tokens": 2,
+          "prompt_token_ids": [
+            9707,
+            11
+          ],
+          "request_id": "b3-r0"
+        },
+        {
+          "max_tokens": 3,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358
+          ],
+          "request_id": "b3-r1"
+        },
+        {
+          "max_tokens": 4,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358,
+            374,
+            264
+          ],
+          "request_id": "b3-r2"
+        }
+      ],
+      "steps": [
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": null,
+              "request_id": "b3-r0",
+              "stop_reason": null,
+              "tokens": [
+                358
+              ]
+            },
+            {
+              "client_index": 1,
+              "finish_reason": null,
+              "request_id": "b3-r1",
+              "stop_reason": null,
+              "tokens": [
+                2776
+              ]
+            },
+            {
+              "client_index": 2,
+              "finish_reason": null,
+              "request_id": "b3-r2",
+              "stop_reason": null,
+              "tokens": [
+                220
+              ]
+            }
+          ],
+          "index": 0,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b3-r0": [
+              358
+            ],
+            "b3-r1": [
+              2776
+            ],
+            "b3-r2": [
+              220
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": "not-single-token-decode"
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": 1,
+              "request_id": "b3-r0",
+              "stop_reason": null,
+              "tokens": [
+                2776
+              ]
+            },
+            {
+              "client_index": 1,
+              "finish_reason": null,
+              "request_id": "b3-r1",
+              "stop_reason": null,
+              "tokens": [
+                4460
+              ]
+            },
+            {
+              "client_index": 2,
+              "finish_reason": null,
+              "request_id": "b3-r2",
+              "stop_reason": null,
+              "tokens": [
+                16
+              ]
+            }
+          ],
+          "index": 1,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b3-r0": [
+              2776
+            ],
+            "b3-r1": [
+              4460
+            ],
+            "b3-r2": [
+              16
+            ]
+          },
+          "plan": {
+            "active_mask": [
+              1,
+              1,
+              1,
+              0
+            ],
+            "max_steps": 1,
+            "requests": [
+              {
+                "device_block_ids": [
+                  0,
+                  1
+                ],
+                "generation": 4,
+                "kv_import_required": true,
+                "position": 2,
+                "req_id": "b3-r0",
+                "row": 0,
+                "scheduler_block_ids": [
+                  4
+                ],
+                "sequence_length": 3,
+                "state_owner": "host",
+                "token_id": 358
+              },
+              {
+                "device_block_ids": [
+                  2,
+                  3
+                ],
+                "generation": 5,
+                "kv_import_required": true,
+                "position": 3,
+                "req_id": "b3-r1",
+                "row": 1,
+                "scheduler_block_ids": [
+                  5
+                ],
+                "sequence_length": 4,
+                "state_owner": "host",
+                "token_id": 2776
+              },
+              {
+                "device_block_ids": [
+                  4,
+                  5
+                ],
+                "generation": 6,
+                "kv_import_required": true,
+                "position": 5,
+                "req_id": "b3-r2",
+                "row": 2,
+                "scheduler_block_ids": [
+                  6
+                ],
+                "sequence_length": 6,
+                "state_owner": "host",
+                "token_id": 220
+              }
+            ],
+            "row_generations": [
+              4,
+              5,
+              6,
+              0
+            ]
+          },
+          "result": {
+            "commit_state": "COMMITTED",
+            "computed_steps": {
+              "b3-r0": 1,
+              "b3-r1": 1,
+              "b3-r2": 1
+            },
+            "declared_input_bytes": 29360372,
+            "declared_output_bytes": 368,
+            "device_kv_checksum": 114816985,
+            "feed_calls": 1,
+            "fetch_calls": 1,
+            "host_kv_checksum": 114816985,
+            "kv_imported": true,
+            "model_calls": 1,
+            "route": "device",
+            "row_generations": [
+              4,
+              5,
+              6,
+              0
+            ],
+            "status": 0
+          },
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 1,
+              "finish_reason": 1,
+              "request_id": "b3-r1",
+              "stop_reason": null,
+              "tokens": [
+                311
+              ]
+            },
+            {
+              "client_index": 2,
+              "finish_reason": null,
+              "request_id": "b3-r2",
+              "stop_reason": null,
+              "tokens": [
+                19
+              ]
+            }
+          ],
+          "index": 2,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b3-r1": [
+              311
+            ],
+            "b3-r2": [
+              19
+            ]
+          },
+          "plan": {
+            "active_mask": [
+              0,
+              1,
+              1,
+              0
+            ],
+            "max_steps": 1,
+            "requests": [
+              {
+                "device_block_ids": [
+                  2,
+                  3
+                ],
+                "generation": 5,
+                "kv_import_required": false,
+                "position": 4,
+                "req_id": "b3-r1",
+                "row": 1,
+                "scheduler_block_ids": [
+                  5
+                ],
+                "sequence_length": 5,
+                "state_owner": "device",
+                "token_id": 4460
+              },
+              {
+                "device_block_ids": [
+                  4,
+                  5
+                ],
+                "generation": 6,
+                "kv_import_required": false,
+                "position": 6,
+                "req_id": "b3-r2",
+                "row": 2,
+                "scheduler_block_ids": [
+                  6
+                ],
+                "sequence_length": 7,
+                "state_owner": "device",
+                "token_id": 16
+              }
+            ],
+            "row_generations": [
+              0,
+              5,
+              6,
+              0
+            ]
+          },
+          "result": {
+            "commit_state": "COMMITTED",
+            "computed_steps": {
+              "b3-r1": 1,
+              "b3-r2": 1
+            },
+            "declared_input_bytes": 260,
+            "declared_output_bytes": 368,
+            "device_kv_checksum": 0,
+            "feed_calls": 1,
+            "fetch_calls": 1,
+            "host_kv_checksum": 0,
+            "kv_imported": false,
+            "model_calls": 1,
+            "route": "device",
+            "row_generations": [
+              0,
+              5,
+              6,
+              0
+            ],
+            "status": 0
+          },
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 2,
+              "finish_reason": 1,
+              "request_id": "b3-r2",
+              "stop_reason": null,
+              "tokens": [
+                1042
+              ]
+            }
+          ],
+          "index": 3,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b3-r2": [
+              1042
+            ]
+          },
+          "plan": {
+            "active_mask": [
+              0,
+              0,
+              1,
+              0
+            ],
+            "max_steps": 1,
+            "requests": [
+              {
+                "device_block_ids": [
+                  4,
+                  5
+                ],
+                "generation": 6,
+                "kv_import_required": false,
+                "position": 7,
+                "req_id": "b3-r2",
+                "row": 2,
+                "scheduler_block_ids": [
+                  6
+                ],
+                "sequence_length": 8,
+                "state_owner": "device",
+                "token_id": 19
+              }
+            ],
+            "row_generations": [
+              0,
+              0,
+              6,
+              0
+            ]
+          },
+          "result": {
+            "commit_state": "COMMITTED",
+            "computed_steps": {
+              "b3-r2": 1
+            },
+            "declared_input_bytes": 260,
+            "declared_output_bytes": 368,
+            "device_kv_checksum": 0,
+            "feed_calls": 1,
+            "fetch_calls": 1,
+            "host_kv_checksum": 0,
+            "kv_imported": false,
+            "model_calls": 1,
+            "route": "device",
+            "row_generations": [
+              0,
+              0,
+              6,
+              0
+            ],
+            "status": 0
+          },
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [],
+          "index": 4,
+          "model_executed": false,
+          "new_tokens_by_request": {},
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": "empty-schedule"
+        }
+      ],
+      "terminal_finish_reasons": {
+        "b3-r0": 1,
+        "b3-r1": 1,
+        "b3-r2": 1
+      },
+      "terminal_stop_reasons": {
+        "b3-r0": null,
+        "b3-r1": null,
+        "b3-r2": null
+      },
+      "tokens": {
+        "b3-r0": [
+          358,
+          2776
+        ],
+        "b3-r1": [
+          2776,
+          4460,
+          311
+        ],
+        "b3-r2": [
+          220,
+          16,
+          19,
+          1042
+        ]
+      }
+    },
+    {
+      "batch_size": 4,
+      "checks": {
+        "all_requests_finished": true,
+        "cleanup_did_not_execute_model": true,
+        "exact_output_lengths": true,
+        "exact_request_set": true,
+        "first_step_prefilled_all_requests": true,
+        "mixed_completion_shrinks_batch": true,
+        "one_complete_batch_import": true,
+        "one_feed_fetch_per_device_epoch": true,
+        "only_prefill_used_host_execution": true,
+        "request_drained": true,
+        "stable_row_generation": true,
+        "steady_epochs_device_owned": true
+      },
+      "final_request_state": {
+        "b4-r0": {
+          "num_computed_tokens": 3,
+          "num_output_tokens": 2,
+          "status": "FINISHED_LENGTH_CAPPED"
+        },
+        "b4-r1": {
+          "num_computed_tokens": 5,
+          "num_output_tokens": 3,
+          "status": "FINISHED_LENGTH_CAPPED"
+        },
+        "b4-r2": {
+          "num_computed_tokens": 7,
+          "num_output_tokens": 4,
+          "status": "FINISHED_LENGTH_CAPPED"
+        },
+        "b4-r3": {
+          "num_computed_tokens": 8,
+          "num_output_tokens": 4,
+          "status": "FINISHED_LENGTH_CAPPED"
+        }
+      },
+      "name": "b4-mixed",
+      "pass": true,
+      "request_drained": true,
+      "requests": [
+        {
+          "max_tokens": 2,
+          "prompt_token_ids": [
+            9707,
+            11
+          ],
+          "request_id": "b4-r0"
+        },
+        {
+          "max_tokens": 3,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358
+          ],
+          "request_id": "b4-r1"
+        },
+        {
+          "max_tokens": 4,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358,
+            374
+          ],
+          "request_id": "b4-r2"
+        },
+        {
+          "max_tokens": 4,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358,
+            374,
+            264
+          ],
+          "request_id": "b4-r3"
+        }
+      ],
+      "steps": [
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": null,
+              "request_id": "b4-r0",
+              "stop_reason": null,
+              "tokens": [
+                358
+              ]
+            },
+            {
+              "client_index": 1,
+              "finish_reason": null,
+              "request_id": "b4-r1",
+              "stop_reason": null,
+              "tokens": [
+                2776
+              ]
+            },
+            {
+              "client_index": 2,
+              "finish_reason": null,
+              "request_id": "b4-r2",
+              "stop_reason": null,
+              "tokens": [
+                264
+              ]
+            },
+            {
+              "client_index": 3,
+              "finish_reason": null,
+              "request_id": "b4-r3",
+              "stop_reason": null,
+              "tokens": [
+                220
+              ]
+            }
+          ],
+          "index": 0,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b4-r0": [
+              358
+            ],
+            "b4-r1": [
+              2776
+            ],
+            "b4-r2": [
+              264
+            ],
+            "b4-r3": [
+              220
+            ]
+          },
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": "not-single-token-decode"
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 0,
+              "finish_reason": 1,
+              "request_id": "b4-r0",
+              "stop_reason": null,
+              "tokens": [
+                2776
+              ]
+            },
+            {
+              "client_index": 1,
+              "finish_reason": null,
+              "request_id": "b4-r1",
+              "stop_reason": null,
+              "tokens": [
+                4460
+              ]
+            },
+            {
+              "client_index": 2,
+              "finish_reason": null,
+              "request_id": "b4-r2",
+              "stop_reason": null,
+              "tokens": [
+                220
+              ]
+            },
+            {
+              "client_index": 3,
+              "finish_reason": null,
+              "request_id": "b4-r3",
+              "stop_reason": null,
+              "tokens": [
+                16
+              ]
+            }
+          ],
+          "index": 1,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b4-r0": [
+              2776
+            ],
+            "b4-r1": [
+              4460
+            ],
+            "b4-r2": [
+              220
+            ],
+            "b4-r3": [
+              16
+            ]
+          },
+          "plan": {
+            "active_mask": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "max_steps": 1,
+            "requests": [
+              {
+                "device_block_ids": [
+                  0,
+                  1
+                ],
+                "generation": 7,
+                "kv_import_required": true,
+                "position": 2,
+                "req_id": "b4-r0",
+                "row": 0,
+                "scheduler_block_ids": [
+                  7
+                ],
+                "sequence_length": 3,
+                "state_owner": "host",
+                "token_id": 358
+              },
+              {
+                "device_block_ids": [
+                  2,
+                  3
+                ],
+                "generation": 8,
+                "kv_import_required": true,
+                "position": 3,
+                "req_id": "b4-r1",
+                "row": 1,
+                "scheduler_block_ids": [
+                  8
+                ],
+                "sequence_length": 4,
+                "state_owner": "host",
+                "token_id": 2776
+              },
+              {
+                "device_block_ids": [
+                  4,
+                  5
+                ],
+                "generation": 9,
+                "kv_import_required": true,
+                "position": 4,
+                "req_id": "b4-r2",
+                "row": 2,
+                "scheduler_block_ids": [
+                  9
+                ],
+                "sequence_length": 5,
+                "state_owner": "host",
+                "token_id": 264
+              },
+              {
+                "device_block_ids": [
+                  6,
+                  7
+                ],
+                "generation": 10,
+                "kv_import_required": true,
+                "position": 5,
+                "req_id": "b4-r3",
+                "row": 3,
+                "scheduler_block_ids": [
+                  10
+                ],
+                "sequence_length": 6,
+                "state_owner": "host",
+                "token_id": 220
+              }
+            ],
+            "row_generations": [
+              7,
+              8,
+              9,
+              10
+            ]
+          },
+          "result": {
+            "commit_state": "COMMITTED",
+            "computed_steps": {
+              "b4-r0": 1,
+              "b4-r1": 1,
+              "b4-r2": 1,
+              "b4-r3": 1
+            },
+            "declared_input_bytes": 29360372,
+            "declared_output_bytes": 368,
+            "device_kv_checksum": 116248357,
+            "feed_calls": 1,
+            "fetch_calls": 1,
+            "host_kv_checksum": 116248357,
+            "kv_imported": true,
+            "model_calls": 1,
+            "route": "device",
+            "row_generations": [
+              7,
+              8,
+              9,
+              10
+            ],
+            "status": 0
+          },
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 1,
+              "finish_reason": 1,
+              "request_id": "b4-r1",
+              "stop_reason": null,
+              "tokens": [
+                311
+              ]
+            },
+            {
+              "client_index": 2,
+              "finish_reason": null,
+              "request_id": "b4-r2",
+              "stop_reason": null,
+              "tokens": [
+                16
+              ]
+            },
+            {
+              "client_index": 3,
+              "finish_reason": null,
+              "request_id": "b4-r3",
+              "stop_reason": null,
+              "tokens": [
+                19
+              ]
+            }
+          ],
+          "index": 2,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b4-r1": [
+              311
+            ],
+            "b4-r2": [
+              16
+            ],
+            "b4-r3": [
+              19
+            ]
+          },
+          "plan": {
+            "active_mask": [
+              0,
+              1,
+              1,
+              1
+            ],
+            "max_steps": 1,
+            "requests": [
+              {
+                "device_block_ids": [
+                  2,
+                  3
+                ],
+                "generation": 8,
+                "kv_import_required": false,
+                "position": 4,
+                "req_id": "b4-r1",
+                "row": 1,
+                "scheduler_block_ids": [
+                  8
+                ],
+                "sequence_length": 5,
+                "state_owner": "device",
+                "token_id": 4460
+              },
+              {
+                "device_block_ids": [
+                  4,
+                  5
+                ],
+                "generation": 9,
+                "kv_import_required": false,
+                "position": 5,
+                "req_id": "b4-r2",
+                "row": 2,
+                "scheduler_block_ids": [
+                  9
+                ],
+                "sequence_length": 6,
+                "state_owner": "device",
+                "token_id": 220
+              },
+              {
+                "device_block_ids": [
+                  6,
+                  7
+                ],
+                "generation": 10,
+                "kv_import_required": false,
+                "position": 6,
+                "req_id": "b4-r3",
+                "row": 3,
+                "scheduler_block_ids": [
+                  10
+                ],
+                "sequence_length": 7,
+                "state_owner": "device",
+                "token_id": 16
+              }
+            ],
+            "row_generations": [
+              0,
+              8,
+              9,
+              10
+            ]
+          },
+          "result": {
+            "commit_state": "COMMITTED",
+            "computed_steps": {
+              "b4-r1": 1,
+              "b4-r2": 1,
+              "b4-r3": 1
+            },
+            "declared_input_bytes": 260,
+            "declared_output_bytes": 368,
+            "device_kv_checksum": 0,
+            "feed_calls": 1,
+            "fetch_calls": 1,
+            "host_kv_checksum": 0,
+            "kv_imported": false,
+            "model_calls": 1,
+            "route": "device",
+            "row_generations": [
+              0,
+              8,
+              9,
+              10
+            ],
+            "status": 0
+          },
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [
+            {
+              "client_index": 2,
+              "finish_reason": 1,
+              "request_id": "b4-r2",
+              "stop_reason": null,
+              "tokens": [
+                19
+              ]
+            },
+            {
+              "client_index": 3,
+              "finish_reason": 1,
+              "request_id": "b4-r3",
+              "stop_reason": null,
+              "tokens": [
+                1042
+              ]
+            }
+          ],
+          "index": 3,
+          "model_executed": true,
+          "new_tokens_by_request": {
+            "b4-r2": [
+              19
+            ],
+            "b4-r3": [
+              1042
+            ]
+          },
+          "plan": {
+            "active_mask": [
+              0,
+              0,
+              1,
+              1
+            ],
+            "max_steps": 1,
+            "requests": [
+              {
+                "device_block_ids": [
+                  4,
+                  5
+                ],
+                "generation": 9,
+                "kv_import_required": false,
+                "position": 6,
+                "req_id": "b4-r2",
+                "row": 2,
+                "scheduler_block_ids": [
+                  9
+                ],
+                "sequence_length": 7,
+                "state_owner": "device",
+                "token_id": 16
+              },
+              {
+                "device_block_ids": [
+                  6,
+                  7
+                ],
+                "generation": 10,
+                "kv_import_required": false,
+                "position": 7,
+                "req_id": "b4-r3",
+                "row": 3,
+                "scheduler_block_ids": [
+                  10
+                ],
+                "sequence_length": 8,
+                "state_owner": "device",
+                "token_id": 19
+              }
+            ],
+            "row_generations": [
+              0,
+              0,
+              9,
+              10
+            ]
+          },
+          "result": {
+            "commit_state": "COMMITTED",
+            "computed_steps": {
+              "b4-r2": 1,
+              "b4-r3": 1
+            },
+            "declared_input_bytes": 260,
+            "declared_output_bytes": 368,
+            "device_kv_checksum": 0,
+            "feed_calls": 1,
+            "fetch_calls": 1,
+            "host_kv_checksum": 0,
+            "kv_imported": false,
+            "model_calls": 1,
+            "route": "device",
+            "row_generations": [
+              0,
+              0,
+              9,
+              10
+            ],
+            "status": 0
+          },
+          "scheduler_rejection": null
+        },
+        {
+          "engine_outputs": [],
+          "index": 4,
+          "model_executed": false,
+          "new_tokens_by_request": {},
+          "plan": null,
+          "result": null,
+          "scheduler_rejection": "empty-schedule"
+        }
+      ],
+      "terminal_finish_reasons": {
+        "b4-r0": 1,
+        "b4-r1": 1,
+        "b4-r2": 1,
+        "b4-r3": 1
+      },
+      "terminal_stop_reasons": {
+        "b4-r0": null,
+        "b4-r1": null,
+        "b4-r2": null,
+        "b4-r3": null
+      },
+      "tokens": {
+        "b4-r0": [
+          358,
+          2776
+        ],
+        "b4-r1": [
+          2776,
+          4460,
+          311
+        ],
+        "b4-r2": [
+          264,
+          220,
+          16,
+          19
+        ],
+        "b4-r3": [
+          220,
+          16,
+          19,
+          1042
+        ]
+      }
+    }
+  ],
+  "checks": {
+    "all_batch_sizes_executed": true,
+    "all_cases_passed": true,
+    "expected_scheduler": true
+  },
+  "gate": "M1 simultaneous B=1-4 nontrivial stock-prefill transfer",
+  "manifest": [
+    {
+      "batch_size": 1,
+      "name": "b1",
+      "requests": [
+        {
+          "max_tokens": 4,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358
+          ],
+          "request_id": "b1-r0"
+        }
+      ]
+    },
+    {
+      "batch_size": 2,
+      "name": "b2-mixed",
+      "requests": [
+        {
+          "max_tokens": 5,
+          "prompt_token_ids": [
+            9707,
+            11
+          ],
+          "request_id": "b2-r0"
+        },
+        {
+          "max_tokens": 3,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358,
+            374
+          ],
+          "request_id": "b2-r1"
+        }
+      ]
+    },
+    {
+      "batch_size": 3,
+      "name": "b3-mixed",
+      "requests": [
+        {
+          "max_tokens": 2,
+          "prompt_token_ids": [
+            9707,
+            11
+          ],
+          "request_id": "b3-r0"
+        },
+        {
+          "max_tokens": 3,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358
+          ],
+          "request_id": "b3-r1"
+        },
+        {
+          "max_tokens": 4,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358,
+            374,
+            264
+          ],
+          "request_id": "b3-r2"
+        }
+      ]
+    },
+    {
+      "batch_size": 4,
+      "name": "b4-mixed",
+      "requests": [
+        {
+          "max_tokens": 2,
+          "prompt_token_ids": [
+            9707,
+            11
+          ],
+          "request_id": "b4-r0"
+        },
+        {
+          "max_tokens": 3,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358
+          ],
+          "request_id": "b4-r1"
+        },
+        {
+          "max_tokens": 4,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358,
+            374
+          ],
+          "request_id": "b4-r2"
+        },
+        {
+          "max_tokens": 4,
+          "prompt_token_ids": [
+            9707,
+            11,
+            358,
+            374,
+            264
+          ],
+          "request_id": "b4-r3"
+        }
+      ]
+    }
+  ],
+  "mode": "cruise",
+  "model": "/root/ascend-control-cruise-20260729/artifacts/model-frozen",
+  "pass": true,
+  "resolved_classes": {
+    "runner": "vllm_ascend.worker.model_runner_v1.NPUModelRunner",
+    "scheduler": "vllm_ascend_resident_epoch.scheduler.ResidentEpochScheduler",
+    "worker": "vllm_ascend.worker.worker.NPUWorker"
+  },
+  "schema_version": 1
+}

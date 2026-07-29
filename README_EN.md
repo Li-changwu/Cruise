@@ -83,6 +83,12 @@ and Device Paged-KV checksums (`3477654769`), and the following Device-owned
 K=1 epoch retained the 260-byte/368-byte steady ABI. See
 [`evidence/M1-PREFILL-TRANSFER-20260729.md`](evidence/M1-PREFILL-TRANSFER-20260729.md).
 
+The following batched-prefill gate covered B=1,2,3,4, prompt lengths 2-5, and
+output budgets 2-5. Tokens, terminal reasons, and scheduler accounting matched
+stock vLLM for all 10 requests. The B=3/B=4 cohorts shrank as requests finished
+while surviving row generations remained stable. See
+[`evidence/M1-BATCHED-PREFILL-20260729.md`](evidence/M1-BATCHED-PREFILL-20260729.md).
+
 ## Support Boundary
 
 The currently validated envelope is:
@@ -90,15 +96,16 @@ The currently validated envelope is:
 - Ascend 910B2 with the validated CANN 8.5.1/9.0.0 DataFlow Device UDF paths;
 - Qwen2.5-7B-Instruct, TP=1, PP=1;
 - synchronous vLLM V1 scheduling;
-- one-token resident-only prompts and the qualified three-token prefill
-  ownership-transfer case;
+- one-token resident-only prompts and the bounded B=1-4 ownership-transfer
+  matrix with prompt lengths 2-5 and output budgets 2-5;
 - one static B=4 graph with inactive-row masking;
 - greedy sampling, bounded epochs, and a fixed two-block-per-row KV layout.
 
-Cruise does not yet establish general prefill beyond that case, continuous batching, arbitrary
-sampling, speculative decoding, preemption, cancellation, LoRA, TP/PP,
-multi-card coordination, or API-server performance. These are research gates,
-not hidden compatibility assumptions.
+Cruise does not yet establish general prefill beyond that matrix, admission of
+new requests into a Device-owned cohort, row reuse after a nontrivial prefill,
+arbitrary sampling, speculative decoding, preemption, cancellation, LoRA,
+TP/PP, multi-card coordination, or API-server performance. These are research
+gates, not hidden compatibility assumptions.
 
 ## Repository Layout
 

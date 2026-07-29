@@ -75,6 +75,12 @@ epoch 在 Host 与 Device Paged-KV checksum 同为 `3477654769` 后执行 K=2；
 Device-owned 的 K=1 epoch 继续使用 260 B/368 B 稳态 ABI。完整边界见
 [`evidence/M1-PREFILL-TRANSFER-20260729.md`](evidence/M1-PREFILL-TRANSFER-20260729.md)。
 
+随后完成的批量 prefill 门槛覆盖 B=1、2、3、4，prompt 长度 2-5，output budget
+2-5。10 个请求的 token、终止原因与 scheduler accounting 均与 stock vLLM 完全
+一致；B=3/B=4 在请求完成后逐级收缩 active batch，剩余 row 的 generation 保持
+稳定。完整证据见
+[`evidence/M1-BATCHED-PREFILL-20260729.md`](evidence/M1-BATCHED-PREFILL-20260729.md)。
+
 ## 支持边界
 
 当前经过验证的环境与工作负载为：
@@ -82,13 +88,15 @@ Device-owned 的 K=1 epoch 继续使用 260 B/368 B 稳态 ABI。完整边界见
 - Ascend 910B2，以及经过验证的 CANN 8.5.1/9.0.0 DataFlow Device UDF 路径；
 - Qwen2.5-7B-Instruct，TP=1、PP=1；
 - vLLM V1 同步调度；
-- one-token resident-only 路径，以及已验证的三 token prefill 所有权迁移用例；
+- one-token resident-only 路径，以及 B=1-4、prompt 长度 2-5、output budget 2-5
+  的受限 prefill 所有权迁移矩阵；
 - 一个静态 B=4 图，通过 inactive-row mask 支持不足四路的批次；
 - greedy sampling、有界 epoch，以及每个 row 固定两个 block 的 KV 布局。
 
-Cruise 尚未证明上述用例之外的通用 prefill、continuous batching、任意 sampling、speculative
-decoding、preemption、cancellation、LoRA、TP/PP、多卡协调或 API server 性能。
-这些是后续研究门槛，而不是可以忽略的兼容性假设。
+Cruise 尚未证明上述矩阵之外的通用 prefill、向 Device-owned cohort 连续准入新
+请求、非平凡 prefill 后的 row reuse、任意 sampling、speculative decoding、
+preemption、cancellation、LoRA、TP/PP、多卡协调或 API server 性能。这些是后续
+研究门槛，而不是可以忽略的兼容性假设。
 
 ## 仓库结构
 

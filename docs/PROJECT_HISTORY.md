@@ -196,11 +196,21 @@ the active source. The dependency-light and frozen-environment suites report
 51 and 73 passing tests, respectively. Evidence is in
 [`M1-PREFILL-TRANSFER-20260729.md`](../evidence/M1-PREFILL-TRANSFER-20260729.md).
 
-M1 remains open. The next ordered gates are: simultaneous B=1-4 nontrivial
-prefills with mixed output budgets; continuous admission, completion, and
-generation-checked row reuse at epoch boundaries; unsupported-request routing
-before ownership transfer; API streaming and non-streaming ordering; then
-disconnect/cancellation and the 1,000-request differential exit suite.
+M1 third increment (2026-07-29): separate stock and Cruise processes executed
+four simultaneous-prefill cohorts covering B=1,2,3,4, prompt lengths 2-5, and
+mixed output budgets 2-5. All 10 request outputs, terminal reasons, and final
+scheduler accounting matched exactly. Each cohort imported all active Paged-KV
+rows once; the four Host/Device checksum pairs matched; all later epochs stayed
+Device-owned with the 260-byte/368-byte steady ABI. B=3 and B=4 also proved
+completion-driven active-count shrink while surviving row generations remained
+stable. The frozen server suite has 78 passing tests. Evidence is in
+[`M1-BATCHED-PREFILL-20260729.md`](../evidence/M1-BATCHED-PREFILL-20260729.md).
+
+M1 remains open. The next ordered gates are: continuous admission and
+generation-checked row reuse after nontrivial prefills at epoch boundaries;
+unsupported-request routing before ownership transfer; API streaming and
+non-streaming ordering; then disconnect/cancellation and the 1,000-request
+differential exit suite.
 
 ### M2: Lifecycle, Recovery, and Resource Safety
 
