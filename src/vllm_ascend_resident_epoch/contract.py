@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import IntEnum
 from typing import Any, Literal
 
 from .version import PYTHON_CONTRACT_VERSION
@@ -7,6 +8,29 @@ from .version import PYTHON_CONTRACT_VERSION
 PLAN_ATTR = "_ascend_resident_epoch_plan"
 RESULT_ATTR = "_ascend_resident_epoch_result"
 CONTRACT_VERSION = PYTHON_CONTRACT_VERSION
+
+
+class EpochCommitState(IntEnum):
+    PREPARED = 0
+    EXECUTING = 1
+    COMMITTED = 2
+
+
+class ResidentEpochExecutionError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        commit_state: EpochCommitState,
+        status: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.commit_state = commit_state
+        self.status = status
+
+    @property
+    def input_preserving(self) -> bool:
+        return self.commit_state == EpochCommitState.PREPARED
 
 
 @dataclass(frozen=True)
@@ -20,6 +44,7 @@ class ResidentEpochRequest:
     eos_token_id: int
     scheduler_block_ids: tuple[int, ...]
     device_block_ids: tuple[int, int]
+    state_owner: Literal["host", "device"] = "host"
 
 
 @dataclass(frozen=True)
@@ -43,6 +68,10 @@ class ResidentEpochPlan:
         for request in self.requests:
             generations[request.row] = request.generation
         return tuple(generations)
+
+    @property
+    def host_replay_safe(self) -> bool:
+        return all(request.state_owner == "host" for request in self.requests)
 
     def validate(self) -> None:
         if self.version != CONTRACT_VERSION:
@@ -72,6 +101,8 @@ class ResidentEpochPlan:
             expected_active[request.row] = 1
             if request.sequence_length != request.position + 1:
                 raise ValueError("sequence length and position disagree")
+            if request.state_owner not in ("host", "device"):
+                raise ValueError("resident request has an invalid state owner")
             if request.position + self.max_steps > self.logical_capacity:
                 raise ValueError("epoch exceeds logical capacity")
         if tuple(expected_active) != self.active_mask:
@@ -86,6 +117,7 @@ class ResidentEpochResult:
     model_calls: int
     computed_steps: dict[str, int]
     row_generations: tuple[int, ...] = ()
+    commit_state: EpochCommitState = EpochCommitState.COMMITTED
     fallback_safe: bool = False
     feed_calls: int = 1
     fetch_calls: int = 1
@@ -109,6 +141,11 @@ class ResidentEpochResult:
             raise ValueError("resident epoch output request set mismatch")
         if self.route == "device" and self.status != 0:
             raise ValueError("failed device execution cannot be committed")
+        if (
+            self.route == "device"
+            and self.commit_state != EpochCommitState.COMMITTED
+        ):
+            raise ValueError("device execution result is not committed")
         if self.route == "device" and (
             self.feed_calls != 1 or self.fetch_calls != 1
         ):
@@ -117,6 +154,13 @@ class ResidentEpochResult:
             raise ValueError("device resident generations disagree with the plan")
         if self.route == "host_fallback" and not self.fallback_safe:
             raise ValueError("host fallback must be declared input-preserving")
+        if (
+            self.route == "host_fallback"
+            and self.commit_state != EpochCommitState.PREPARED
+        ):
+            raise ValueError("host fallback requires a prepared device state")
+        if self.route == "host_fallback" and not plan.host_replay_safe:
+            raise ValueError("Host no longer owns every request state")
         if self.route == "host_fallback" and (
             self.feed_calls != 0 or self.fetch_calls != 0
         ):

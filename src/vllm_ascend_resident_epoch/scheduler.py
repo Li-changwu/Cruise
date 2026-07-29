@@ -191,6 +191,9 @@ class ResidentEpochScheduler(Scheduler):
                         row * config.blocks_per_request,
                         row * config.blocks_per_request + 1,
                     ),
+                    state_owner=(
+                        "host" if request.num_output_tokens == 0 else "device"
+                    ),
                 )
             )
             active_mask[row] = 1

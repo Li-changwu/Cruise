@@ -9,11 +9,12 @@ from vllm_ascend_resident_epoch.sidecar_backend import (
     WARM_UP,
     WARMUP_GENERATION,
 )
+from vllm_ascend_resident_epoch.contract import EpochCommitState
 
 
 def test_sidecar_binary_protocol_sizes_and_round_trip():
     assert REQUEST.size == 128
-    assert RESPONSE.size == 344
+    assert RESPONSE.size == 352
 
     request = REQUEST.pack(
         REQUEST_MAGIC,
@@ -37,6 +38,8 @@ def test_sidecar_binary_protocol_sizes_and_round_trip():
         4,
         1,
         1,
+        EpochCommitState.COMMITTED,
+        0,
         123,
         45,
         260,
@@ -54,7 +57,14 @@ def test_sidecar_binary_protocol_sizes_and_round_trip():
         1,
         123,
     )
-    assert RESPONSE.unpack(response)[7:10] == (45, 260, 368)
+    assert RESPONSE.unpack(response)[6:12] == (
+        EpochCommitState.COMMITTED,
+        0,
+        123,
+        45,
+        260,
+        368,
+    )
 
 
 def test_warmup_operation_uses_reserved_generation():

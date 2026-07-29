@@ -16,6 +16,8 @@
 #include "flow_graph/data_flow.h"
 #include "ge/ge_api.h"
 #include "graph/graph.h"
+#include "resident_epoch_bridge.h"
+#include "resident_epoch_protocol.h"
 
 namespace {
 constexpr int32_t kBatchSize = 4;
@@ -208,9 +210,12 @@ extern "C" int32_t resident_epoch_execute(
     int32_t *output_row_generations,
     int32_t *output_model_calls, int32_t *output_device_status,
     int32_t *output_feed_calls, int32_t *output_fetch_calls,
+    int32_t *output_commit_state,
     int64_t *output_wall_us, int64_t *output_native_cpu_us,
     int64_t *output_declared_input_bytes,
     int64_t *output_declared_output_bytes) {
+  if (output_commit_state == nullptr) return 10;
+  *output_commit_state = CRUISE_EPOCH_PREPARED;
   if (opaque == nullptr || request_count < 1 || request_count > kBatchSize ||
       max_steps < 1 || max_steps > kMaxEpochSteps ||
       input_token_ids == nullptr || input_positions == nullptr ||
@@ -308,6 +313,7 @@ extern "C" int32_t resident_epoch_execute(
       MakeTensor(control_bytes, {kControlInputElements}, ge::DT_INT32));
   ge::DataFlowInfo flow_info;
   const auto wall_start = std::chrono::steady_clock::now();
+  *output_commit_state = CRUISE_EPOCH_EXECUTING;
   auto ret = engine->session->FeedDataFlowGraph(
       0, inputs, flow_info, kFeedTimeoutMs);
   *output_feed_calls = 1;
@@ -347,6 +353,7 @@ extern "C" int32_t resident_epoch_execute(
   if (cpu_start >= 0 && cpu_end >= cpu_start) {
     *output_native_cpu_us = cpu_end - cpu_start;
   }
+  *output_commit_state = CRUISE_EPOCH_COMMITTED;
   return 0;
 }
 

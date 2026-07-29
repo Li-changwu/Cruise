@@ -7,11 +7,11 @@
     "maturity": "research-baseline"
   },
   "contracts": {
-    "python_contract": 1,
+    "python_contract": 2,
     "runtime_config": 1,
-    "sidecar_protocol": 3,
+    "sidecar_protocol": 4,
     "sidecar_request_bytes": 128,
-    "sidecar_response_bytes": 344,
+    "sidecar_response_bytes": 352,
     "host_udf_abi": 2,
     "host_udf_inputs": 8,
     "host_udf_outputs": 2,

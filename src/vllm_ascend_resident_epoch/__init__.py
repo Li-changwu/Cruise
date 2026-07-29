@@ -1,6 +1,8 @@
 """vLLM-Ascend fixed-batch resident epoch integration."""
 
 from .contract import (
+    EpochCommitState,
+    ResidentEpochExecutionError,
     ResidentEpochPlan,
     ResidentEpochRequest,
     ResidentEpochResult,
@@ -13,5 +15,7 @@ __all__ = [
     "ResidentEpochPlan",
     "ResidentEpochRequest",
     "ResidentEpochResult",
+    "EpochCommitState",
+    "ResidentEpochExecutionError",
     "__version__",
 ]

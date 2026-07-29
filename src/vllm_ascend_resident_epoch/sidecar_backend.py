@@ -6,7 +6,11 @@ import time
 from pathlib import Path
 
 from .backend import NativeEpochOutput, NativeWarmupOutput
-from .contract import ResidentEpochPlan
+from .contract import (
+    EpochCommitState,
+    ResidentEpochExecutionError,
+    ResidentEpochPlan,
+)
 from .version import SIDECAR_PROTOCOL_VERSION
 
 
@@ -20,7 +24,17 @@ GRAPH_BATCH_SIZE = 4
 MAX_EPOCH_STEPS = 8
 WARMUP_GENERATION = 2**31 - 1
 REQUEST = struct.Struct("<IHHii4q4q4i4i4i")
-RESPONSE = struct.Struct("<Iiiiii4q4i4i32q")
+RESPONSE = struct.Struct("<Iiiiiiii4q4i4i32q")
+
+
+def _commit_state(value: int) -> EpochCommitState:
+    try:
+        return EpochCommitState(value)
+    except ValueError as exc:
+        raise ResidentEpochExecutionError(
+            f"sidecar returned invalid commit state {value}",
+            commit_state=EpochCommitState.EXECUTING,
+        ) from exc
 
 
 def _required_path(name: str, *, directory: bool = False) -> Path:
@@ -193,26 +207,35 @@ class SidecarDataFlowEngine:
         )
         self.socket.sendall(payload)
         values = self._receive_response()
+        commit_state = _commit_state(values[6])
         if values[1] != 0:
-            raise RuntimeError(f"resident epoch warmup failed: {values[1]}")
-        if values[10:14] != (1, 0, 0, 0):
+            raise ResidentEpochExecutionError(
+                f"resident epoch warmup failed: {values[1]}",
+                commit_state=commit_state,
+                status=values[1],
+            )
+        if values[12:16] != (1, 0, 0, 0):
             raise RuntimeError("resident epoch warmup did not execute exactly one row")
-        if values[14:18] != (WARMUP_GENERATION, 0, 0, 0):
+        if values[16:20] != (WARMUP_GENERATION, 0, 0, 0):
             raise RuntimeError("resident epoch warmup generation acknowledgement failed")
         return NativeWarmupOutput(
             status=values[2],
             model_calls=values[3],
             feed_calls=values[4],
             fetch_calls=values[5],
-            wall_us=values[6],
-            native_cpu_us=values[7],
-            declared_input_bytes=values[8],
-            declared_output_bytes=values[9],
+            commit_state=commit_state,
+            wall_us=values[8],
+            native_cpu_us=values[9],
+            declared_input_bytes=values[10],
+            declared_output_bytes=values[11],
         )
 
     def execute(self, plan: ResidentEpochPlan) -> NativeEpochOutput:
         if self.socket is None:
-            raise RuntimeError("resident epoch sidecar is closed")
+            raise ResidentEpochExecutionError(
+                "resident epoch sidecar is closed",
+                commit_state=EpochCommitState.PREPARED,
+            )
         if plan.graph_batch_size != GRAPH_BATCH_SIZE:
             raise ValueError("the sidecar backend owns only the static B=4 graph")
         requests = list(plan.requests)
@@ -228,12 +251,21 @@ class SidecarDataFlowEngine:
             *_by_row(plan, "eos_token_id", 151645),
             *plan.row_generations,
         )
-        self.socket.sendall(payload)
-        values = self._receive_response()
+        try:
+            self.socket.sendall(payload)
+            values = self._receive_response()
+        except Exception as exc:
+            raise ResidentEpochExecutionError(
+                f"resident epoch response is ambiguous: {exc}",
+                commit_state=EpochCommitState.EXECUTING,
+            ) from exc
+        commit_state = _commit_state(values[6])
         transport_status = values[1]
         if transport_status != 0:
-            raise RuntimeError(
-                f"resident epoch sidecar execute failed: {transport_status}"
+            raise ResidentEpochExecutionError(
+                f"resident epoch sidecar execute failed: {transport_status}",
+                commit_state=commit_state,
+                status=transport_status,
             )
         (
             device_status,
@@ -244,15 +276,18 @@ class SidecarDataFlowEngine:
             native_cpu_us,
             declared_input_bytes,
             declared_output_bytes,
-        ) = values[2:10]
-        executed = values[10:14]
-        row_generations = tuple(values[14:18])
-        flat_tokens = values[18:]
+        ) = values[2:6] + values[8:12]
+        executed = values[12:16]
+        row_generations = tuple(values[16:20])
+        flat_tokens = values[20:]
         token_ids: dict[str, list[int]] = {}
         for request in requests:
             count = executed[request.row]
             if count < 0 or count > plan.max_steps:
-                raise RuntimeError("sidecar returned an invalid executed count")
+                raise ResidentEpochExecutionError(
+                    "sidecar returned an invalid executed count",
+                    commit_state=commit_state,
+                )
             offset = request.row * MAX_EPOCH_STEPS
             token_ids[request.req_id] = list(flat_tokens[offset : offset + count])
         return NativeEpochOutput(
@@ -260,6 +295,7 @@ class SidecarDataFlowEngine:
             model_calls=model_calls,
             token_ids=token_ids,
             row_generations=row_generations,
+            commit_state=commit_state,
             feed_calls=feed_calls,
             fetch_calls=fetch_calls,
             wall_us=wall_us,

@@ -3,7 +3,11 @@ import os
 from pathlib import Path
 
 from .backend import NativeEpochOutput
-from .contract import ResidentEpochPlan
+from .contract import (
+    EpochCommitState,
+    ResidentEpochExecutionError,
+    ResidentEpochPlan,
+)
 
 
 MAX_EPOCH_STEPS = 8
@@ -45,25 +49,26 @@ class CtypesDataFlowEngine:
         ]
         self.library.resident_epoch_create.restype = ctypes.c_void_p
         self.library.resident_epoch_execute.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_int32,
-            ctypes.c_int32,
-            ctypes.POINTER(ctypes.c_int64),
-            ctypes.POINTER(ctypes.c_int64),
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.POINTER(ctypes.c_int64),
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.POINTER(ctypes.c_int64),
-            ctypes.POINTER(ctypes.c_int64),
-            ctypes.POINTER(ctypes.c_int64),
-            ctypes.POINTER(ctypes.c_int64),
+            ctypes.c_void_p,  # opaque
+            ctypes.c_int32,  # request_count
+            ctypes.c_int32,  # max_steps
+            ctypes.POINTER(ctypes.c_int64),  # input_token_ids
+            ctypes.POINTER(ctypes.c_int64),  # input_positions
+            ctypes.POINTER(ctypes.c_int32),  # input_sequence_lengths
+            ctypes.POINTER(ctypes.c_int32),  # input_eos_token_ids
+            ctypes.POINTER(ctypes.c_int32),  # input_row_generations
+            ctypes.POINTER(ctypes.c_int64),  # output_token_ids
+            ctypes.POINTER(ctypes.c_int32),  # output_executed
+            ctypes.POINTER(ctypes.c_int32),  # output_row_generations
+            ctypes.POINTER(ctypes.c_int32),  # output_model_calls
+            ctypes.POINTER(ctypes.c_int32),  # output_device_status
+            ctypes.POINTER(ctypes.c_int32),  # output_feed_calls
+            ctypes.POINTER(ctypes.c_int32),  # output_fetch_calls
+            ctypes.POINTER(ctypes.c_int32),  # output_commit_state
+            ctypes.POINTER(ctypes.c_int64),  # output_wall_us
+            ctypes.POINTER(ctypes.c_int64),  # output_native_cpu_us
+            ctypes.POINTER(ctypes.c_int64),  # output_declared_input_bytes
+            ctypes.POINTER(ctypes.c_int64),  # output_declared_output_bytes
         ]
         self.library.resident_epoch_execute.restype = ctypes.c_int32
         self.library.resident_epoch_destroy.argtypes = [ctypes.c_void_p]
@@ -108,6 +113,7 @@ class CtypesDataFlowEngine:
         device_status = ctypes.c_int32(-1)
         feed_calls = ctypes.c_int32(0)
         fetch_calls = ctypes.c_int32(0)
+        commit_state_value = ctypes.c_int32(-1)
         wall_us = ctypes.c_int64(0)
         native_cpu_us = ctypes.c_int64(0)
         declared_input_bytes = ctypes.c_int64(0)
@@ -129,19 +135,35 @@ class CtypesDataFlowEngine:
             ctypes.byref(device_status),
             ctypes.byref(feed_calls),
             ctypes.byref(fetch_calls),
+            ctypes.byref(commit_state_value),
             ctypes.byref(wall_us),
             ctypes.byref(native_cpu_us),
             ctypes.byref(declared_input_bytes),
             ctypes.byref(declared_output_bytes),
         )
+        try:
+            commit_state = EpochCommitState(commit_state_value.value)
+        except ValueError as exc:
+            raise ResidentEpochExecutionError(
+                "resident_epoch_execute returned no valid commit state",
+                commit_state=EpochCommitState.EXECUTING,
+                status=status,
+            ) from exc
         if status != 0:
-            raise RuntimeError(f"resident_epoch_execute failed with status {status}")
+            raise ResidentEpochExecutionError(
+                f"resident_epoch_execute failed with status {status}",
+                commit_state=commit_state,
+                status=status,
+            )
 
         tokens_by_req: dict[str, list[int]] = {}
         for request in plan.requests:
             executed = output_executed[request.row]
             if executed < 0 or executed > plan.max_steps:
-                raise RuntimeError("native backend returned an invalid executed count")
+                raise ResidentEpochExecutionError(
+                    "native backend returned an invalid executed count",
+                    commit_state=commit_state,
+                )
             offset = request.row * MAX_EPOCH_STEPS
             tokens_by_req[request.req_id] = [
                 int(output_tokens[offset + step]) for step in range(executed)
@@ -151,6 +173,7 @@ class CtypesDataFlowEngine:
             model_calls=model_calls.value,
             token_ids=tokens_by_req,
             row_generations=tuple(output_row_generations),
+            commit_state=commit_state,
             feed_calls=feed_calls.value,
             fetch_calls=fetch_calls.value,
             wall_us=wall_us.value,

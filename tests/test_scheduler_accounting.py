@@ -4,6 +4,7 @@ from vllm.v1.outputs import ModelRunnerOutput
 
 from vllm_ascend_resident_epoch.contract import (
     CONTRACT_VERSION,
+    EpochCommitState,
     ResidentEpochPlan,
     ResidentEpochRequest,
     ResidentEpochResult,
@@ -100,6 +101,7 @@ def test_host_fallback_retains_normal_one_step_accounting():
             status=0,
             model_calls=1,
             computed_steps={"r0": 1},
+            commit_state=EpochCommitState.PREPARED,
             fallback_safe=True,
             feed_calls=0,
             fetch_calls=0,

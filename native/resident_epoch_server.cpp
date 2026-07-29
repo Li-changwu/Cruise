@@ -42,6 +42,8 @@ struct Response {
   int32_t model_calls;
   int32_t feed_calls;
   int32_t fetch_calls;
+  int32_t commit_state;
+  int32_t reserved;
   int64_t wall_us;
   int64_t native_cpu_us;
   int64_t declared_input_bytes;
@@ -91,6 +93,7 @@ Response EmptyResponse(int32_t status) {
   response.magic = kResponseMagic;
   response.transport_status = status;
   response.device_status = -1;
+  response.commit_state = CRUISE_EPOCH_PREPARED;
   for (int32_t &executed : response.executed) executed = 0;
   for (int32_t &generation : response.row_generations) generation = 0;
   for (int64_t &token : response.token_ids) token = -1;
@@ -174,7 +177,8 @@ int main(int argc, char **argv) {
           request.row_generations, response.token_ids, response.executed,
           response.row_generations, &response.model_calls,
           &response.device_status, &response.feed_calls,
-          &response.fetch_calls, &response.wall_us, &response.native_cpu_us,
+          &response.fetch_calls, &response.commit_state,
+          &response.wall_us, &response.native_cpu_us,
           &response.declared_input_bytes, &response.declared_output_bytes);
     }
     if (!WriteAll(client, &response, sizeof(response))) {

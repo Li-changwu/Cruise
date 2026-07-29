@@ -7,8 +7,10 @@ from vllm.v1.outputs import ModelRunnerOutput
 
 from .contract import (
     CONTRACT_VERSION,
+    EpochCommitState,
     ResidentEpochPlan,
     ResidentEpochResult,
+    ResidentEpochExecutionError,
     attach_result,
 )
 
@@ -19,6 +21,7 @@ class NativeEpochOutput:
     model_calls: int
     token_ids: dict[str, list[int]]
     row_generations: tuple[int, ...]
+    commit_state: EpochCommitState = EpochCommitState.COMMITTED
     feed_calls: int = 1
     fetch_calls: int = 1
     wall_us: int = 0
@@ -36,6 +39,7 @@ class NativeWarmupOutput:
     feed_calls: int
     fetch_calls: int
     wall_us: int
+    commit_state: EpochCommitState = EpochCommitState.COMMITTED
     native_cpu_us: int = 0
     declared_input_bytes: int = 0
     declared_output_bytes: int = 0
@@ -61,20 +65,45 @@ class ResidentEpochBackend:
             output.model_calls != 1
             or output.feed_calls != 1
             or output.fetch_calls != 1
+            or output.commit_state != EpochCommitState.COMMITTED
         ):
             raise RuntimeError("resident warmup must execute one complete decoder step")
         return output
 
     def execute(self, plan: ResidentEpochPlan) -> ModelRunnerOutput:
-        plan.validate()
-        native_output = self.engine.execute(plan)
+        try:
+            plan.validate()
+        except Exception as exc:
+            raise ResidentEpochExecutionError(
+                f"resident epoch plan validation failed: {exc}",
+                commit_state=EpochCommitState.PREPARED,
+            ) from exc
+        try:
+            native_output = self.engine.execute(plan)
+        except ResidentEpochExecutionError:
+            raise
+        except Exception as exc:
+            raise ResidentEpochExecutionError(
+                "native resident epoch failed without commit-state proof",
+                commit_state=EpochCommitState.EXECUTING,
+            ) from exc
         if native_output.status != 0:
-            raise RuntimeError(
+            raise ResidentEpochExecutionError(
                 "native resident epoch returned status "
-                f"{native_output.status}; worker must perform safe fallback"
+                f"{native_output.status}",
+                commit_state=native_output.commit_state,
+                status=native_output.status,
+            )
+        if native_output.commit_state != EpochCommitState.COMMITTED:
+            raise ResidentEpochExecutionError(
+                "successful native resident epoch was not committed",
+                commit_state=native_output.commit_state,
             )
         if set(native_output.token_ids) != set(plan.req_ids):
-            raise RuntimeError("native resident epoch returned the wrong request set")
+            raise ResidentEpochExecutionError(
+                "native resident epoch returned the wrong request set",
+                commit_state=EpochCommitState.COMMITTED,
+            )
 
         req_ids = list(plan.req_ids)
         sampled = [native_output.token_ids[req_id] for req_id in req_ids]
@@ -87,6 +116,7 @@ class ResidentEpochBackend:
                 req_id: len(native_output.token_ids[req_id]) for req_id in req_ids
             },
             row_generations=native_output.row_generations,
+            commit_state=native_output.commit_state,
             feed_calls=native_output.feed_calls,
             fetch_calls=native_output.fetch_calls,
             wall_us=native_output.wall_us,
@@ -96,10 +126,16 @@ class ResidentEpochBackend:
             socket_send_calls=native_output.socket_send_calls,
             socket_receive_calls=native_output.socket_receive_calls,
         )
-        result.validate_against(
-            plan,
-            {req_id: native_output.token_ids[req_id] for req_id in req_ids},
-        )
+        try:
+            result.validate_against(
+                plan,
+                {req_id: native_output.token_ids[req_id] for req_id in req_ids},
+            )
+        except Exception as exc:
+            raise ResidentEpochExecutionError(
+                f"committed resident epoch result is invalid: {exc}",
+                commit_state=EpochCommitState.COMMITTED,
+            ) from exc
         output = ModelRunnerOutput(
             req_ids=req_ids,
             req_id_to_index={req_id: index for index, req_id in enumerate(req_ids)},

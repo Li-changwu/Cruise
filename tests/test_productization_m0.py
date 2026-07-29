@@ -14,6 +14,7 @@ from vllm_ascend_resident_epoch.compatibility import (
     get_compatibility_profile,
     load_compatibility_manifest,
 )
+from vllm_ascend_resident_epoch.contract import EpochCommitState
 from vllm_ascend_resident_epoch.doctor import run_source_smoke
 from vllm_ascend_resident_epoch.runtime_config import (
     CruiseRuntimeConfig,
@@ -203,11 +204,29 @@ def test_native_protocol_header_matches_python_constants():
     assert f"CRUISE_SIDECAR_PROTOCOL_VERSION {SIDECAR_PROTOCOL_VERSION}" in header
     assert f"CRUISE_SIDECAR_REQUEST_BYTES {SIDECAR_REQUEST_BYTES}" in header
     assert f"CRUISE_SIDECAR_RESPONSE_BYTES {SIDECAR_RESPONSE_BYTES}" in header
+    assert f"CRUISE_EPOCH_PREPARED {EpochCommitState.PREPARED}" in header
+    assert f"CRUISE_EPOCH_EXECUTING {EpochCommitState.EXECUTING}" in header
+    assert f"CRUISE_EPOCH_COMMITTED {EpochCommitState.COMMITTED}" in header
     server = (ROOT / "native" / "resident_epoch_server.cpp").read_text(
         encoding="utf-8"
     )
     assert '#include "resident_epoch_protocol.h"' in server
     assert "constexpr uint16_t kProtocolVersion = 3" not in server
+
+
+@pytest.mark.parametrize(
+    "relative",
+    ["native/resident_epoch_bridge.cpp", "native/resident_epoch_bridge_old.cpp"],
+)
+def test_native_commit_state_transitions_bracket_feed_and_commit(relative):
+    source = (ROOT / relative).read_text(encoding="utf-8")
+    prepared = source.index("*output_commit_state = CRUISE_EPOCH_PREPARED")
+    executing = source.index("*output_commit_state = CRUISE_EPOCH_EXECUTING")
+    feed = source.index("FeedDataFlowGraph", executing)
+    fetch = source.index("FetchDataFlowGraph", feed)
+    committed = source.index("*output_commit_state = CRUISE_EPOCH_COMMITTED")
+    final_return = source.index("return 0;", committed)
+    assert prepared < executing < feed < fetch < committed < final_return
 
 
 def test_example_runtime_config_is_structurally_valid():

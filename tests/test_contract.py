@@ -4,6 +4,8 @@ import pytest
 
 from vllm_ascend_resident_epoch.contract import (
     CONTRACT_VERSION,
+    EpochCommitState,
+    ResidentEpochExecutionError,
     ResidentEpochPlan,
     ResidentEpochRequest,
     ResidentEpochResult,
@@ -116,8 +118,81 @@ def test_host_fallback_keeps_one_step_accounting():
         status=0,
         model_calls=1,
         computed_steps={"r0": 1},
+        commit_state=EpochCommitState.PREPARED,
         fallback_safe=True,
         feed_calls=0,
         fetch_calls=0,
     )
     result.validate_against(plan, {"r0": [3]})
+
+
+@pytest.mark.parametrize(
+    "state", [EpochCommitState.PREPARED, EpochCommitState.EXECUTING]
+)
+def test_device_result_requires_committed_state(state):
+    plan = make_plan()
+    result = ResidentEpochResult(
+        version=CONTRACT_VERSION,
+        route="device",
+        status=0,
+        model_calls=4,
+        computed_steps={"r0": 4},
+        row_generations=plan.row_generations,
+        commit_state=state,
+    )
+    with pytest.raises(ValueError, match="not committed"):
+        result.validate_against(plan, {"r0": [2, 3, 4, 5]})
+
+
+def test_host_fallback_rejects_device_owned_request():
+    base = make_plan()
+    request = base.requests[0]
+    plan = ResidentEpochPlan(
+        version=base.version,
+        graph_batch_size=base.graph_batch_size,
+        max_steps=base.max_steps,
+        logical_capacity=base.logical_capacity,
+        requests=(
+            ResidentEpochRequest(
+                req_id=request.req_id,
+                row=request.row,
+                generation=request.generation,
+                token_id=request.token_id,
+                position=request.position,
+                sequence_length=request.sequence_length,
+                eos_token_id=request.eos_token_id,
+                scheduler_block_ids=request.scheduler_block_ids,
+                device_block_ids=request.device_block_ids,
+                state_owner="device",
+            ),
+        ),
+        active_mask=base.active_mask,
+    )
+    result = ResidentEpochResult(
+        version=CONTRACT_VERSION,
+        route="host_fallback",
+        status=0,
+        model_calls=1,
+        computed_steps={"r0": 1},
+        commit_state=EpochCommitState.PREPARED,
+        fallback_safe=True,
+        feed_calls=0,
+        fetch_calls=0,
+    )
+    with pytest.raises(ValueError, match="Host no longer owns"):
+        result.validate_against(plan, {"r0": [3]})
+
+
+def test_only_prepared_execution_error_is_input_preserving():
+    prepared = ResidentEpochExecutionError(
+        "before Feed", commit_state=EpochCommitState.PREPARED
+    )
+    executing = ResidentEpochExecutionError(
+        "Feed may have run", commit_state=EpochCommitState.EXECUTING
+    )
+    committed = ResidentEpochExecutionError(
+        "output invalid", commit_state=EpochCommitState.COMMITTED
+    )
+    assert prepared.input_preserving
+    assert not executing.input_preserving
+    assert not committed.input_preserving
