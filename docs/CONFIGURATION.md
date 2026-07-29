@@ -47,6 +47,14 @@ cruise config validate /etc/cruise/cruise.json --check-paths
 cruise config validate /etc/cruise/cruise.json --deep
 ```
 
+Graph configuration, tiling, external-weight manifest/count/bytes, and model
+metadata must also equal the identities frozen by the selected compatibility
+profile. Supplying a different but internally self-consistent asset set is
+rejected while the configuration is loaded, before any model or NPU
+initialization. AIR is excluded from this profile equality check because its
+content changes when external-weight paths are relocated; its deployment hash
+is still mandatory and is checked against the runtime configuration.
+
 The function configuration is semantic rather than content-hash checked because
 its `workspace` is deployment-specific. It must select
 `g4c_b4_resident_epoch`, declare exactly 8 inputs and 2 outputs, and reference
@@ -59,4 +67,3 @@ the validated configuration. They remain an internal bridge for the current
 Python/backend implementation and are not the user configuration contract.
 The command does not accept arbitrary environment keys from JSON, so a config
 file cannot silently inject preload libraries, Python paths or credentials.
-

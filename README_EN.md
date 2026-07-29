@@ -117,13 +117,14 @@ python -m pytest -q \
   tests/test_abi_measurement.py \
   tests/test_contract.py \
   tests/test_engine_core_result_verifier.py \
-  tests/test_multi_epoch_result_verifier.py
+  tests/test_multi_epoch_result_verifier.py \
+  tests/test_productization_m0.py
 python scripts/audit_repository.py
 python verify_minimal_abi_source.py . \
   --baseline-source history/attempts/vllm-integration-attempt73-multi-epoch-cohort
 ```
 
-This subset currently contains 36 tests. The full 52-test suite additionally
+This subset currently contains 44 tests. The full 60-test suite additionally
 requires the frozen PyTorch, vLLM, and vLLM-Ascend environment; native execution
 also requires the exact Ascend/DataFlow toolchain, decoder AIR, and external
 weights used by the protocol. Generated models and measurements are

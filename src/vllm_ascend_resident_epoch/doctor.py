@@ -230,6 +230,14 @@ def _check_npu(report: DoctorReport, profile: dict[str, Any], device_id: int) ->
         "pass" if observed_version == expected_version else "fail",
         f"expected={expected_version} observed={observed_version}",
     )
+    driver_match = re.search(r"\bVersion:\s*(\S+)", result.stdout)
+    observed_driver = driver_match.group(1) if driver_match else "unknown"
+    expected_driver = profile["software"]["driver"]
+    report.add(
+        "driver",
+        "pass" if observed_driver == expected_driver else "fail",
+        f"expected={expected_driver} observed={observed_driver}",
+    )
     device_match = re.search(
         rf"^\|\s*{device_id}\s+(\S+)\s+\|\s+(\S+)",
         result.stdout,

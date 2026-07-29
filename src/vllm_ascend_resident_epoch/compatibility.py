@@ -80,6 +80,13 @@ def validate_compatibility_manifest(manifest: dict[str, Any]) -> None:
         if profile_id in profile_ids:
             raise CompatibilityError(f"duplicate compatibility profile {profile_id}")
         profile_ids.add(profile_id)
+        software = profile.get("software")
+        if not isinstance(software, dict) or not isinstance(
+            software.get("driver"), str
+        ):
+            raise CompatibilityError(
+                f"profile {profile_id} has no driver version"
+            )
         assets = profile.get("assets")
         if not isinstance(assets, dict):
             raise CompatibilityError(f"profile {profile_id} has no asset record")

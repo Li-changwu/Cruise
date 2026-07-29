@@ -108,13 +108,14 @@ python -m pytest -q \
   tests/test_abi_measurement.py \
   tests/test_contract.py \
   tests/test_engine_core_result_verifier.py \
-  tests/test_multi_epoch_result_verifier.py
+  tests/test_multi_epoch_result_verifier.py \
+  tests/test_productization_m0.py
 python scripts/audit_repository.py
 python verify_minimal_abi_source.py . \
   --baseline-source history/attempts/vllm-integration-attempt73-multi-epoch-cohort
 ```
 
-该子集目前包含 36 项测试。完整的 52 项测试还需要冻结版本的 PyTorch、vLLM 和
+该子集目前包含 44 项测试。完整的 60 项测试还需要冻结版本的 PyTorch、vLLM 和
 vLLM-Ascend 环境；native 执行还需要实验协议指定的 Ascend/DataFlow 工具链、
 decoder AIR 与外部权重。模型生成物和原始测量数据不会存入本仓库。
 

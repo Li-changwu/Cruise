@@ -3,10 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 
 import pytest
 
 from vllm_ascend_resident_epoch import cli
+from vllm_ascend_resident_epoch import doctor as doctor_module
 from vllm_ascend_resident_epoch import runtime_config as runtime_config_module
 from vllm_ascend_resident_epoch.compatibility import (
     get_compatibility_profile,
@@ -164,7 +166,34 @@ def test_compatibility_manifest_matches_versioned_contracts():
     assert contracts["host_udf_outputs"] == HOST_UDF_OUTPUTS
     profile = get_compatibility_profile("attempt74-910b2-cann851-r5")
     assert profile["hardware"]["accelerator"] == "Ascend 910B2"
+    assert profile["software"]["driver"] == "25.2.1"
     assert profile["software"]["cann"] == "8.5.1"
+
+
+def test_npu_doctor_checks_driver_separately_from_npu_smi(monkeypatch):
+    profile = get_compatibility_profile("attempt74-910b2-cann851-r5")
+    output = """\
+| npu-smi 25.2.1                   Version: 25.2.1 |
+| 7     910B2                      | OK            |
+"""
+    monkeypatch.setattr(doctor_module, "get_compatibility_profile", lambda _: profile)
+    monkeypatch.setattr(doctor_module.platform, "machine", lambda: "aarch64")
+    monkeypatch.setattr(doctor_module.shutil, "which", lambda _: "/usr/bin/npu-smi")
+    monkeypatch.setattr(
+        doctor_module,
+        "_run",
+        lambda command, timeout=30: subprocess.CompletedProcess(
+            command, 0, stdout=output, stderr=""
+        ),
+    )
+    monkeypatch.setattr(doctor_module, "_check_software", lambda report, value: None)
+    monkeypatch.setattr(doctor_module, "_check_cann", lambda report, value: None)
+
+    report = doctor_module.run_npu_doctor(profile["id"], 7)
+    checks = {check.name: check for check in report.checks}
+    assert checks["npu-smi"].status == "pass"
+    assert checks["driver"].status == "pass"
+    assert checks["driver"].detail == "expected=25.2.1 observed=25.2.1"
 
 
 def test_native_protocol_header_matches_python_constants():

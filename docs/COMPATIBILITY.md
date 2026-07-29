@@ -15,6 +15,7 @@ Profile: `attempt74-910b2-cann851-r5`
 | Architecture | aarch64 |
 | Accelerator | one Ascend 910B2 |
 | npu-smi | 25.2.1 |
+| Ascend driver | 25.2.1 |
 | Python | 3.11.15 |
 | CANN | 8.5.1 |
 | torch / torch-npu | 2.9.0 / 2.9.0 |
@@ -80,4 +81,3 @@ This profile is a formally validated research baseline, not Stable v1.0. CANN
 9.0.0 supported earlier feasibility experiments, but it is not part of this
 exact product profile. Adding another version requires its own profile and
 same-spec correctness evidence; broad version ranges must not be inferred.
-
