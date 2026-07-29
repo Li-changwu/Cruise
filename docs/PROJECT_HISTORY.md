@@ -75,11 +75,179 @@ CANN release. The accepted result boundary is recorded in
 Sources: `history/attempts/vllm-integration-attempt71-*` through
 `history/attempts/vllm-integration-attempt73-*`, followed by the active root.
 
-## Next Research Gate
+## Stage 5: Productization Roadmap
 
-The next gate is not another synthetic loop. It is to widen the current fixed
-resident epoch into a controlled serving path without weakening correctness:
-real prefill-to-decode transition, scheduler-compatible continuous admission,
-cancellation/preemption semantics, and broader sampling. Each feature should
-first preserve the one-epoch causal comparison and explicit fallback contract
-before it is admitted into a full API-server evaluation.
+Cruise has passed its research-feasibility gate, but commit `22f5c15` is still
+a research baseline rather than a stable product. In particular, the current
+`0.1.0` package version is development metadata; it is not a statement of
+production readiness. The next work is governed by the productization tracker
+referenced below and by this version-controlled roadmap.
+
+### Governance and Source of Truth
+
+- This document is the canonical roadmap. The GitHub issue mirrors its status
+  and provides discussion, ownership, and links to pull requests and evidence.
+- A checkbox may be marked complete only by a merged commit plus reproducible
+  test or experiment evidence. A smoke run, synthetic result, or unmerged
+  branch is not completion evidence.
+- Changes to scope, thresholds, or support claims must update this document in
+  the same pull request. Regressions reopen the relevant gate.
+- Releases are evidence-gated rather than date-gated. Unsupported requests
+  must preserve stock vLLM behavior or fail before device state is mutated.
+- Performance evidence must use fixed versions, a same-machine baseline, and
+  at least three independent service starts. Negative results are retained.
+
+Productization tracker: to be linked after the canonical GitHub issue is
+created.
+
+### First Stable Support Contract
+
+The first stable release is intentionally narrow. It targets one Ascend 910B2
+with the declared CANN, torch-npu, vLLM, and vLLM-Ascend compatibility matrix;
+Qwen2.5-7B-Instruct; TP=PP=1; synchronous scheduling; text-only requests; and
+greedy decoding. It must accept real prompts through the vLLM API server,
+support continuous request arrival at epoch boundaries for up to four resident
+rows, stream tokens in order, and fall back safely for requests outside the
+device route. Broader sampling, other model families, LoRA, speculative
+decoding, multimodal input, TP/PP, and multi-node operation are later scope,
+not hidden v1.0 requirements.
+
+### Release Gates
+
+| Release level | Required gates | Meaning |
+|---|---|---|
+| Research baseline | Accepted through Stage 4 | Reproducible feasibility evidence; not a serving product |
+| Developer Preview | M0-M1 | Installable end-to-end serving path within the narrow support contract |
+| Beta | M0-M3 | Fault-contained and observable serving path suitable for controlled users |
+| Release Candidate | M0-M4 | Product-level correctness, stability, and performance evidence complete |
+| Stable v1.0 | M0-M5 and all final acceptance rules | Supported, documented, versioned, and rollback-capable release |
+
+### M0: Product Contract and Reproducible Deployment
+
+- [ ] Publish an exact compatibility matrix covering hardware, driver, CANN,
+  torch-npu, Python, vLLM, vLLM-Ascend, model revision, graph artifacts, and
+  external-weight hashes.
+- [ ] Replace the experiment-only environment-variable bundle with a validated
+  user configuration and a `doctor` command that reports every missing or
+  incompatible dependency without loading the model.
+- [ ] Version the Python contract, sidecar wire protocol, Host-UDF ABI, graph
+  configuration, and external assets; reject incompatible combinations before
+  model execution.
+- [ ] Provide documented clean install, start, stop, upgrade, rollback, and
+  uninstall procedures without editing vLLM or vLLM-Ascend source files.
+- [ ] Add a bounded no-NPU smoke path and a one-command NPU installation check.
+
+Exit evidence: a clean checkout can be installed and diagnosed on a supported
+machine using only documented commands, and a repeated install/start/stop cycle
+leaves no untracked source files or unbounded persistent artifacts.
+
+### M1: End-to-End Serving Semantics
+
+- [ ] Implement a real prefill-to-resident-decode ownership transition and
+  prove token and Paged-KV equivalence against unmodified vLLM for nontrivial
+  prompts.
+- [ ] Support continuous admission, completion, and row reuse at epoch
+  boundaries for mixed arrival times and output lengths while retaining the
+  generation-checked row lease.
+- [ ] Preserve OpenAI-compatible streaming and non-streaming response order,
+  EOS, `max_tokens`, disconnect, cancellation, and request-finalization
+  semantics.
+- [ ] Define explicit `prepared`, `executing`, and `committed` states. Only a
+  proven pre-execution failure may replay on the Host; an ambiguous
+  post-mutation failure must never duplicate token or KV advancement.
+- [ ] Route unsupported sampling or features to an unmodified Host path before
+  device ownership begins, without requiring a server restart.
+
+Exit evidence: a differential suite of at least 1,000 deterministic requests
+spanning prompt/output-length bins, batch sizes 1-4, EOS and cancellation
+boundaries has exact token IDs, finish reasons, streaming order, and scheduler
+accounting. All ineligible cases preserve baseline behavior.
+
+### M2: Lifecycle, Recovery, and Resource Safety
+
+- [ ] Add sidecar supervision, bounded startup and request timeouts, readiness
+  and liveness checks, graceful shutdown, stale-socket cleanup, and one
+  well-defined restart policy.
+- [ ] Inject failures before Feed, during device execution, after Fetch, on
+  sidecar exit, on malformed response, and under NPU/storage pressure; verify
+  the commit-state rule for every fault point.
+- [ ] Add capacity admission and backpressure for resident rows, KV blocks,
+  scratch space, logs, and external assets. Overload must be bounded and must
+  not corrupt admitted requests.
+- [ ] Ensure model startup failure, client disconnect, SIGTERM, and normal exit
+  release processes, sockets, device resources, and marker-protected scratch.
+
+Exit evidence: a 24-hour or 10,000-request soak, whichever is longer, completes
+with no incorrect response, hang, orphan sidecar, or monotonic Host/HBM growth.
+After warmup, measured RSS and HBM drift stay within 2%; default persistent
+runtime output, excluding packages, models, and retained evidence, stays below
+100 MiB.
+
+### M3: Observability and Operator Workflow
+
+- [ ] Export route eligibility and rejection reasons, selected epoch length,
+  resident-row/KV occupancy, Feed/Fetch counts, sidecar latency, Host CPU,
+  fallback, restart, timeout, and device-error metrics.
+- [ ] Add structured, bounded logs with request correlation and lifecycle
+  events, while excluding prompt text, generated text, credentials, and raw
+  model tensors by default.
+- [ ] Expose startup capability, health, and support-matrix status through the
+  documented server/operator interface.
+- [ ] Publish a quickstart, configuration reference, troubleshooting guide,
+  failure/rollback runbook, and known-limitations page validated from a clean
+  installation.
+
+Exit evidence: an operator can distinguish Host fallback, device execution,
+overload, unsupported input, sidecar failure, and device failure without a
+debug build or unbounded profiling capture.
+
+### M4: End-to-End Performance Qualification
+
+- [ ] Compare unmodified vLLM-Ascend eager execution, its supported graph path,
+  and Cruise under the same API-server workload, versions, weights, NPU,
+  warmup, and request trace.
+- [ ] Cover short and decode-heavy requests, concurrency 1-4 and overload,
+  steady and bursty arrivals, EOS variation, and mixed output budgets.
+- [ ] Report TTFT, inter-token latency/TPOT, end-to-end latency, throughput,
+  Host CPU/token, accelerator idle gaps, route hit rate, error rate, HBM, and
+  all p50/p95/p99 distributions. Initialization is reported separately.
+- [ ] Retain per-run configuration, raw bounded measurements, independent
+  verifier output, checksums, and negative results using the storage policy.
+
+Exit evidence: on the declared decode-heavy target, both median and p95 TPOT
+improve by at least 15% and Host CPU/token falls by at least 30% versus the
+strongest applicable baseline. Across the full supported matrix, throughput
+regression must not exceed 3%, TTFT regression must not exceed 5%, and request
+success must remain at or above 99.9%. Otherwise the device route remains
+opt-in and the failed threshold is documented rather than waived.
+
+### M5: Release Engineering and Stable v1.0
+
+- [ ] Add source-unit, integration, protocol-compatibility, packaging, and
+  documentation checks to pull-request CI; run NPU correctness, fault, soak,
+  and performance gates on a controlled hardware workflow.
+- [ ] Build versioned wheel/source releases and a separate checksummed asset
+  manifest. No model, AIR, weight, profiler, cache, or runtime artifact enters
+  the source distribution.
+- [ ] Adopt semantic versioning, changelog and deprecation rules, license and
+  security reporting documents, support policy, and a tested rollback path.
+- [ ] Reproduce the Release Candidate from two independent clean deployments
+  and publish the exact commands, compatibility manifest, results, and known
+  limitations.
+- [ ] Close all correctness, data-corruption, hang, unbounded-resource, and
+  installation blockers; lower-severity open issues must be listed in release
+  notes with workarounds or explicit support exclusions.
+
+Exit evidence: a user can install the tagged release, run `doctor`, start a
+supported OpenAI-compatible server, execute the published correctness and
+performance smoke workloads, observe its health, stop it cleanly, and roll
+back using only released documentation and artifacts.
+
+### Final Acceptance Rules
+
+Stable v1.0 is accepted only when all M0-M5 checkboxes and their exit evidence
+are complete. The 44-test research suite and Attempt 74 performance result
+remain necessary regression evidence, but they are not sufficient for a
+product release. Synthetic loops, a single successful request, or an
+unversioned server workspace may never substitute for API-level correctness,
+fault injection, soak, clean deployment, and same-spec performance evidence.
