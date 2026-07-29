@@ -110,6 +110,54 @@ class AssetIntegrity:
     model_index_sha256: str
 
 
+def _validate_profile_identity(
+    profile: dict[str, Any], integrity: AssetIntegrity
+) -> None:
+    profile_id = profile["id"]
+    assets = _mapping(profile.get("assets"), f"profile {profile_id} assets")
+    model = _mapping(profile.get("model"), f"profile {profile_id} model")
+    bindings = {
+        "integrity.graph_config_sha256": (
+            integrity.graph_config_sha256,
+            assets.get("graph_config_sha256"),
+        ),
+        "integrity.tiling_sha256": (
+            integrity.tiling_sha256,
+            assets.get("tiling_sha256"),
+        ),
+        "integrity.external_weights_manifest_sha256": (
+            integrity.external_weights_manifest_sha256,
+            assets.get("runtime_weights_manifest_sha256"),
+        ),
+        "integrity.external_weight_files": (
+            integrity.external_weight_files,
+            assets.get("runtime_weight_files"),
+        ),
+        "integrity.external_weight_bytes": (
+            integrity.external_weight_bytes,
+            assets.get("runtime_weight_bytes"),
+        ),
+        "integrity.model_config_sha256": (
+            integrity.model_config_sha256,
+            model.get("config_sha256"),
+        ),
+        "integrity.model_index_sha256": (
+            integrity.model_index_sha256,
+            model.get("index_sha256"),
+        ),
+    }
+    mismatches = [
+        f"{name} expected {expected!r}, got {actual!r}"
+        for name, (actual, expected) in bindings.items()
+        if actual != expected
+    ]
+    if mismatches:
+        raise RuntimeConfigError(
+            f"runtime assets do not match compatibility profile {profile_id}: "
+            + "; ".join(mismatches)
+        )
+
+
 @dataclass(frozen=True)
 class CruiseRuntimeConfig:
     source: Path
@@ -333,7 +381,7 @@ def load_runtime_config(path: str | Path) -> CruiseRuntimeConfig:
     profile_id = root["compatibility_profile"]
     if not isinstance(profile_id, str):
         raise RuntimeConfigError("compatibility_profile must be a string")
-    get_compatibility_profile(profile_id)
+    profile = get_compatibility_profile(profile_id)
     device_id = root["device_id"]
     if not isinstance(device_id, int) or isinstance(device_id, bool) or device_id < 0:
         raise RuntimeConfigError("device_id must be a non-negative integer")
@@ -444,6 +492,7 @@ def load_runtime_config(path: str | Path) -> CruiseRuntimeConfig:
             "integrity.model_index_sha256",
         ),
     )
+    _validate_profile_identity(profile, integrity)
 
     opp_value = root["custom_opp_vendors"]
     if not isinstance(opp_value, list) or not opp_value:

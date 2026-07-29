@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from vllm_ascend_resident_epoch import cli
+from vllm_ascend_resident_epoch import runtime_config as runtime_config_module
 from vllm_ascend_resident_epoch.compatibility import (
     get_compatibility_profile,
     load_compatibility_manifest,
@@ -125,6 +126,34 @@ def _runtime_fixture(tmp_path: Path) -> Path:
     return config_path
 
 
+def _load_test_runtime_config(tmp_path: Path, monkeypatch) -> CruiseRuntimeConfig:
+    path = _runtime_fixture(tmp_path)
+    value = json.loads(path.read_text(encoding="utf-8"))
+    integrity = value["integrity"]
+    profile = {
+        "id": value["compatibility_profile"],
+        "assets": {
+            "graph_config_sha256": integrity["graph_config_sha256"],
+            "tiling_sha256": integrity["tiling_sha256"],
+            "runtime_weights_manifest_sha256": integrity[
+                "external_weights_manifest_sha256"
+            ],
+            "runtime_weight_files": integrity["external_weight_files"],
+            "runtime_weight_bytes": integrity["external_weight_bytes"],
+        },
+        "model": {
+            "config_sha256": integrity["model_config_sha256"],
+            "index_sha256": integrity["model_index_sha256"],
+        },
+    }
+    monkeypatch.setattr(
+        runtime_config_module,
+        "get_compatibility_profile",
+        lambda profile_id: profile,
+    )
+    return load_runtime_config(path)
+
+
 def test_compatibility_manifest_matches_versioned_contracts():
     manifest = load_compatibility_manifest()
     contracts = manifest["contracts"]
@@ -154,9 +183,11 @@ def test_native_protocol_header_matches_python_constants():
 
 def test_example_runtime_config_is_structurally_valid():
     config = load_runtime_config(ROOT / "config" / "cruise.example.json")
+    profile = get_compatibility_profile(config.compatibility_profile)
     assert config.compatibility_profile == "attempt74-910b2-cann851-r5"
     assert config.runtime.max_steps == 8
     assert config.integrity.external_weight_files == 342
+    assert config.integrity.air_sha256 != profile["assets"]["frozen_air_sha256"]
 
 
 def test_runtime_config_rejects_unknown_fields(tmp_path):
@@ -170,10 +201,37 @@ def test_runtime_config_rejects_unknown_fields(tmp_path):
         load_runtime_config(path)
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "graph_config_sha256",
+        "tiling_sha256",
+        "external_weights_manifest_sha256",
+        "external_weight_files",
+        "external_weight_bytes",
+        "model_config_sha256",
+        "model_index_sha256",
+    ],
+)
+def test_runtime_config_rejects_profile_identity_mismatch(tmp_path, field):
+    value = json.loads(
+        (ROOT / "config" / "cruise.example.json").read_text(encoding="utf-8")
+    )
+    current = value["integrity"][field]
+    value["integrity"][field] = current + 1 if isinstance(current, int) else "0" * 64
+    path = tmp_path / "profile-mismatch.json"
+    path.write_text(json.dumps(value), encoding="utf-8")
+    with pytest.raises(
+        RuntimeConfigError,
+        match=rf"runtime assets do not match compatibility profile .*integrity\.{field}",
+    ):
+        load_runtime_config(path)
+
+
 def test_runtime_config_validates_paths_hashes_and_weight_manifest(
     tmp_path, monkeypatch
 ):
-    config = load_runtime_config(_runtime_fixture(tmp_path))
+    config = _load_test_runtime_config(tmp_path, monkeypatch)
     monkeypatch.setattr(CruiseRuntimeConfig, "_validate_device_paths", lambda self: None)
     config.validate_paths(deep=True)
 
@@ -182,8 +240,8 @@ def test_runtime_config_validates_paths_hashes_and_weight_manifest(
         config.validate_paths(deep=False)
 
 
-def test_runtime_environment_is_complete(tmp_path):
-    config = load_runtime_config(_runtime_fixture(tmp_path))
+def test_runtime_environment_is_complete(tmp_path, monkeypatch):
+    config = _load_test_runtime_config(tmp_path, monkeypatch)
     run_directory = tmp_path / "run"
     run_directory.mkdir()
     environment = config.environment(run_directory, {"PATH": "/bin"})
@@ -208,8 +266,8 @@ def test_no_npu_smoke_and_cli_exit_success(capsys):
     assert output["mode"] == "source-smoke"
 
 
-def test_cleanup_only_removes_empty_marked_scratch(tmp_path):
-    config = load_runtime_config(_runtime_fixture(tmp_path))
+def test_cleanup_only_removes_empty_marked_scratch(tmp_path, monkeypatch):
+    config = _load_test_runtime_config(tmp_path, monkeypatch)
     config.runtime.scratch_root.mkdir()
     marker = config.runtime.scratch_root / cli._SCRATCH_MARKER
     marker.write_text(cli._MARKER_CONTENT, encoding="ascii")

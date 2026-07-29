@@ -83,12 +83,40 @@ def validate_compatibility_manifest(manifest: dict[str, Any]) -> None:
         assets = profile.get("assets")
         if not isinstance(assets, dict):
             raise CompatibilityError(f"profile {profile_id} has no asset record")
+        required_assets = {
+            "graph_config_sha256",
+            "tiling_sha256",
+            "runtime_weights_manifest_sha256",
+            "runtime_weight_files",
+            "runtime_weight_bytes",
+        }
+        missing_assets = sorted(required_assets - set(assets))
+        if missing_assets:
+            raise CompatibilityError(
+                f"profile {profile_id} is missing assets: "
+                + ", ".join(missing_assets)
+            )
         for name, value in assets.items():
             if name.endswith("_sha256") and (
                 not isinstance(value, str) or _SHA256.fullmatch(value) is None
             ):
                 raise CompatibilityError(
                     f"profile {profile_id} has invalid {name}"
+                )
+        for name in ("runtime_weight_files", "runtime_weight_bytes"):
+            value = assets[name]
+            if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+                raise CompatibilityError(
+                    f"profile {profile_id} has invalid {name}"
+                )
+        model = profile.get("model")
+        if not isinstance(model, dict):
+            raise CompatibilityError(f"profile {profile_id} has no model record")
+        for name in ("config_sha256", "index_sha256"):
+            value = model.get(name)
+            if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
+                raise CompatibilityError(
+                    f"profile {profile_id} has invalid model {name}"
                 )
 
 
@@ -103,4 +131,3 @@ def get_compatibility_profile(profile_id: str | None = None) -> dict[str, Any]:
         if profile["id"] == profile_id:
             return profile
     raise CompatibilityError(f"unknown compatibility profile {profile_id!r}")
-
