@@ -123,7 +123,7 @@ python verify_minimal_abi_source.py . \
   --baseline-source history/attempts/vllm-integration-attempt73-multi-epoch-cohort
 ```
 
-This subset currently contains 27 tests. The full 44-test suite additionally
+This subset currently contains 36 tests. The full 52-test suite additionally
 requires the frozen PyTorch, vLLM, and vLLM-Ascend environment; native execution
 also requires the exact Ascend/DataFlow toolchain, decoder AIR, and external
 weights used by the protocol. Generated models and measurements are
@@ -137,6 +137,26 @@ Git checkout, accepts machine-specific external asset paths through
 marker-protected `/dev/shm` scratch, checks NPU and storage readiness, and
 retains compact evidence with a SHA256 manifest. The formal CANN 8.5.1 run
 automatically removed its scratch tree after finalization.
+
+## Developer Preview Operations
+
+The first Productization M0 increment introduces a machine-readable
+compatibility matrix, strict JSON runtime configuration, and one CLI:
+
+```bash
+cruise smoke
+cruise doctor --mode npu \
+  --profile attempt74-910b2-cann851-r5 --device 7
+cruise doctor --mode runtime --config /etc/cruise/cruise.json
+```
+
+See [INSTALLATION.md](docs/INSTALLATION.md),
+[CONFIGURATION.md](docs/CONFIGURATION.md),
+[OPERATIONS.md](docs/OPERATIONS.md), and
+[COMPATIBILITY.md](docs/COMPATIBILITY.md) for installation, configuration,
+lifecycle, and failure boundaries. These commands currently qualify the
+Developer Preview and EngineCore path. A general API server remains an M1 gate
+and is not claimed as available.
 
 ## Project History
 

@@ -114,7 +114,7 @@ python verify_minimal_abi_source.py . \
   --baseline-source history/attempts/vllm-integration-attempt73-multi-epoch-cohort
 ```
 
-该子集目前包含 27 项测试。完整的 44 项测试还需要冻结版本的 PyTorch、vLLM 和
+该子集目前包含 36 项测试。完整的 52 项测试还需要冻结版本的 PyTorch、vLLM 和
 vLLM-Ascend 环境；native 执行还需要实验协议指定的 Ascend/DataFlow 工具链、
 decoder AIR 与外部权重。模型生成物和原始测量数据不会存入本仓库。
 
@@ -124,6 +124,24 @@ decoder AIR 与外部权重。模型生成物和原始测量数据不会存入�
 `CRUISE_*` 环境变量接收机器相关的外部资产路径，将生成物暂存到带 marker 的
 `/dev/shm` scratch，在加载模型前检查 NPU 与存储 readiness，并且只在根盘保留
 带 SHA256 manifest 的精简证据。CANN 8.5.1 正式运行后 scratch 已自动清理。
+
+## 开发者预览运维入口
+
+产品化路线的 M0 首批实现已引入机器可读兼容矩阵、严格 JSON 运行配置和统一 CLI：
+
+```bash
+cruise smoke
+cruise doctor --mode npu \
+  --profile attempt74-910b2-cann851-r5 --device 7
+cruise doctor --mode runtime --config /etc/cruise/cruise.json
+```
+
+安装、配置、生命周期和故障边界分别见
+[INSTALLATION.md](docs/INSTALLATION.md)、
+[CONFIGURATION.md](docs/CONFIGURATION.md)、
+[OPERATIONS.md](docs/OPERATIONS.md) 与
+[COMPATIBILITY.md](docs/COMPATIBILITY.md)。这些入口目前用于 Developer Preview
+和 EngineCore 资格验证；通用 API server 仍属于 M1，尚未被宣称为可用能力。
 
 ## 项目演进
 

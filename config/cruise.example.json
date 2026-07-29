@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "compatibility_profile": "attempt74-910b2-cann851-r5",
+  "device_id": 7,
+  "cann_set_env": "/usr/local/Ascend/ascend-toolkit/set_env.sh",
+  "custom_opp_vendors": [
+    "/opt/cruise/opp/materialize",
+    "/opt/cruise/opp/barrier",
+    "/opt/cruise/opp/custom"
+  ],
+  "runtime": {
+    "scratch_root": "/dev/shm/cruise-runtime",
+    "minimum_scratch_free_bytes": 68719476736,
+    "max_steps": 8,
+    "logical_capacity": 8,
+    "startup_timeout_seconds": 3600,
+    "persistent_output_limit_bytes": 104857600
+  },
+  "assets": {
+    "server": "/opt/cruise/bin/resident_epoch_server",
+    "air": "/dev/shm/cruise-assets/qwen_b4_decoder_step.air",
+    "graph_config": "/opt/cruise/config/graph_config.json",
+    "function_config": "/dev/shm/cruise-assets/resident_epoch_func.json",
+    "tiling": "/opt/cruise/assets/explicit_tiling.bin",
+    "external_weights": "/dev/shm/cruise-assets/external-weights",
+    "external_weights_manifest": "/opt/cruise/assets/runtime-weights-manifest.json",
+    "resource_config": "/opt/cruise/config/numa_config.json",
+    "model_config": "/opt/cruise/model/config.json",
+    "model_index": "/opt/cruise/model/model.safetensors.index.json"
+  },
+  "integrity": {
+    "air_sha256": "137f2d5bb7d4168e4d4aa628c27f68180422c9da18201df9d889feeb602b00c0",
+    "graph_config_sha256": "341cc9b8af8fc36d42c9cbaca2fcc31ec594ebcd03063fc556a7ccec71c1d31e",
+    "tiling_sha256": "1fc40ec0d67e231128773a5448cdd3333bdd1b97ea8a67bb7ba881d43b0da51f",
+    "external_weights_manifest_sha256": "2ec95bf8e78cfaf091782b3c531b19b9cced35dcfab0e418c756e25abe456761",
+    "external_weight_files": 342,
+    "external_weight_bytes": 15231237408,
+    "model_config_sha256": "7463bb0ea78315365e6c6b74de4e73bbcc8359dfb0c5a737584e077d42c0b03c",
+    "model_index_sha256": "624bf7c47cd12468fdc16e38a47cf4f19e0415b859a223ba3c027eed2f0e1028"
+  }
+}

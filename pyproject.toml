@@ -15,8 +15,14 @@ test = ["pytest>=7"]
 [project.entry-points."vllm.general_plugins"]
 ascend_resident_epoch = "vllm_ascend_resident_epoch.plugin:register"
 
+[project.scripts]
+cruise = "vllm_ascend_resident_epoch.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+vllm_ascend_resident_epoch = ["compatibility.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

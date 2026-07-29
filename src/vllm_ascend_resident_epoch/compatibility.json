@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "product": {
+    "name": "Cruise",
+    "package": "vllm-ascend-resident-epoch",
+    "version": "0.1.0",
+    "maturity": "research-baseline"
+  },
+  "contracts": {
+    "python_contract": 1,
+    "runtime_config": 1,
+    "sidecar_protocol": 3,
+    "sidecar_request_bytes": 128,
+    "sidecar_response_bytes": 344,
+    "host_udf_abi": 2,
+    "host_udf_inputs": 8,
+    "host_udf_outputs": 2,
+    "decoder_abi": 1,
+    "decoder_inputs": 9,
+    "decoder_outputs": 4
+  },
+  "profiles": [
+    {
+      "id": "attempt74-910b2-cann851-r5",
+      "status": "formally-validated-research-baseline",
+      "evidence": "evidence/ATTEMPT74-CANN851-R5.md",
+      "hardware": {
+        "architecture": "aarch64",
+        "accelerator": "Ascend 910B2",
+        "accelerator_count": 1,
+        "npu_smi_version": "25.2.1"
+      },
+      "software": {
+        "python": "3.11.15",
+        "cann": "8.5.1",
+        "torch": "2.9.0",
+        "torch_npu": "2.9.0",
+        "vllm": {
+          "version": "0.20.1.post1.dev363+gec4847981",
+          "commit": "ec4847981f2d4dda8343b3c4c90eeb173f8f8eb7"
+        },
+        "vllm_ascend": {
+          "version": "0.19.1.post1.dev254+g9cf69cacf",
+          "commit": "e967f235ba66edb48a28a6d943aee9455fee70cf"
+        }
+      },
+      "model": {
+        "name": "Qwen2.5-7B-Instruct",
+        "revision": "content-addressed-local-snapshot",
+        "config_sha256": "7463bb0ea78315365e6c6b74de4e73bbcc8359dfb0c5a737584e077d42c0b03c",
+        "index_sha256": "624bf7c47cd12468fdc16e38a47cf4f19e0415b859a223ba3c027eed2f0e1028"
+      },
+      "assets": {
+        "source_commit": "9e0e1209c6f2ce9e02479c33a1617a295cdc50d1",
+        "graph_config_sha256": "341cc9b8af8fc36d42c9cbaca2fcc31ec594ebcd03063fc556a7ccec71c1d31e",
+        "function_config_sha256": "1f01c9a27e4cc7b2e83fae07d99d5a5c593546d44d167778e26638e9ba121045",
+        "controller_sha256": "c9ff1248169aa3476c12502cf04b29706c20ac31e317b462b097b0326ed6025a",
+        "frozen_air_sha256": "263b2acf291e13f6a84042ded53c8dccabb1fa847dcdcbbbe0ece418610ad1e3",
+        "tiling_sha256": "1fc40ec0d67e231128773a5448cdd3333bdd1b97ea8a67bb7ba881d43b0da51f",
+        "baseline_result_sha256": "9a64b4a5488f0c38f5542825971b3ae2f75ed5084238ee16d43240cb52a3656c",
+        "runtime_weights_manifest_sha256": "2ec95bf8e78cfaf091782b3c531b19b9cced35dcfab0e418c756e25abe456761",
+        "runtime_weight_files": 342,
+        "runtime_weight_bytes": 15231237408
+      },
+      "workload": {
+        "tensor_parallel_size": 1,
+        "pipeline_parallel_size": 1,
+        "graph_batch_size": 4,
+        "epoch_steps": [1, 2, 4, 8],
+        "sampling": "greedy",
+        "prompt_tokens": 1,
+        "block_size": 128,
+        "blocks_per_request": 2
+      }
+    }
+  ]
+}
+

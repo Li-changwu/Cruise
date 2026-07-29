@@ -1,10 +1,12 @@
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from .version import PYTHON_CONTRACT_VERSION
+
 
 PLAN_ATTR = "_ascend_resident_epoch_plan"
 RESULT_ATTR = "_ascend_resident_epoch_result"
-CONTRACT_VERSION = 1
+CONTRACT_VERSION = PYTHON_CONTRACT_VERSION
 
 
 @dataclass(frozen=True)

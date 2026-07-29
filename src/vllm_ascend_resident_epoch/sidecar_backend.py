@@ -7,11 +7,12 @@ from pathlib import Path
 
 from .backend import NativeEpochOutput, NativeWarmupOutput
 from .contract import ResidentEpochPlan
+from .version import SIDECAR_PROTOCOL_VERSION
 
 
 REQUEST_MAGIC = 0x71317131
 RESPONSE_MAGIC = 0x71327132
-PROTOCOL_VERSION = 3
+PROTOCOL_VERSION = SIDECAR_PROTOCOL_VERSION
 EXECUTE = 1
 WARM_UP = 2
 SHUTDOWN = 3

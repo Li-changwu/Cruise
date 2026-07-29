@@ -5,9 +5,13 @@ from .contract import (
     ResidentEpochRequest,
     ResidentEpochResult,
 )
+from .version import PACKAGE_VERSION
+
+__version__ = PACKAGE_VERSION
 
 __all__ = [
     "ResidentEpochPlan",
     "ResidentEpochRequest",
     "ResidentEpochResult",
+    "__version__",
 ]

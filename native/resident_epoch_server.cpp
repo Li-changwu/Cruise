@@ -9,11 +9,12 @@
 #include <unistd.h>
 
 #include "resident_epoch_bridge.h"
+#include "resident_epoch_protocol.h"
 
 namespace {
 constexpr uint32_t kRequestMagic = 0x71317131U;
 constexpr uint32_t kResponseMagic = 0x71327132U;
-constexpr uint16_t kProtocolVersion = 3;
+constexpr uint16_t kProtocolVersion = CRUISE_SIDECAR_PROTOCOL_VERSION;
 constexpr uint16_t kExecute = 1;
 constexpr uint16_t kWarmUp = 2;
 constexpr uint16_t kShutdown = 3;
@@ -51,8 +52,10 @@ struct Response {
 };
 #pragma pack(pop)
 
-static_assert(sizeof(Request) == 128, "resident epoch request ABI changed");
-static_assert(sizeof(Response) == 344, "resident epoch response ABI changed");
+static_assert(sizeof(Request) == CRUISE_SIDECAR_REQUEST_BYTES,
+              "resident epoch request ABI changed");
+static_assert(sizeof(Response) == CRUISE_SIDECAR_RESPONSE_BYTES,
+              "resident epoch response ABI changed");
 
 bool ReadAll(int fd, void *buffer, size_t bytes) {
   auto *cursor = static_cast<uint8_t *>(buffer);
