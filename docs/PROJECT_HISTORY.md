@@ -77,8 +77,8 @@ Sources: `history/attempts/vllm-integration-attempt71-*` through
 
 ## Stage 5: Productization Roadmap
 
-Cruise has passed its research-feasibility gate, but commit `22f5c15` is still
-a research baseline rather than a stable product. In particular, the current
+Cruise has passed its research-feasibility gate, but the current `0.1.0` line is
+still a research baseline rather than a stable product. In particular, its
 `0.1.0` package version is development metadata; it is not a statement of
 production readiness. The next work is governed by the productization tracker
 referenced below and by this version-controlled roadmap.
@@ -124,18 +124,31 @@ not hidden v1.0 requirements.
 
 ### M0: Product Contract and Reproducible Deployment
 
-- [ ] Publish an exact compatibility matrix covering hardware, driver, CANN,
+- [x] Publish an exact compatibility matrix covering hardware, driver, CANN,
   torch-npu, Python, vLLM, vLLM-Ascend, model revision, graph artifacts, and
   external-weight hashes.
-- [ ] Replace the experiment-only environment-variable bundle with a validated
+- [x] Replace the experiment-only environment-variable bundle with a validated
   user configuration and a `doctor` command that reports every missing or
   incompatible dependency without loading the model.
-- [ ] Version the Python contract, sidecar wire protocol, Host-UDF ABI, graph
+- [x] Version the Python contract, sidecar wire protocol, Host-UDF ABI, graph
   configuration, and external assets; reject incompatible combinations before
   model execution.
 - [ ] Provide documented clean install, start, stop, upgrade, rollback, and
   uninstall procedures without editing vLLM or vLLM-Ascend source files.
-- [ ] Add a bounded no-NPU smoke path and a one-command NPU installation check.
+- [x] Add a bounded no-NPU smoke path and a one-command NPU installation check.
+
+M0 checkpoint (2026-07-29): four of five implementation items are verified.
+The isolated non-editable wheel install, smoke, package-data/entry-point check,
+uninstall, 60-test frozen-environment suite, exact NPU/driver diagnosis, ABI
+verifier, repository audit, and marker-checked cleanup all passed. Evidence is
+in [`M0-PRODUCT-READINESS-20260729.md`](../evidence/M0-PRODUCT-READINESS-20260729.md).
+
+M0 remains open. The lifecycle documentation exists, but the final checkbox
+and exit gate require content-addressed external-asset provisioning outside the
+root disk followed by two consecutive real-model
+`install -> runtime doctor --deep -> start -> stop -> cleanup` cycles. Each
+cycle must leave a clean checkout, no process/socket/scratch leak, and less than
+100 MiB of persistent runtime output.
 
 Exit evidence: a clean checkout can be installed and diagnosed on a supported
 machine using only documented commands, and a repeated install/start/stop cycle

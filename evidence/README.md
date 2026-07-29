@@ -10,3 +10,8 @@ The current accepted Attempt 74 measurement is summarized in
 summarized in the frozen historical status documents. Original artifacts
 remain outside this repository and must be matched through their recorded
 SHA-256 values before use in a paper.
+
+The current productization checkpoint is summarized in
+[`M0-PRODUCT-READINESS-20260729.md`](M0-PRODUCT-READINESS-20260729.md). It
+records both the completed contract/package checks and the still-open M0
+real-model lifecycle condition.
