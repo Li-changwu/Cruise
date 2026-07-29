@@ -97,8 +97,8 @@ referenced below and by this version-controlled roadmap.
 - Performance evidence must use fixed versions, a same-machine baseline, and
   at least three independent service starts. Negative results are retained.
 
-Productization tracker: to be linked after the canonical GitHub issue is
-created.
+Productization tracker:
+[`Li-changwu/Cruise#1`](https://github.com/Li-changwu/Cruise/issues/1).
 
 ### First Stable Support Contract
 
