@@ -48,14 +48,13 @@ def test_sidecar_binary_protocol_sizes_and_round_trip():
         *([1, 2, 0, 0]),
         *range(GRAPH_BATCH_SIZE * 8),
     )
-    assert RESPONSE.unpack(response)[:7] == (
+    assert RESPONSE.unpack(response)[:6] == (
         RESPONSE_MAGIC,
         0,
         0,
         4,
         1,
         1,
-        123,
     )
     assert RESPONSE.unpack(response)[6:12] == (
         EpochCommitState.COMMITTED,
