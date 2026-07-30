@@ -26,7 +26,9 @@ jobs:
             tests/test_multi_epoch_result_verifier.py \
             tests/test_productization_m0.py \
             tests/test_m1_batched_prefill.py \
-            tests/test_m1_continuous_admission.py
+            tests/test_m1_continuous_admission.py \
+            tests/test_m1_exit.py \
+            tests/test_m1_api.py
       - name: Verify minimal ABI structure
         run: |
           python verify_minimal_abi_source.py . \

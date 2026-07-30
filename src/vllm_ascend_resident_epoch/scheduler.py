@@ -1,5 +1,6 @@
 from typing import Any
 
+from vllm.sampling_params import RequestOutputKind
 from vllm.v1.core.sched.scheduler import Scheduler
 from vllm.v1.outputs import ModelRunnerOutput
 
@@ -93,42 +94,42 @@ class ResidentEpochScheduler(Scheduler):
                 return f"{field}={getattr(hf_config, field, None)!r}"
         return None
 
-    def _host_prefill_admission(self) -> tuple[Any, ...]:
-        """Return the single waiting prefill that can safely join the cohort."""
+    def _host_isolation_reason(self, device_running: tuple[Any, ...]) -> str | None:
+        if not device_running:
+            return None
+        host_running = tuple(
+            request for request in self.running if request not in device_running
+        )
+        if any(
+            request_rejection_reason(request) is not None
+            for request in host_running
+        ):
+            return "unsupported-host-isolation"
+        waiting = tuple(self.waiting) + tuple(self.skipped_waiting)
+        if (
+            any(
+                request.num_prompt_tokens > 1
+                or request_rejection_reason(request) is not None
+                for request in waiting
+            )
+            and len(self.running) < self.max_num_running_reqs
+        ):
+            return "host-prefill-admission"
+        return None
 
+    def _schedule_with_host_isolation(
+        self,
+    ) -> tuple[Any, tuple[str, ...], str | None]:
         device_running = tuple(
             request
             for request in self.running
             if request.request_id in self._resident_epoch_device_owned
         )
-        if (
-            not device_running
-            or len(device_running) != len(self.running)
-            or len(self.running) >= self.max_num_running_reqs
-        ):
-            return ()
-        waiting = tuple(self.waiting) + tuple(self.skipped_waiting)
-        if len(waiting) != 1:
-            return ()
-        request = waiting[0]
-        if (
-            request.num_prompt_tokens <= 1
-            or request.num_prompt_tokens > self._resident_epoch_config.logical_capacity
-            or request_rejection_reason(request) is not None
-        ):
-            return ()
-        return (request,)
+        isolation_reason = self._host_isolation_reason(device_running)
+        if isolation_reason is None:
+            return super().schedule(), (), None
 
-    def _schedule_with_host_prefill_isolation(self) -> tuple[Any, tuple[str, ...]]:
-        admission = self._host_prefill_admission()
-        if not admission:
-            return super().schedule(), ()
-
-        paused = tuple(
-            request
-            for request in self.running
-            if request.request_id in self._resident_epoch_device_owned
-        )
+        paused = device_running
         paused_ids = tuple(request.request_id for request in paused)
         original_max_running = self.max_num_running_reqs
         self.running[:] = [
@@ -142,19 +143,20 @@ class ResidentEpochScheduler(Scheduler):
             self.running[:] = [*paused, *current]
             self.max_num_running_reqs = original_max_running
 
-        if set(scheduler_output.num_scheduled_tokens) != {
-            request.request_id for request in admission
-        }:
-            raise RuntimeError(
-                "isolated Host prefill scheduled an unexpected request set"
-            )
-        return scheduler_output, paused_ids
+        scheduled = set(scheduler_output.num_scheduled_tokens)
+        if not scheduled:
+            raise RuntimeError("isolated Host lane did not schedule a request")
+        if scheduled & set(paused_ids):
+            raise RuntimeError("isolated Host lane scheduled Device-owned state")
+        return scheduler_output, paused_ids, isolation_reason
 
     def schedule(self):
         self._ensure_test_config()
         if self.num_lookahead_tokens != 0:
             raise RuntimeError("resident epoch lookahead conflicts with another feature")
-        scheduler_output, paused_ids = self._schedule_with_host_prefill_isolation()
+        scheduler_output, paused_ids, isolation_reason = (
+            self._schedule_with_host_isolation()
+        )
 
         plan, rejection = self._make_resident_epoch_plan(scheduler_output)
         if plan is None:
@@ -168,7 +170,9 @@ class ResidentEpochScheduler(Scheduler):
                     + ",".join(sorted(scheduled_device_owned))
                 )
         if paused_ids:
-            rejection = "host-prefill-admission"
+            if plan is not None:
+                raise RuntimeError("isolated Host lane created a resident plan")
+            rejection = isolation_reason
         self._resident_epoch_last_rejection = rejection
         self._resident_epoch_last_plan = plan
         self._resident_epoch_last_result = None
@@ -227,6 +231,12 @@ class ResidentEpochScheduler(Scheduler):
             remaining_steps.append(remaining)
 
         epoch_budget = min(config.max_steps, min(remaining_steps))
+        if any(
+            request.sampling_params is not None
+            and request.sampling_params.output_kind == RequestOutputKind.DELTA
+            for request in requests
+        ):
+            epoch_budget = 1
         epoch_steps = max(
             step for step in (1, 2, 4, 8) if step <= epoch_budget
         )

@@ -166,7 +166,9 @@ git -C "${vllm_root}" rev-parse HEAD >"${evidence}/vllm-commit.txt"
 git -C "${vllm_ascend_root}" rev-parse HEAD \
   >"${evidence}/vllm-ascend-commit.txt"
 
-run_step unit-tests 600s python3 -m pytest -q "${source_dir}/tests"
+run_step unit-tests 600s env \
+  PYTHONPATH="${vllm_root}${PYTHONPATH:+:${PYTHONPATH}}" \
+  python3 -m pytest -q "${source_dir}/tests"
 run_step prepare-controller 120s cp -a \
   "${source_dir}/controller/." "${controller}/"
 run_step prepare-runtime-config 120s python3 \

@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "logical_capacity": 8,
+  "cohorts_per_batch_size": 100,
+  "prompt_templates": [
+    {
+      "prompt_token_ids": [9707, 11],
+      "second_output_token_id": 2776
+    },
+    {
+      "prompt_token_ids": [9707, 11, 358],
+      "second_output_token_id": 4460
+    },
+    {
+      "prompt_token_ids": [9707, 11, 358, 374],
+      "second_output_token_id": 220
+    },
+    {
+      "prompt_token_ids": [9707, 11, 358, 374, 264],
+      "second_output_token_id": 16
+    }
+  ]
+}

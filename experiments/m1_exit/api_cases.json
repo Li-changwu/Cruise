@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "served_model_name": "cruise-m1",
+  "tokenizer": "/data/shared_models/Qwen2.5-7B-Instruct",
+  "cases": [
+    {
+      "name": "nonstream-single",
+      "stream": false,
+      "prompt": [9707, 11],
+      "max_tokens": 4
+    },
+    {
+      "name": "nonstream-batch",
+      "stream": false,
+      "prompt": [[9707, 11, 358], [9707, 11, 358, 374]],
+      "max_tokens": 3
+    },
+    {
+      "name": "stream-single",
+      "stream": true,
+      "prompt": [9707, 11],
+      "max_tokens": 5
+    },
+    {
+      "name": "stream-batch",
+      "stream": true,
+      "prompt": [[9707, 11, 358], [9707, 11, 358, 374, 264]],
+      "max_tokens": 3
+    },
+    {
+      "name": "eos-second-token",
+      "stream": false,
+      "prompt": [9707, 11],
+      "max_tokens": 4,
+      "stop_token_ids": [2776]
+    },
+    {
+      "name": "unsupported-min-tokens",
+      "stream": false,
+      "prompt": [9707, 11],
+      "max_tokens": 3,
+      "min_tokens": 1
+    },
+    {
+      "name": "disconnect-after-device",
+      "stream": true,
+      "prompt": [9707, 11],
+      "max_tokens": 7,
+      "disconnect_after_tokens": 3
+    },
+    {
+      "name": "post-disconnect-probe",
+      "stream": false,
+      "prompt": [9707, 11, 358, 374],
+      "max_tokens": 2
+    }
+  ]
+}

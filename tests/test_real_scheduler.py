@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from vllm import SamplingParams
+from vllm.sampling_params import RequestOutputKind
 from tests.v1.core.utils import create_requests, create_scheduler
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, RequestStatus
@@ -357,7 +358,7 @@ def test_nontrivial_continuous_admission_isolates_host_prefill_and_reuses_row():
     assert request_a.status == RequestStatus.FINISHED_LENGTH_CAPPED
 
 
-def test_ineligible_admission_cannot_route_device_owned_request_to_host():
+def test_ineligible_admission_uses_host_lane_without_advancing_device_request():
     scheduler = make_scheduler(2)
     scheduler._resident_epoch_config = ResidentEpochConfig(max_steps=2)
     request_a = make_prefill_request("A", [9707, 11], max_tokens=7)
@@ -378,5 +379,100 @@ def test_ineligible_admission_cannot_route_device_owned_request_to_host():
     unsupported.sampling_params.temperature = 0.8
     scheduler.add_request(unsupported)
 
-    with pytest.raises(RuntimeError, match="refusing Host execution"):
-        scheduler.schedule()
+    unsupported_prefill = scheduler.schedule()
+    assert get_plan(unsupported_prefill) is None
+    assert unsupported_prefill.num_scheduled_tokens == {"unsupported": 2}
+    assert scheduler._resident_epoch_last_rejection == "host-prefill-admission"
+    scheduler.update_from_output(
+        unsupported_prefill,
+        ModelRunnerOutput(
+            req_ids=["unsupported"],
+            req_id_to_index={"unsupported": 0},
+            sampled_token_ids=[[201]],
+        ),
+    )
+
+    unsupported_decode = scheduler.schedule()
+    assert get_plan(unsupported_decode) is None
+    assert unsupported_decode.num_scheduled_tokens == {"unsupported": 1}
+    assert scheduler._resident_epoch_last_rejection == "unsupported-host-isolation"
+    scheduler.update_from_output(
+        unsupported_decode,
+        ModelRunnerOutput(
+            req_ids=["unsupported"],
+            req_id_to_index={"unsupported": 0},
+            sampled_token_ids=[[202]],
+        ),
+    )
+    assert unsupported.status == RequestStatus.FINISHED_LENGTH_CAPPED
+
+    resume_a = scheduler.schedule()
+    resume_plan = get_plan(resume_a)
+    assert resume_plan is not None
+    assert resume_plan.req_ids == ("A",)
+    assert resume_plan.requests[0].state_owner == "device"
+    assert resume_plan.requests[0].generation == 1
+
+
+def test_two_simultaneous_prefills_are_isolated_from_device_owned_request():
+    scheduler = make_scheduler(3)
+    scheduler._resident_epoch_config = ResidentEpochConfig(max_steps=2)
+    request_a = make_prefill_request("A", [9707, 11], max_tokens=7)
+    scheduler.add_request(request_a)
+    prefill_a = scheduler.schedule()
+    scheduler.update_from_output(
+        prefill_a,
+        ModelRunnerOutput(
+            req_ids=["A"],
+            req_id_to_index={"A": 0},
+            sampled_token_ids=[[101]],
+        ),
+    )
+    import_a = scheduler.schedule()
+    commit_device_epoch(scheduler, import_a, {"A": [102, 103]})
+
+    request_b = make_prefill_request("B", [9707, 11, 358], max_tokens=3)
+    request_c = make_prefill_request("C", [9707, 11, 358, 374], max_tokens=3)
+    scheduler.add_request(request_b)
+    scheduler.add_request(request_c)
+
+    prefill_bc = scheduler.schedule()
+    assert get_plan(prefill_bc) is None
+    assert prefill_bc.num_scheduled_tokens == {"B": 3, "C": 4}
+    assert scheduler._resident_epoch_last_rejection == "host-prefill-admission"
+    scheduler.update_from_output(
+        prefill_bc,
+        ModelRunnerOutput(
+            req_ids=["B", "C"],
+            req_id_to_index={"B": 0, "C": 1},
+            sampled_token_ids=[[201], [301]],
+        ),
+    )
+
+    import_bc = scheduler.schedule()
+    plan_bc = get_plan(import_bc)
+    assert plan_bc is not None
+    assert plan_bc.req_ids == ("A", "B", "C")
+    assert [request.state_owner for request in plan_bc.requests] == [
+        "device",
+        "host",
+        "host",
+    ]
+    assert [request.kv_import_required for request in plan_bc.requests] == [
+        False,
+        True,
+        True,
+    ]
+
+
+def test_delta_output_kind_limits_epoch_to_one_visible_token():
+    scheduler = make_scheduler(2)
+    scheduler._resident_epoch_config = ResidentEpochConfig(max_steps=4)
+    requests = add_greedy_requests(scheduler, 2, max_tokens=6)
+    requests[1].sampling_params.output_kind = RequestOutputKind.DELTA
+
+    scheduler_output = scheduler.schedule()
+    plan = get_plan(scheduler_output)
+
+    assert plan is not None
+    assert plan.max_steps == 1
