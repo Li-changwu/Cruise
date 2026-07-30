@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,6 +12,7 @@ from vllm_ascend_resident_epoch import cli
 from vllm_ascend_resident_epoch import doctor as doctor_module
 from vllm_ascend_resident_epoch import runtime_config as runtime_config_module
 from vllm_ascend_resident_epoch.compatibility import (
+    get_capability_requirements,
     get_compatibility_profile,
     load_compatibility_manifest,
 )
@@ -159,6 +161,15 @@ def _load_test_runtime_config(tmp_path: Path, monkeypatch) -> CruiseRuntimeConfi
 
 def test_compatibility_manifest_matches_versioned_contracts():
     manifest = load_compatibility_manifest()
+    requirements = get_capability_requirements()
+    assert manifest["schema_version"] == 2
+    assert requirements["architectures"] == ["aarch64"]
+    assert requirements["accelerators"] == ["Ascend 910B2"]
+    assert requirements["required_python_modules"] == ["dataflow"]
+    assert {item["name"] for item in requirements["required_cann_files"]} == {
+        "meta_flow_func.h",
+        "aarch64-target-linux-gnu-g++",
+    }
     contracts = manifest["contracts"]
     assert contracts["sidecar_protocol"] == SIDECAR_PROTOCOL_VERSION
     assert contracts["sidecar_request_bytes"] == SIDECAR_REQUEST_BYTES
@@ -169,6 +180,17 @@ def test_compatibility_manifest_matches_versioned_contracts():
     assert profile["hardware"]["accelerator"] == "Ascend 910B2"
     assert profile["software"]["driver"] == "25.2.1"
     assert profile["software"]["cann"] == "8.5.1"
+    candidate = get_compatibility_profile("attempt74-910b2-cann900-npu01-r1")
+    assert candidate["status"] == "candidate-m0-validation"
+    assert candidate["hardware"]["npu_smi_version"] == "26.0.rc1"
+    assert candidate["software"]["driver"] == "26.0.rc1"
+    assert candidate["software"]["cann"] == "9.0.0"
+    assert candidate["software"]["vllm"]["commit"] == profile["software"][
+        "vllm"
+    ]["commit"]
+    assert candidate["software"]["vllm_ascend"]["commit"] == profile["software"][
+        "vllm_ascend"
+    ]["commit"]
 
 
 def test_npu_doctor_checks_driver_separately_from_npu_smi(monkeypatch):
@@ -194,7 +216,158 @@ def test_npu_doctor_checks_driver_separately_from_npu_smi(monkeypatch):
     checks = {check.name: check for check in report.checks}
     assert checks["npu-smi"].status == "pass"
     assert checks["driver"].status == "pass"
-    assert checks["driver"].detail == "expected=25.2.1 observed=25.2.1"
+    assert checks["driver"].expected == "25.2.1"
+    assert checks["driver"].observed == "25.2.1"
+    assert checks["driver"].remediation
+
+
+def _npu_report(monkeypatch, output: str, *, device_id: int = 0, minimum: int = 1):
+    profile = get_compatibility_profile("attempt74-910b2-cann851-r5")
+    requirements = dict(get_capability_requirements())
+    requirements["minimum_accelerator_count"] = minimum
+    monkeypatch.setattr(doctor_module.shutil, "which", lambda _: "/usr/bin/npu-smi")
+    monkeypatch.setattr(
+        doctor_module,
+        "_run",
+        lambda command, timeout=30: subprocess.CompletedProcess(
+            command, 0, stdout=output, stderr=""
+        ),
+    )
+    report = doctor_module.DoctorReport(mode="npu", profile=profile["id"], checks=[])
+    doctor_module._check_npu(report, profile, requirements, device_id)
+    return {check.name: check for check in report.checks}
+
+
+@pytest.mark.parametrize(
+    ("output", "device_id", "minimum", "check_name", "code"),
+    [
+        (
+            "| npu-smi 25.2.1 Version: 25.2.1 |\n"
+            "| 0 310P | OK |\n",
+            0,
+            1,
+            "npu-product",
+            "unsupported-accelerator",
+        ),
+        (
+            "| npu-smi 25.2.1 Version: 25.2.1 |\n"
+            "| 0 910B2 | OK |\n",
+            0,
+            2,
+            "npu-count",
+            "insufficient-supported-accelerators",
+        ),
+        (
+            "| npu-smi 25.2.1 Version: 25.2.1 |\n"
+            "| 0 910B2 | OK |\n",
+            1,
+            1,
+            "npu-device",
+            "unavailable-npu-device",
+        ),
+        (
+            "| npu-smi 25.2.1 Version: 25.2.1 |\n"
+            "| 0 910B2 | Alarm |\n",
+            0,
+            1,
+            "npu-device",
+            "unhealthy-npu-device",
+        ),
+        (
+            "| npu-smi 25.2.1 Version: 25.2.1 |\n"
+            "| 0 910B2 | OK |\n"
+            "| Process id | Process name |\n"
+            "| 0 0 | 4321 python |\n",
+            0,
+            1,
+            "npu-availability",
+            "occupied-npu-device",
+        ),
+    ],
+)
+def test_npu_capability_rejections_are_actionable(
+    monkeypatch, output, device_id, minimum, check_name, code
+):
+    checks = _npu_report(
+        monkeypatch,
+        output,
+        device_id=device_id,
+        minimum=minimum,
+    )
+    check = checks[check_name]
+    assert check.status == "fail"
+    assert check.code == code
+    assert check.expected
+    assert check.observed
+    assert check.remediation
+
+
+def test_cann_capability_rejections_identify_missing_device_control(monkeypatch):
+    requirements = get_capability_requirements()
+    report = doctor_module.DoctorReport(mode="npu", profile="test", checks=[])
+    monkeypatch.setattr(
+        doctor_module.importlib,
+        "import_module",
+        lambda name: (_ for _ in ()).throw(ModuleNotFoundError(name)),
+    )
+    monkeypatch.setattr(doctor_module, "_find_cann_component", lambda root, name: None)
+
+    doctor_module._check_cann_capabilities(report, requirements, Path("missing"))
+
+    failures = {check.name: check for check in report.checks}
+    assert failures["python-module-dataflow"].code == "missing-device-control-runtime"
+    assert failures["dataflow-sdk-header"].code == "missing-cann-component"
+    assert failures["device-cross-compiler"].code == "missing-cann-component"
+
+
+def test_cann_capability_identifies_installed_but_inactive_dataflow(
+    tmp_path, monkeypatch
+):
+    requirements = get_capability_requirements()
+    (tmp_path / "python" / "site-packages" / "dataflow").mkdir(parents=True)
+    report = doctor_module.DoctorReport(mode="npu", profile="test", checks=[])
+    monkeypatch.setattr(
+        doctor_module.importlib,
+        "import_module",
+        lambda name: (_ for _ in ()).throw(ModuleNotFoundError(name)),
+    )
+    monkeypatch.setattr(doctor_module, "_find_cann_component", lambda root, item: None)
+
+    doctor_module._check_cann_capabilities(report, requirements, tmp_path)
+
+    check = {item.name: item for item in report.checks}["python-module-dataflow"]
+    assert check.code == "inactive-device-control-runtime"
+    assert "PYTHONPATH=" in check.remediation
+    assert str(tmp_path / "python" / "site-packages") in check.remediation
+
+
+def test_shared_memory_rejection_reports_required_and_observed(monkeypatch):
+    requirements = get_capability_requirements()
+
+    class SharedMemoryPath:
+        def is_dir(self):
+            return True
+
+        def __str__(self):
+            return "/dev/shm"
+
+    monkeypatch.setattr(doctor_module.os, "name", "posix")
+    monkeypatch.setattr(doctor_module, "Path", lambda _: SharedMemoryPath())
+    monkeypatch.setattr(doctor_module.os, "access", lambda path, mode: True)
+    monkeypatch.setattr(
+        doctor_module.shutil,
+        "disk_usage",
+        lambda path: SimpleNamespace(free=1024),
+    )
+    report = doctor_module.DoctorReport(mode="npu", profile="test", checks=[])
+
+    doctor_module._check_shared_memory(report, requirements)
+
+    check = report.checks[0]
+    assert check.status == "fail"
+    assert check.code == "insufficient-shared-memory"
+    assert check.expected == "at least 34359738368 free bytes"
+    assert check.observed == "1024 free bytes"
 
 
 def test_native_protocol_header_matches_python_constants():

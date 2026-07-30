@@ -1,10 +1,25 @@
 # Compatibility and Contract Matrix
 
-Cruise uses an explicit compatibility profile. A profile is an exact record of
-one validated stack, not a promise that nearby versions will work. The
-machine-readable source is
-`src/vllm_ascend_resident_epoch/compatibility.json`; `cruise doctor` rejects a
-mismatch before the runtime path is started.
+Cruise compatibility has two separate layers. `capability_requirements`
+describes host-independent prerequisites such as architecture, supported NPU
+products, DataFlow, the device cross-compiler, device health and shared-memory
+capacity. A profile records one exact software and asset combination together
+with its validation status and evidence. Matching the capability layer alone
+does not make an untested stack supported.
+
+The machine-readable source is
+`src/vllm_ascend_resident_epoch/compatibility.json`. No hostname appears in the
+contract: a different server passes when it provides the required capabilities
+and exactly matches a selected, qualified profile. `cruise doctor` rejects all
+other combinations before model loading.
+
+## Required Capabilities
+
+The current product line requires aarch64, at least one healthy and idle Ascend
+910B2, importable CANN DataFlow Python support, `meta_flow_func.h`,
+`aarch64-target-linux-gnu-g++`, and at least 32 GiB free on `/dev/shm`. Adding a
+new accelerator model is a manifest and qualification change, not a hostname
+special case.
 
 ## Formally Validated Profile
 
@@ -34,6 +49,15 @@ SHA256
 AIR, tiling, controller, graph, and baseline hashes are recorded in the
 machine-readable profile and the Attempt 74 evidence.
 
+## Qualification Candidate
+
+Profile `attempt74-910b2-cann900-npu01-r1` records the NPU0-1 qualification
+candidate: Ascend 910B2, CANN/driver/npu-smi 9.0.0/26.0.rc1/26.0.rc1, Python
+3.11.15, torch-npu 2.9.0.post2, and the declared vLLM/vLLM-Ascend commits. Its
+status remains `candidate-m0-validation`; passing `doctor` proves installation
+readiness, not formal product support. The status may be promoted only after
+the required lifecycle and correctness evidence is committed.
+
 ## Versioned Contracts
 
 | Contract | Version or shape |
@@ -61,6 +85,7 @@ cruise smoke
 cruise doctor --mode source
 
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
+export PYTHONPATH="${ASCEND_HOME_PATH}/python/site-packages:${PYTHONPATH:-}"
 cruise doctor --mode npu \
   --profile attempt74-910b2-cann851-r5 \
   --device 7
@@ -69,11 +94,19 @@ cruise doctor --mode runtime --config /etc/cruise/cruise.json
 cruise doctor --mode runtime --config /etc/cruise/cruise.json --deep
 ```
 
-`source` checks only packaged contracts. `npu` checks the exact software stack,
-architecture, NPU product and health. `runtime` additionally checks paths,
-executable permissions, UDF shape, hashes, weight count/bytes, OPP layout and
-scratch capacity. `--deep` hashes every external-weight file and is intended
-for deployment qualification rather than every process start.
+`source` checks only packaged contracts. `npu` first checks the portable
+capabilities, then the exact selected profile. It also rejects an unavailable,
+unhealthy, unsupported, or occupied device. `runtime` additionally checks
+paths, executable permissions, UDF shape, hashes, weight count/bytes, OPP
+layout and scratch capacity. `--deep` hashes every external-weight file and is
+intended for deployment qualification rather than every process start.
+
+Every failed JSON check includes a stable `code`, `expected`, `observed`, and
+`remediation`. The major rejection classes are unsupported architecture or
+accelerator, insufficient or unavailable NPU, device health or occupancy,
+missing/inactive DataFlow, missing CANN headers/compiler, incompatible package
+or CANN/driver versions, and insufficient shared memory. A candidate profile
+adds an `unvalidated-compatibility-profile` warning even when all checks pass.
 
 ## M1 Validated Extension
 
@@ -88,7 +121,7 @@ or row reuse after a nontrivial prefill.
 
 ## Claim Boundary
 
-This profile is a formally validated research baseline, not Stable v1.0. CANN
-9.0.0 supported earlier feasibility experiments, but it is not part of this
-exact product profile. Adding another version requires its own profile and
-same-spec correctness evidence; broad version ranges must not be inferred.
+The CANN 8.5.1 profile is a formally validated research baseline, not Stable
+v1.0. CANN 9.0.0 is currently a qualification candidate. Adding another
+version or accelerator requires its own profile and same-spec correctness
+evidence; broad version ranges must not be inferred.

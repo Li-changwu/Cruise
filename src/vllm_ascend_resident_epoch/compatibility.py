@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from importlib.resources import files
 import json
+from pathlib import Path
 import re
 from typing import Any
 
@@ -28,6 +29,18 @@ class CompatibilityError(ValueError):
 
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _non_empty_strings(value: Any, name: str) -> list[str]:
+    if (
+        not isinstance(value, list)
+        or not value
+        or any(not isinstance(item, str) or not item.strip() for item in value)
+    ):
+        raise CompatibilityError(f"{name} must be a non-empty string list")
+    if len(set(value)) != len(value):
+        raise CompatibilityError(f"{name} contains duplicates")
+    return value
 
 
 def load_compatibility_manifest() -> dict[str, Any]:
@@ -68,6 +81,68 @@ def validate_compatibility_manifest(manifest: dict[str, Any]) -> None:
     }
     if manifest.get("contracts") != expected_contracts:
         raise CompatibilityError("compatibility contract versions disagree with code")
+
+    requirements = manifest.get("capability_requirements")
+    if not isinstance(requirements, dict):
+        raise CompatibilityError("compatibility manifest has no capability requirements")
+    _non_empty_strings(
+        requirements.get("architectures"),
+        "capability_requirements.architectures",
+    )
+    _non_empty_strings(
+        requirements.get("accelerators"),
+        "capability_requirements.accelerators",
+    )
+    _non_empty_strings(
+        requirements.get("required_python_modules"),
+        "capability_requirements.required_python_modules",
+    )
+    for name in ("minimum_accelerator_count", "minimum_shared_memory_free_bytes"):
+        value = requirements.get(name)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise CompatibilityError(
+                f"capability_requirements.{name} must be a positive integer"
+            )
+    required_cann_files = requirements.get("required_cann_files")
+    if not isinstance(required_cann_files, list) or not required_cann_files:
+        raise CompatibilityError(
+            "capability_requirements.required_cann_files must be a non-empty list"
+        )
+    component_ids: set[str] = set()
+    component_names: set[str] = set()
+    for component in required_cann_files:
+        if not isinstance(component, dict) or set(component) != {
+            "id",
+            "name",
+            "relative_paths",
+        }:
+            raise CompatibilityError(
+                "each required CANN file must contain id, name, and relative_paths"
+            )
+        component_id = component["id"]
+        component_name = component["name"]
+        if not isinstance(component_id, str) or not component_id.strip():
+            raise CompatibilityError("required CANN file id must be non-empty")
+        if not isinstance(component_name, str) or not component_name.strip():
+            raise CompatibilityError("required CANN file name must be non-empty")
+        if "/" in component_name or "\\" in component_name:
+            raise CompatibilityError("required CANN file name must be a basename")
+        relative_paths = _non_empty_strings(
+            component["relative_paths"],
+            f"required CANN file {component_id} relative_paths",
+        )
+        if any(Path(value).is_absolute() or ".." in Path(value).parts for value in relative_paths):
+            raise CompatibilityError(
+                f"required CANN file {component_id} has an unsafe relative path"
+            )
+        if any(Path(value).name != component_name for value in relative_paths):
+            raise CompatibilityError(
+                f"required CANN file {component_id} paths disagree with its name"
+            )
+        if component_id in component_ids or component_name in component_names:
+            raise CompatibilityError("required CANN files contain duplicates")
+        component_ids.add(component_id)
+        component_names.add(component_name)
 
     profiles = manifest.get("profiles")
     if not isinstance(profiles, list) or not profiles:
@@ -126,13 +201,46 @@ def validate_compatibility_manifest(manifest: dict[str, Any]) -> None:
                     f"profile {profile_id} has invalid model {name}"
                 )
 
+        hardware = profile.get("hardware")
+        if not isinstance(hardware, dict):
+            raise CompatibilityError(f"profile {profile_id} has no hardware record")
+        if hardware.get("architecture") not in requirements["architectures"]:
+            raise CompatibilityError(
+                f"profile {profile_id} uses an unsupported architecture"
+            )
+        if hardware.get("accelerator") not in requirements["accelerators"]:
+            raise CompatibilityError(
+                f"profile {profile_id} uses an unsupported accelerator"
+            )
+        accelerator_count = hardware.get("accelerator_count")
+        if (
+            not isinstance(accelerator_count, int)
+            or isinstance(accelerator_count, bool)
+            or accelerator_count < requirements["minimum_accelerator_count"]
+        ):
+            raise CompatibilityError(
+                f"profile {profile_id} has insufficient accelerator_count"
+            )
+
+
+def get_capability_requirements() -> dict[str, Any]:
+    return load_compatibility_manifest()["capability_requirements"]
+
+
+def list_compatibility_profiles() -> tuple[dict[str, Any], ...]:
+    return tuple(load_compatibility_manifest()["profiles"])
+
 
 def get_compatibility_profile(profile_id: str | None = None) -> dict[str, Any]:
     manifest = load_compatibility_manifest()
     profiles = manifest["profiles"]
     if profile_id is None:
         if len(profiles) != 1:
-            raise CompatibilityError("a compatibility profile must be selected")
+            available = ", ".join(profile["id"] for profile in profiles)
+            raise CompatibilityError(
+                "a compatibility profile must be selected; "
+                f"available profiles: {available}"
+            )
         return profiles[0]
     for profile in profiles:
         if profile["id"] == profile_id:

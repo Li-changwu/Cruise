@@ -143,6 +143,19 @@ uninstall, 60-test frozen-environment suite, exact NPU/driver diagnosis, ABI
 verifier, repository audit, and marker-checked cleanup all passed. Evidence is
 in [`M0-PRODUCT-READINESS-20260729.md`](../evidence/M0-PRODUCT-READINESS-20260729.md).
 
+M0 portability increment (2026-07-30): compatibility schema v2 separates
+host-independent capability requirements from exact evidence-backed profiles.
+The pre-model doctor now reports structured rejection codes with expected,
+observed, and remediation fields for unsupported architecture/NPU, device
+count/health/occupancy, DataFlow and compiler availability, software versions,
+and `/dev/shm` capacity. On NPU0-1, the check correctly distinguished an
+installed but inactive CANN 9.0.0 DataFlow package from a missing component;
+after exposing its Python 3.11 site-packages path, the candidate profile passed
+on physical NPU 0. The target environment suite passed 100 tests. This is an
+installation-capability checkpoint only: the CANN 9.0.0 profile remains
+`candidate-m0-validation`, and no model or runtime asset was used by this
+increment.
+
 M0 remains open. The lifecycle documentation exists, but the final checkbox
 and exit gate require content-addressed external-asset provisioning outside the
 root disk followed by two consecutive real-model

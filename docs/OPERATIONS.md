@@ -32,11 +32,12 @@ entry exists.
 |---|---|
 | `cruise smoke --json` | package/CI check on any machine |
 | `cruise doctor --mode source --json` | installed contract report |
-| `cruise doctor --mode npu --device N --json` | software and NPU readiness |
+| `cruise doctor --mode npu --profile ID --device N --json` | capability, exact-stack and NPU readiness |
 | `cruise doctor --mode runtime --config FILE --json` | fast pre-start asset check |
 | `cruise doctor --mode runtime --config FILE --deep --json` | deployment qualification with full weight hashing |
 
-The JSON output is stable schema 1 and is suitable for automation. A warning
+The JSON output is stable schema 2 and is suitable for automation. Failed
+checks include `code`, `expected`, `observed`, and `remediation`. A warning
 does not change the exit code; any failed check returns nonzero.
 
 ## Failure Interpretation
@@ -44,6 +45,9 @@ does not change the exit code; any failed check returns nonzero.
 | Failure | Required action |
 |---|---|
 | Compatibility or contract mismatch | Install the exact profile or create a separately validated profile |
+| Unsupported accelerator or insufficient NPU count | Select a supported host; do not force-enable the device path |
+| Missing/inactive DataFlow or CANN compiler | Install the component or apply the reported environment-path remediation |
+| Unhealthy, unavailable, or occupied NPU | Repair/select/release the requested device before startup |
 | Missing/wrong asset hash | Rebuild or recopy the asset; never bypass the check |
 | OPP layout failure | Repair the vendor root before model load |
 | Insufficient `/dev/shm` | Remove only known marked scratch or choose another supported machine |

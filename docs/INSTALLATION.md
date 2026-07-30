@@ -34,10 +34,17 @@ Check the NPU stack before preparing model assets:
 
 ```bash
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
+export PYTHONPATH="${ASCEND_HOME_PATH}/python/site-packages:${PYTHONPATH:-}"
 cruise doctor --mode npu \
   --profile attempt74-910b2-cann851-r5 \
   --device 7
 ```
+
+Some CANN packages install DataFlow below the toolkit but do not add it to the
+active Conda environment. In that case `doctor` returns
+`inactive-device-control-runtime` with the exact detected `PYTHONPATH` fix.
+Do not switch to a system Python with a different ABI; activate the profile's
+Python first, then expose the matching CANN site-packages directory.
 
 Build the native sidecar outside the source tree:
 
@@ -104,4 +111,3 @@ python -m pip uninstall vllm-ascend-resident-epoch
 `cruise cleanup` refuses recursive deletion. It removes only an empty scratch
 root with the exact Cruise marker; active run directories or unknown files are
 left untouched and reported as an error.
-
