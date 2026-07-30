@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import traceback
 from typing import Any
@@ -21,6 +22,24 @@ VOCAB_SIZE = 152064
 IMPORT_INPUT_BYTES = 29_360_372
 STEADY_INPUT_BYTES = 260
 OUTPUT_BYTES = 368
+DEFAULT_KV_CACHE_BYTES = 512 * 1024 * 1024
+MINIMUM_KV_CACHE_BYTES = 64 * 1024 * 1024
+
+
+def configured_kv_cache_bytes() -> int:
+    raw = os.environ.get(
+        "CRUISE_VLLM_KV_CACHE_BYTES", str(DEFAULT_KV_CACHE_BYTES)
+    )
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError("CRUISE_VLLM_KV_CACHE_BYTES must be an integer") from exc
+    if value < MINIMUM_KV_CACHE_BYTES:
+        raise ValueError(
+            "CRUISE_VLLM_KV_CACHE_BYTES is smaller than the supported "
+            "resident KV capacity"
+        )
+    return value
 
 
 @dataclass(frozen=True)
@@ -417,6 +436,7 @@ def run_engine(
     config.parallel_config.worker_cls = WORKER_QUALNAME
     config.parallel_config.distributed_executor_backend = "uni"
     config.cache_config.gpu_memory_utilization = 0.35
+    config.cache_config.kv_cache_memory_bytes = configured_kv_cache_bytes()
     if mode == "cruise":
         config.scheduler_config.scheduler_cls = SCHEDULER_QUALNAME
 

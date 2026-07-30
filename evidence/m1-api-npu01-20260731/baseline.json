@@ -1,0 +1,276 @@
+{
+  "base_url": "http://127.0.0.1:52739",
+  "cases": [
+    {
+      "checks": {
+        "choice_count": true,
+        "choice_indices": true,
+        "exact_lengths": true,
+        "expected_finish": true,
+        "stop_token_observed": true
+      },
+      "choices": [
+        {
+          "finish_reason": "length",
+          "index": 0,
+          "stop_reason": null,
+          "token_ids": [
+            358,
+            2776,
+            4460,
+            311
+          ]
+        }
+      ],
+      "name": "nonstream-single",
+      "pass": true,
+      "stream": false,
+      "usage": {
+        "completion_tokens": 4,
+        "prompt_tokens": 2,
+        "prompt_tokens_details": null,
+        "total_tokens": 6
+      }
+    },
+    {
+      "checks": {
+        "choice_count": true,
+        "choice_indices": true,
+        "exact_lengths": true,
+        "expected_finish": true,
+        "stop_token_observed": true
+      },
+      "choices": [
+        {
+          "finish_reason": "length",
+          "index": 0,
+          "stop_reason": null,
+          "token_ids": [
+            2776,
+            4460,
+            311
+          ]
+        },
+        {
+          "finish_reason": "length",
+          "index": 1,
+          "stop_reason": null,
+          "token_ids": [
+            264,
+            220,
+            16
+          ]
+        }
+      ],
+      "name": "nonstream-batch",
+      "pass": true,
+      "stream": false,
+      "usage": {
+        "completion_tokens": 6,
+        "prompt_tokens": 7,
+        "prompt_tokens_details": null,
+        "total_tokens": 13
+      }
+    },
+    {
+      "checks": {
+        "choice_count": true,
+        "done_received": true,
+        "exact_lengths": true,
+        "expected_finish": true,
+        "stop_token_observed": true,
+        "usage_received": true
+      },
+      "choices": [
+        {
+          "finish_reason": "length",
+          "index": 0,
+          "stop_reason": null,
+          "token_ids": [
+            358,
+            2776,
+            4460,
+            311,
+            1855
+          ]
+        }
+      ],
+      "disconnected": false,
+      "done": true,
+      "name": "stream-single",
+      "pass": true,
+      "stream": true,
+      "usage": {
+        "completion_tokens": 5,
+        "prompt_tokens": 2,
+        "total_tokens": 7
+      }
+    },
+    {
+      "checks": {
+        "choice_count": true,
+        "done_received": true,
+        "exact_lengths": true,
+        "expected_finish": true,
+        "stop_token_observed": true,
+        "usage_received": true
+      },
+      "choices": [
+        {
+          "finish_reason": "length",
+          "index": 0,
+          "stop_reason": null,
+          "token_ids": [
+            2776,
+            4460,
+            311
+          ]
+        },
+        {
+          "finish_reason": "length",
+          "index": 1,
+          "stop_reason": null,
+          "token_ids": [
+            220,
+            16,
+            19
+          ]
+        }
+      ],
+      "disconnected": false,
+      "done": true,
+      "name": "stream-batch",
+      "pass": true,
+      "stream": true,
+      "usage": {
+        "completion_tokens": 6,
+        "prompt_tokens": 8,
+        "total_tokens": 14
+      }
+    },
+    {
+      "checks": {
+        "choice_count": true,
+        "choice_indices": true,
+        "exact_lengths": true,
+        "expected_finish": true,
+        "stop_token_observed": true
+      },
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "stop_reason": 2776,
+          "token_ids": [
+            358,
+            2776
+          ]
+        }
+      ],
+      "name": "eos-second-token",
+      "pass": true,
+      "stream": false,
+      "usage": {
+        "completion_tokens": 2,
+        "prompt_tokens": 2,
+        "prompt_tokens_details": null,
+        "total_tokens": 4
+      }
+    },
+    {
+      "checks": {
+        "choice_count": true,
+        "choice_indices": true,
+        "exact_lengths": true,
+        "expected_finish": true,
+        "stop_token_observed": true
+      },
+      "choices": [
+        {
+          "finish_reason": "length",
+          "index": 0,
+          "stop_reason": null,
+          "token_ids": [
+            358,
+            2776,
+            4460
+          ]
+        }
+      ],
+      "name": "unsupported-min-tokens",
+      "pass": true,
+      "stream": false,
+      "usage": {
+        "completion_tokens": 3,
+        "prompt_tokens": 2,
+        "prompt_tokens_details": null,
+        "total_tokens": 5
+      }
+    },
+    {
+      "checks": {
+        "closed_before_done": true,
+        "exact_disconnect_boundary": true
+      },
+      "choices": [
+        {
+          "finish_reason": null,
+          "index": 0,
+          "stop_reason": null,
+          "token_ids": [
+            358,
+            2776,
+            4460
+          ]
+        }
+      ],
+      "disconnected": true,
+      "done": false,
+      "name": "disconnect-after-device",
+      "pass": true,
+      "stream": true,
+      "usage": null
+    },
+    {
+      "checks": {
+        "choice_count": true,
+        "choice_indices": true,
+        "exact_lengths": true,
+        "expected_finish": true,
+        "stop_token_observed": true
+      },
+      "choices": [
+        {
+          "finish_reason": "length",
+          "index": 0,
+          "stop_reason": null,
+          "token_ids": [
+            264,
+            220
+          ]
+        }
+      ],
+      "name": "post-disconnect-probe",
+      "pass": true,
+      "stream": false,
+      "usage": {
+        "completion_tokens": 2,
+        "prompt_tokens": 4,
+        "prompt_tokens_details": null,
+        "total_tokens": 6
+      }
+    }
+  ],
+  "checks": {
+    "all_cases_passed": true,
+    "disconnect_followed_by_successful_probe": true
+  },
+  "gate": "M1 OpenAI-compatible API semantics",
+  "logger_returncode": 0,
+  "mode": "baseline",
+  "pass": true,
+  "schema_version": 1,
+  "server_log": "/workspace/cruise-runs/m1-api-npu01-20260731-r3/evidence/api-server-baseline.log",
+  "server_log_metadata": "/workspace/cruise-runs/m1-api-npu01-20260731-r3/evidence/api-server-baseline.meta.json",
+  "server_returncode": 0
+}

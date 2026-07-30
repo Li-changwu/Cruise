@@ -119,19 +119,24 @@ or artifact is never treated as remediation. A candidate profile adds an
 
 ## M1 Validated Extension
 
-The 2026-07-29 M1 checkpoints extend the validated correctness envelope to
-simultaneous stock-vLLM prefills at B=1,2,3,4, prompt lengths 2-5, and greedy
-output budgets 2-5. Each admitted request imports one 128-token Paged-KV block
-for all 28 layers exactly once. Mixed-budget B=3 and B=4 cohorts shrink as
-requests complete while surviving rows keep their generations and continue
-through the steady 8-input/2-output ABI. This bounded matrix does not establish
-arbitrary prompt lengths, admission of new requests into a Device-owned cohort,
-or row reuse after a nontrivial prefill.
+The 2026-07-31 M1 exit evidence closes the declared narrow serving contract on
+NPU0-1 physical NPU 0: Qwen2.5-7B-Instruct, TP=PP=1, synchronous scheduling,
+greedy decoding, and the content-addressed runtime bundle recorded by the
+profile. The differential covers 1,000 deterministic requests in 400 cohorts,
+B=1,2,3,4, prompt lengths 2-5, output budgets 2-7, EOS, cancellation,
+unsupported `min_tokens`, and generation-checked Paged-KV row reuse. It also
+passes the eight-case OpenAI API semantic matrix for streaming/non-streaming,
+single/batch, EOS, `max_tokens`, unsupported fallback, disconnect, and a
+post-disconnect probe.
+
+This is a correctness boundary, not a general compatibility claim. It does
+not establish arbitrary prompt lengths, non-greedy sampling, LoRA, TP/PP,
+multimodal serving, long-running soak, or performance qualification.
 
 ## Claim Boundary
 
 The CANN 8.5.1 profile is a formally validated research baseline, not Stable
-v1.0. The CANN 9.0.0 NPU0-1 profile is qualified only for the bounded M0
-Developer Preview deployment contract. Adding another version or accelerator
-requires its own profile and same-spec correctness evidence; broad version
-ranges must not be inferred.
+v1.0. The CANN 9.0.0 NPU0-1 profile is qualified for the bounded M0/M1
+Developer Preview correctness contract, while M2-M5 remain open. Adding
+another version or accelerator requires its own profile and same-spec
+correctness evidence; broad version ranges must not be inferred.

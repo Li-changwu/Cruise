@@ -16,6 +16,7 @@ from experiments.m1_batched_prefill.run_differential import (
     SCHEDULER_QUALNAME,
     STOCK_SCHEDULER_QUALNAME,
     WORKER_QUALNAME,
+    configured_kv_cache_bytes,
     _plan_record,
     _request_state,
     _result_record,
@@ -470,6 +471,7 @@ def run_engine(*, mode: str, model: Path, workload: Workload) -> dict[str, Any]:
     config.parallel_config.worker_cls = WORKER_QUALNAME
     config.parallel_config.distributed_executor_backend = "uni"
     config.cache_config.gpu_memory_utilization = 0.35
+    config.cache_config.kv_cache_memory_bytes = configured_kv_cache_bytes()
     if mode == "cruise":
         config.scheduler_config.scheduler_cls = SCHEDULER_QUALNAME
 

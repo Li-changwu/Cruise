@@ -22,6 +22,7 @@ from urllib.request import urlopen
 from experiments.m1_batched_prefill.run_differential import (
     SCHEDULER_QUALNAME,
     WORKER_QUALNAME,
+    configured_kv_cache_bytes,
     write_result,
 )
 
@@ -373,6 +374,8 @@ def _server_command(
         "128",
         "--gpu-memory-utilization",
         "0.35",
+        "--kv-cache-memory-bytes",
+        str(configured_kv_cache_bytes()),
         "--worker-cls",
         WORKER_QUALNAME,
         "--no-async-scheduling",

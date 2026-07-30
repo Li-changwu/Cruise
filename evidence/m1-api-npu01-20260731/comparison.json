@@ -1,0 +1,14 @@
+{
+  "baseline": "/workspace/cruise-runs/m1-api-npu01-20260731-r3/evidence/baseline.json",
+  "checks": {
+    "baseline_passed": true,
+    "cruise_passed": true,
+    "exact_api_semantics": true,
+    "same_case_set": true
+  },
+  "cruise": "/workspace/cruise-runs/m1-api-npu01-20260731-r3/evidence/cruise.json",
+  "gate": "M1 OpenAI API differential comparison",
+  "mismatches": {},
+  "pass": true,
+  "schema_version": 1
+}

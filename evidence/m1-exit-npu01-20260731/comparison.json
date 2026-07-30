@@ -1,0 +1,16 @@
+{
+  "baseline": "/workspace/cruise-runs/m1-exit-npu01-20260731-r4/evidence/baseline.json",
+  "checks": {
+    "all_1000_requests_equivalent": true,
+    "baseline_passed": true,
+    "cruise_passed": true,
+    "same_case_set": true,
+    "same_workload": true,
+    "same_workload_summary": true
+  },
+  "cruise": "/workspace/cruise-runs/m1-exit-npu01-20260731-r4/evidence/cruise.json",
+  "gate": "M1 1,000-request differential comparison",
+  "mismatches": {},
+  "pass": true,
+  "schema_version": 1
+}

@@ -13,27 +13,39 @@ conda_env=${CRUISE_CONDA_ENV:-vllm-hust-dev}
 cann_set_env=${CRUISE_CANN_SET_ENV:-/usr/local/Ascend/ascend-toolkit/set_env.sh}
 vllm_root=${CRUISE_VLLM_ROOT:-/root/vllm-hust}
 vllm_ascend_root=${CRUISE_VLLM_ASCEND_ROOT:-/root/vllm-ascend-hust}
+vllm_kv_cache_bytes=${CRUISE_VLLM_KV_CACHE_BYTES:-536870912}
 
 model=${artifacts}/model-frozen
+export CRUISE_API_TOKENIZER=${CRUISE_API_TOKENIZER:-${model}}
 frozen=${artifacts}/frozen
 frozen_air=${frozen}/qwen_b4_decoder_step_attempt69c_r2.air
 tiling=${frozen}/explicit_tiling.bin
 old_weight_prefix=${CRUISE_OLD_WEIGHT_PREFIX:-/root/ascend-control-g4-20260723/export-attempt69c-b4}
 case_manifest=${CRUISE_CASE_MANIFEST:-${source_dir}/experiments/m1_batched_prefill/cases.json}
 runner=${CRUISE_DIFFERENTIAL_RUNNER:-${source_dir}/experiments/m1_batched_prefill/run_differential.py}
-resource_config=${source_dir}/experiments/synthetic-p0/numa_config.physical7.json
+resource_config_override=${CRUISE_RESOURCE_CONFIG:-}
+resource_config_template=${CRUISE_RESOURCE_CONFIG_TEMPLATE:-${source_dir}/experiments/synthetic-p0/numa_config.physical7.json}
+resource_config=${resource_config_override:-${scratch}/numa_config.physical${physical_npu}.json}
 
 build=${scratch}/native-build
 controller=${scratch}/controller
 config_dir=${scratch}/config
 runtime_func_config=${config_dir}/resident_epoch_func.json
-runtime_export=${scratch}/runtime-export
+runtime_weight_digest=2ec95bf8e78cfaf091782b3c531b19b9cced35dcfab0e418c756e25abe456761
+runtime_asset_root=${CRUISE_RUNTIME_ASSET_ROOT:-}
+runtime_weights=${scratch}/runtime-export
+runtime_weights_manifest=${evidence}/runtime-weights-manifest.json
+if [[ -n "${runtime_asset_root}" ]]; then
+  runtime_weights=${runtime_asset_root}/runtime-weights/${runtime_weight_digest}
+  runtime_weights_manifest=${runtime_asset_root}/manifests/${runtime_weight_digest}.json
+fi
 runtime_air=${scratch}/qwen_b4_decoder_step_${run_id}.air
 external_weights=${scratch}/external-weights
 cache=${scratch}/cache
 cann_logs=${scratch}/cann-logs
 tmp=${scratch}/tmp
 runtime_workdir=${scratch}/runtime-workdir
+deploy_root=${scratch}/dataflow-deploy
 status=${evidence}/status.tsv
 
 guard=${source_dir}/storage_guard/storage_guard.sh
@@ -41,7 +53,6 @@ required=(
   "${guard}"
   "${runner}"
   "${case_manifest}"
-  "${resource_config}"
   "${source_dir}/materialize_runtime_weights.py"
   "${source_dir}/prepare_runtime_config.py"
   "${source_dir}/native/CMakeLists.txt"
@@ -52,6 +63,11 @@ required=(
   "${model}/config.json"
   "${model}/model.safetensors.index.json"
 )
+if [[ -n "${resource_config_override}" ]]; then
+  required+=("${resource_config}")
+else
+  required+=("${source_dir}/prepare_resource_config.py" "${resource_config_template}")
+fi
 for path in "${required[@]}"; do
   [[ -f "${path}" ]] || {
     printf 'missing required input: %s\n' "${path}" >&2
@@ -92,12 +108,18 @@ trap finalize EXIT
 
 mkdir -p "${build}" "${controller}" "${config_dir}" \
   "${external_weights}" "${cache}" "${cann_logs}" "${tmp}" \
-  "${runtime_workdir}"
-for path in "${build}" "${controller}" "${config_dir}" "${runtime_export}" \
+  "${runtime_workdir}" "${deploy_root}"
+for path in "${build}" "${controller}" "${config_dir}" \
   "${runtime_air}" "${external_weights}" "${cache}" "${cann_logs}" \
-  "${tmp}" "${runtime_workdir}"; do
+  "${tmp}" "${runtime_workdir}" "${deploy_root}"; do
   storage_guard_assert_scratch_path "${path}"
 done
+if [[ -z "${runtime_asset_root}" ]]; then
+  storage_guard_assert_scratch_path "${runtime_weights}"
+fi
+if [[ -z "${resource_config_override}" ]]; then
+  storage_guard_assert_scratch_path "${resource_config}"
+fi
 
 run_step() {
   local name=$1 timeout_value=$2
@@ -145,10 +167,21 @@ export VLLM_ASCEND_RESIDENT_EPOCH_GRAPH_CONFIG=${source_dir}/config/graph_config
 export VLLM_ASCEND_RESIDENT_EPOCH_FUNC_CONFIG=${runtime_func_config}
 export VLLM_ASCEND_RESIDENT_EPOCH_TILING=${tiling}
 export VLLM_ASCEND_RESIDENT_EPOCH_EXTERNAL_WEIGHTS=${external_weights}
+export VLLM_ASCEND_RESIDENT_EPOCH_RUNTIME_WEIGHTS=${runtime_weights}
 export VLLM_ASCEND_RESIDENT_EPOCH_SERVER=${build}/resident_epoch_server
 export VLLM_ASCEND_RESIDENT_EPOCH_STARTUP_TIMEOUT=3600
 export VLLM_ASCEND_RESIDENT_EPOCH_STEPS=2
 export VLLM_ASCEND_RESIDENT_EPOCH_CAPACITY=8
+export CRUISE_VLLM_KV_CACHE_BYTES=${vllm_kv_cache_bytes}
+
+if [[ -z "${resource_config_override}" ]]; then
+  run_step prepare-resource-config 120s python3 \
+    "${source_dir}/prepare_resource_config.py" \
+    --template "${resource_config_template}" \
+    --physical-npu "${physical_npu}" \
+    --deploy-root "${deploy_root}" \
+    --output "${resource_config}"
+fi
 
 {
   printf 'key\tvalue\n'
@@ -159,8 +192,13 @@ export VLLM_ASCEND_RESIDENT_EPOCH_CAPACITY=8
   printf 'scratch_dir\t%s\n' "${scratch}"
   printf 'evidence_dir\t%s\n' "${evidence}"
   printf 'model\t%s\n' "${model}"
+  printf 'runtime_weights\t%s\n' "${runtime_weights}"
+  printf 'runtime_asset_root\t%s\n' "${runtime_asset_root:-scratch-local}"
+  printf 'resource_config\t%s\n' "${resource_config}"
+  printf 'dataflow_deploy_root\t%s\n' "${deploy_root}"
+  printf 'vllm_kv_cache_bytes\t%s\n' "${vllm_kv_cache_bytes}"
 } >"${evidence}/deployment-config.tsv"
-sha256sum "${case_manifest}" "${frozen_air}" "${tiling}" \
+sha256sum "${case_manifest}" "${frozen_air}" "${tiling}" "${resource_config}" \
   >"${evidence}/input-integrity.log"
 git -C "${vllm_root}" rev-parse HEAD >"${evidence}/vllm-commit.txt"
 git -C "${vllm_ascend_root}" rev-parse HEAD \
@@ -178,14 +216,22 @@ run_step prepare-runtime-config 120s python3 \
   --output "${runtime_func_config}"
 run_step cmake 600s cmake -S "${source_dir}/native" -B "${build}"
 run_step build 1800s cmake --build "${build}" --parallel 2
-run_step materialize-runtime-weights 3600s python3 \
-  "${source_dir}/materialize_runtime_weights.py" \
-  --model-dir "${model}" \
-  --output-dir "${runtime_export}" \
-  --manifest "${evidence}/runtime-weights-manifest.json"
+materialize_args=(
+  python3 "${source_dir}/materialize_runtime_weights.py"
+  --model-dir "${model}"
+  --output-dir "${runtime_weights}"
+  --manifest "${runtime_weights_manifest}"
+)
+if [[ -n "${runtime_asset_root}" ]]; then
+  materialize_args+=(--persistent-asset-root "${runtime_asset_root}")
+fi
+run_step materialize-runtime-weights 3600s "${materialize_args[@]}"
+if [[ -n "${runtime_asset_root}" ]]; then
+  cp "${runtime_weights_manifest}" "${evidence}/runtime-weights-manifest.json"
+fi
 run_step relocate-runtime-air 600s "${build}/relocate_air_paths" \
   "${frozen_air}" "${runtime_air}" "${old_weight_prefix}" \
-  "${runtime_export}" "${evidence}/air-relocation.json"
+  "${runtime_weights}" "${evidence}/air-relocation.json"
 
 cd "${runtime_workdir}"
 export VLLM_ASCEND_RESIDENT_EPOCH_SOCKET=${scratch}/baseline.sock
@@ -201,7 +247,8 @@ run_step cruise 10800s python3 "${runner}" \
   --mode cruise --model "${model}" --cases "${case_manifest}" \
   --output "${evidence}/cruise.json"
 run_step compare 120s python3 "${runner}" \
-  --mode compare --baseline "${evidence}/baseline.json" \
+  --mode compare --cases "${case_manifest}" \
+  --baseline "${evidence}/baseline.json" \
   --cruise "${evidence}/cruise.json" \
   --output "${evidence}/comparison.json"
 

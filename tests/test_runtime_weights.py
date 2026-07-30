@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 import materialize_runtime_weights as runtime_weights
@@ -55,7 +57,10 @@ def test_frozen_model_identity_is_path_independent(tmp_path, monkeypatch):
 
 
 def test_persistent_output_is_bound_to_manifest_digest(tmp_path):
-    asset_root = tmp_path / "cruise-assets"
+    # The runner intentionally places pytest's TMPDIR under /dev/shm. Use a
+    # non-materialized persistent path so this path-resolution test is
+    # independent of the temporary-directory policy.
+    asset_root = Path("/var/tmp") / tmp_path.name / "cruise-assets"
     expected = asset_root / "runtime-weights" / EXPECTED_MANIFEST_SHA256
 
     output, root = resolve_output_location(expected, asset_root)

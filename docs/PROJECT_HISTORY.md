@@ -201,13 +201,13 @@ leaves no untracked source files or unbounded persistent artifacts.
 - [x] Support continuous admission, completion, and row reuse at epoch
   boundaries for mixed arrival times and output lengths while retaining the
   generation-checked row lease.
-- [ ] Preserve OpenAI-compatible streaming and non-streaming response order,
+- [x] Preserve OpenAI-compatible streaming and non-streaming response order,
   EOS, `max_tokens`, disconnect, cancellation, and request-finalization
   semantics.
 - [x] Define explicit `prepared`, `executing`, and `committed` states. Only a
   proven pre-execution failure may replay on the Host; an ambiguous
   post-mutation failure must never duplicate token or KV advancement.
-- [ ] Route unsupported sampling or features to an unmodified Host path before
+- [x] Route unsupported sampling or features to an unmodified Host path before
   device ownership begins, without requiring a server restart.
 
 Exit evidence: a differential suite of at least 1,000 deterministic requests
@@ -256,10 +256,32 @@ Host step can execute stale Device-owned state. The frozen server suite has 83
 passing tests. Evidence is in
 [`M1-CONTINUOUS-ADMISSION-20260729.md`](../evidence/M1-CONTINUOUS-ADMISSION-20260729.md).
 
-M1 remains open. The next ordered gates are: stock-equivalent unsupported
-request routing before ownership transfer; API streaming and non-streaming
-ordering; then EOS, disconnect/cancellation, simultaneous-arrival expansion,
-and the 1,000-request differential exit suite.
+M1 exit gate (2026-07-31): the narrow end-to-end serving contract passed on
+NPU0-1 physical NPU 0 in `vllm-hust-dev`. The 1,000-request EngineCore
+differential used the same deterministic 400-cohort workload for stock and
+Cruise: B=1,2,3,4, prompt lengths 2-5, output budgets 2-7, EOS, cancellation,
+and unsupported `min_tokens`. All requests matched exactly. Cruise exercised
+809 Device model steps, 546 Host model steps, 363 Paged-KV imports, 840
+generation-checked row reuses, 24 Device-owned cancellations, and 16 Device
+EOS short epochs; KV checksum mismatches and Host/Device ownership violations
+were zero. Unsupported requests stayed on the Host path.
+
+The same frozen model/tokenizer and 512 MiB KV budget then passed the
+OpenAI-compatible API differential for non-streaming and streaming single and
+batch requests, EOS, `max_tokens`, unsupported `min_tokens`, disconnect after
+Device ownership, and a successful post-disconnect probe. Both servers
+returned identical token IDs and finish reasons for all eight cases, with no
+comparison mismatches. All runner stages returned zero; scratch was deleted,
+physical NPU 0 had no process, and the compact persistent evidence was below
+100 MiB. The final target environment suite passed 119 tests with four CANN
+ownership warnings. The two reports are in
+[`M1-EXIT-NPU01-20260731.md`](../evidence/M1-EXIT-NPU01-20260731.md) and
+[`M1-API-NPU01-20260731.md`](../evidence/M1-API-NPU01-20260731.md).
+
+This closes M1 for the declared single-card 910B2, Qwen2.5-7B-Instruct,
+TP=PP=1, synchronous, greedy support contract. It does not claim M2 fault
+injection/soak, M3 observability, M4 performance qualification, or Stable
+v1.0. Those remain the next ordered milestones.
 
 ### M2: Lifecycle, Recovery, and Resource Safety
 

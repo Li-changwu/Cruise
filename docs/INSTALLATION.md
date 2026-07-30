@@ -1,8 +1,9 @@
 # Developer Preview Installation
 
 This procedure installs the current Cruise research baseline without modifying
-vLLM or vLLM-Ascend source files. It produces a Developer Preview control path,
-not the OpenAI-compatible server promised by M1.
+vLLM or vLLM-Ascend source files. It produces the qualified Developer Preview
+control path. The narrow M1 OpenAI-compatible semantic contract is accepted on
+the published NPU0-1 profile, but Stable v1.0 operations remain future work.
 
 ## Prerequisites
 
@@ -95,9 +96,10 @@ cruise run --config /etc/cruise/cruise.json -- \
     --output /path/to/bounded-evidence/result.json
 ```
 
-The current command is the accepted EngineCore qualification harness. A
-general API-server command is deliberately not documented as supported until
-M1 closes real prefill, continuous admission, cancellation and fallback.
+The current command is the accepted EngineCore qualification harness. The
+OpenAI API semantic gate is exercised by the versioned M1 differential runner;
+an unattended general-purpose API-server quickstart remains deferred to the
+M2/M3 lifecycle, observability, and operational milestones.
 
 `cruise run` validates the runtime configuration again, sources CANN, builds
 the internal environment, starts the requested command in a new process group,

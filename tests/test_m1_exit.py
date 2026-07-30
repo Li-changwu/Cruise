@@ -1,6 +1,12 @@
 import json
 from pathlib import Path
 
+import pytest
+
+from experiments.m1_batched_prefill.run_differential import (
+    DEFAULT_KV_CACHE_BYTES,
+    configured_kv_cache_bytes,
+)
 from experiments.m1_exit.run_differential import (
     REQUEST_KINDS,
     compare_results,
@@ -37,6 +43,18 @@ def test_exit_workload_is_deterministic():
     assert [request.as_record() for request in first.requests] == [
         request.as_record() for request in second.requests
     ]
+
+
+def test_m1_kv_cache_budget_is_explicit_and_validated(monkeypatch):
+    monkeypatch.delenv("CRUISE_VLLM_KV_CACHE_BYTES", raising=False)
+    assert configured_kv_cache_bytes() == DEFAULT_KV_CACHE_BYTES
+
+    monkeypatch.setenv("CRUISE_VLLM_KV_CACHE_BYTES", str(768 * 1024 * 1024))
+    assert configured_kv_cache_bytes() == 768 * 1024 * 1024
+
+    monkeypatch.setenv("CRUISE_VLLM_KV_CACHE_BYTES", "1024")
+    with pytest.raises(ValueError, match="smaller than"):
+        configured_kv_cache_bytes()
 
 
 def test_exit_comparison_reports_exact_field_mismatch(tmp_path):

@@ -93,6 +93,8 @@ def test_api_server_uses_current_environment_console_script(tmp_path):
     assert command[1] == "serve"
     assert "vllm.entrypoints.cli.main" not in command
     assert "--no-async-scheduling" in command
+    kv_index = command.index("--kv-cache-memory-bytes")
+    assert command[kv_index + 1] == str(512 * 1024 * 1024)
 
 
 def test_api_tokenizer_can_be_overridden_without_changing_manifest(

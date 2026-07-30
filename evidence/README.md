@@ -26,7 +26,8 @@ The final M0 repeated-lifecycle acceptance is summarized in
 [`M0-LIFECYCLE-NPU01-20260731.md`](M0-LIFECYCLE-NPU01-20260731.md). Its compact
 raw evidence is retained in [`m0-lifecycle-npu01-cycle1/`](m0-lifecycle-npu01-cycle1/)
 and [`m0-lifecycle-npu01-cycle2/`](m0-lifecycle-npu01-cycle2/). M0 is closed;
-M1 serving semantics remain open.
+the M1 serving-semantic gate was subsequently closed by the NPU0-1 exit
+evidence below.
 
 The first M1 ownership/commit-state checkpoint is summarized in
 [`M1-COMMIT-STATE-20260729.md`](M1-COMMIT-STATE-20260729.md). It records the
@@ -48,3 +49,13 @@ The continuous-admission checkpoint is summarized in
 [`M1-CONTINUOUS-ADMISSION-20260729.md`](M1-CONTINUOUS-ADMISSION-20260729.md).
 It covers isolated stock prefills while another request remains Device-owned,
 selective Paged-KV import, completion, and generation-checked row reuse.
+
+The M1 exit gates were accepted on NPU0-1 physical NPU 0 on 2026-07-31.
+[`M1-EXIT-NPU01-20260731.md`](M1-EXIT-NPU01-20260731.md) records the exact
+1,000-request EngineCore differential, and
+[`M1-API-NPU01-20260731.md`](M1-API-NPU01-20260731.md) records the OpenAI API
+semantic differential. Compact JSON evidence is retained in
+[`m1-exit-npu01-20260731/`](m1-exit-npu01-20260731/) and
+[`m1-api-npu01-20260731/`](m1-api-npu01-20260731/). The failed-attempt causes
+are summarized in [`M1-RUN-FAILURES-20260731.md`](M1-RUN-FAILURES-20260731.md);
+raw logs and scratch remain outside Git.
