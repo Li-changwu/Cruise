@@ -15,15 +15,17 @@ from verify_engine_core_result import (
 
 def make_result(tmp_path: Path) -> dict:
     artifacts = {}
-    for key in ("baseline_result", "native_library", "native_server", "air", "tiling"):
+    for key in ("baseline_result", "native_server", "air", "tiling"):
         path = tmp_path / key
         path.touch()
         artifacts[key] = str(path)
-    weights = tmp_path / "external_weights"
-    weights.mkdir()
+    runtime_weights = tmp_path / "runtime_weights"
+    runtime_weights.mkdir()
     artifacts.update(
         {
-            "external_weights": str(weights),
+            "native_library": None,
+            "external_weights": str(tmp_path / "run" / "graph-external-weights"),
+            "runtime_weights": str(runtime_weights),
             "baseline_sha256": "a" * 64,
             "backend_factory": (
                 "vllm_ascend_resident_epoch.sidecar_backend:create_sidecar_engine"
@@ -86,4 +88,12 @@ def test_rejects_model_execution_during_cleanup(tmp_path):
     result = deepcopy(make_result(tmp_path))
     result["cases"][0]["checks"]["cleanup_model_not_executed"] = False
     with pytest.raises(ValueError, match="checks failed"):
+        validate_result(result, require_artifacts=True)
+
+
+def test_rejects_missing_persistent_runtime_weights(tmp_path):
+    result = make_result(tmp_path)
+    Path(result["artifacts"]["runtime_weights"]).rmdir()
+
+    with pytest.raises(ValueError, match="artifact does not exist: runtime_weights"):
         validate_result(result, require_artifacts=True)

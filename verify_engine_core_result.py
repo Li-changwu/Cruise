@@ -89,15 +89,29 @@ def validate_result(data: dict[str, Any], *, require_artifacts: bool) -> dict[st
     if require_artifacts:
         for key in (
             "baseline_result",
-            "native_library",
             "native_server",
             "air",
             "tiling",
-            "external_weights",
+            "runtime_weights",
         ):
             value = artifacts.get(key)
             _require(isinstance(value, str) and bool(value), f"missing artifact {key}")
             _require(Path(value).exists(), f"artifact does not exist: {key}={value}")
+        native_library = artifacts.get("native_library")
+        if native_library is not None:
+            _require(
+                isinstance(native_library, str) and bool(native_library),
+                "invalid artifact native_library",
+            )
+            _require(
+                Path(native_library).exists(),
+                f"artifact does not exist: native_library={native_library}",
+            )
+        external_weights = artifacts.get("external_weights")
+        _require(
+            isinstance(external_weights, str) and bool(external_weights),
+            "missing artifact external_weights",
+        )
 
     raw_cases = data.get("cases")
     _require(isinstance(raw_cases, list), "cases must be a list")

@@ -269,6 +269,9 @@ def main() -> int:
             "external_weights": os.environ.get(
                 "VLLM_ASCEND_RESIDENT_EPOCH_EXTERNAL_WEIGHTS"
             ),
+            "runtime_weights": os.environ.get(
+                "VLLM_ASCEND_RESIDENT_EPOCH_RUNTIME_WEIGHTS"
+            ),
         }
         result["pass"] = (
             result["distributed_initialized_during_engine"]
