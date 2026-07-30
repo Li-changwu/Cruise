@@ -344,10 +344,22 @@ class CruiseRuntimeConfig:
         run_directory = run_directory.resolve()
         environment = dict(base)
         cache = run_directory / "cache"
+        ascend_cache = cache / "ascend"
+        torchinductor_cache = cache / "torchinductor"
+        triton_cache = cache / "triton"
+        xdg_cache = cache / "xdg"
         logs = run_directory / "logs"
         temporary = run_directory / "tmp"
         graph_external_weights = run_directory / "graph-external-weights"
-        for path in (cache, logs, temporary, graph_external_weights):
+        for path in (
+            ascend_cache,
+            torchinductor_cache,
+            triton_cache,
+            xdg_cache,
+            logs,
+            temporary,
+            graph_external_weights,
+        ):
             path.mkdir(parents=True, exist_ok=True)
 
         environment.update(
@@ -356,11 +368,11 @@ class CruiseRuntimeConfig:
                 "ASCEND_GLOBAL_LOG_LEVEL": "3",
                 "ASCEND_SLOG_PRINT_TO_STDOUT": "1",
                 "ASCEND_PROCESS_LOG_PATH": str(logs),
-                "ASCEND_CACHE_PATH": str(cache / "ascend"),
+                "ASCEND_CACHE_PATH": str(ascend_cache),
                 "TMPDIR": str(temporary),
-                "TORCHINDUCTOR_CACHE_DIR": str(cache / "torchinductor"),
-                "TRITON_CACHE_DIR": str(cache / "triton"),
-                "XDG_CACHE_HOME": str(cache / "xdg"),
+                "TORCHINDUCTOR_CACHE_DIR": str(torchinductor_cache),
+                "TRITON_CACHE_DIR": str(triton_cache),
+                "XDG_CACHE_HOME": str(xdg_cache),
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "RESOURCE_CONFIG_PATH": str(self.assets.resource_config),
                 "VLLM_ASCEND_RESIDENT_EPOCH_BACKEND_FACTORY": (

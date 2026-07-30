@@ -577,6 +577,15 @@ def test_runtime_environment_is_complete(tmp_path, monkeypatch):
         config.assets.external_weights
     )
     assert str(config.custom_opp_vendors[0]) in environment["ASCEND_CUSTOM_OPP_PATH"]
+    for name in (
+        "ASCEND_CACHE_PATH",
+        "ASCEND_PROCESS_LOG_PATH",
+        "TMPDIR",
+        "TORCHINDUCTOR_CACHE_DIR",
+        "TRITON_CACHE_DIR",
+        "XDG_CACHE_HOME",
+    ):
+        assert Path(environment[name]).is_dir(), name
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX device path contract")
