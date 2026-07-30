@@ -2,9 +2,13 @@ import pytest
 
 import materialize_runtime_weights as runtime_weights
 from materialize_runtime_weights import (
+    ASSET_STORE_MARKER,
+    EXPECTED_MANIFEST_SHA256,
     EXPECTED_CHECKPOINT_TENSORS,
     checkpoint_destinations,
     expected_shapes,
+    prepare_asset_store,
+    resolve_output_location,
 )
 
 
@@ -48,3 +52,36 @@ def test_frozen_model_identity_is_path_independent(tmp_path, monkeypatch):
     config_path.write_text('{"model_type": "other"}\n', encoding="utf-8")
     with pytest.raises(RuntimeError, match="model config hash"):
         runtime_weights.validate_model_identity(model_dir)
+
+
+def test_persistent_output_is_bound_to_manifest_digest(tmp_path):
+    asset_root = tmp_path / "cruise-assets"
+    expected = asset_root / "runtime-weights" / EXPECTED_MANIFEST_SHA256
+
+    output, root = resolve_output_location(expected, asset_root)
+
+    assert output == expected.resolve()
+    assert root == asset_root.resolve()
+    with pytest.raises(RuntimeError, match="content-addressed path"):
+        resolve_output_location(asset_root / "runtime-weights" / "latest", asset_root)
+
+
+def test_asset_store_refuses_nonempty_unmarked_directory(tmp_path):
+    asset_root = tmp_path / "cruise-assets"
+    asset_root.mkdir()
+    (asset_root / "unknown").write_text("keep", encoding="ascii")
+
+    with pytest.raises(RuntimeError, match="non-empty unmarked"):
+        prepare_asset_store(asset_root)
+
+    assert (asset_root / "unknown").is_file()
+    assert not (asset_root / ASSET_STORE_MARKER).exists()
+
+
+def test_asset_store_marker_is_idempotent(tmp_path):
+    asset_root = tmp_path / "cruise-assets"
+
+    prepare_asset_store(asset_root)
+    prepare_asset_store(asset_root)
+
+    assert (asset_root / ASSET_STORE_MARKER).is_file()

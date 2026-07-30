@@ -54,11 +54,33 @@ cmake -S native -B /dev/shm/cruise-native-build \
 cmake --build /dev/shm/cruise-native-build --parallel
 ```
 
-Controller packaging, AIR relocation and runtime-weight materialization remain
-the same content-checked steps used by `run_attempt74.sh`. Put their generated
-outputs under a marker-protected `/dev/shm` asset root, retain the manifest on
-persistent storage, and fill a machine-specific copy of
-`config/cruise.example.json`. Never edit the tracked example with host paths.
+Provision the immutable 342-file AIR runtime-weight bundle once on a dedicated
+data volume. The destination is fixed by the qualified manifest digest; a
+second invocation deep-checks and reuses the same bundle instead of creating
+another 15.2 GB copy:
+
+```bash
+asset_root=/data/cruise-assets
+weight_digest=2ec95bf8e78cfaf091782b3c531b19b9cced35dcfab0e418c756e25abe456761
+python materialize_runtime_weights.py \
+  --model-dir /data/models/Qwen2.5-7B-Instruct-a09a354 \
+  --persistent-asset-root "${asset_root}" \
+  --output-dir "${asset_root}/runtime-weights/${weight_digest}" \
+  --manifest "${asset_root}/manifests/${weight_digest}.json"
+```
+
+This command never downloads a model. It accepts only the frozen model config
+and index hashes, refuses a non-empty unmarked asset root, writes through a
+process-specific staging directory, removes that staging directory on normal
+failure, and publishes only the expected manifest SHA256. Use the exact
+resulting weight path when relocating the AIR; changing the path requires a new
+relocated AIR and `air_sha256`.
+
+Controller packaging, native builds, AIR relocation output, GraphPp-generated
+weights, caches, logs, and sockets remain per-cycle artifacts below marked
+`/dev/shm` scratch. Fill a machine-specific copy of
+`config/cruise.example.json` with the persistent weight bundle and temporary
+deployment paths. Never edit the tracked example with host paths.
 
 ## Validate and Start
 

@@ -22,8 +22,8 @@
     "graph_config": "/opt/cruise/config/graph_config.json",
     "function_config": "/dev/shm/cruise-assets/resident_epoch_func.json",
     "tiling": "/opt/cruise/assets/explicit_tiling.bin",
-    "external_weights": "/dev/shm/cruise-assets/external-weights",
-    "external_weights_manifest": "/opt/cruise/assets/runtime-weights-manifest.json",
+    "external_weights": "/srv/cruise-assets/runtime-weights/2ec95bf8e78cfaf091782b3c531b19b9cced35dcfab0e418c756e25abe456761",
+    "external_weights_manifest": "/srv/cruise-assets/manifests/2ec95bf8e78cfaf091782b3c531b19b9cced35dcfab0e418c756e25abe456761.json",
     "resource_config": "/opt/cruise/config/numa_config.json",
     "model_config": "/opt/cruise/model/config.json",
     "model_index": "/opt/cruise/model/model.safetensors.index.json"

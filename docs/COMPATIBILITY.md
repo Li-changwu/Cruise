@@ -17,9 +17,13 @@ other combinations before model loading.
 
 The current product line requires aarch64, at least one healthy and idle Ascend
 910B2, importable CANN DataFlow Python support, `meta_flow_func.h`,
-`aarch64-target-linux-gnu-g++`, and at least 32 GiB free on `/dev/shm`. Adding a
-new accelerator model is a manifest and qualification change, not a hostname
-special case.
+`aarch64-target-linux-gnu-g++`, an Ascend Triton runtime exposing either the
+legacy `triton.language.extra.ascend.libdevice.pow` name or the 3.2.1
+`triton.language.extra.cann.libdevice.pow` name, and at least 32 GiB free on
+`/dev/shm`. Cruise installs an in-process `ascend -> cann` namespace alias
+before loading vLLM-Ascend when only the latter exists; no environment file is
+modified. Adding a new accelerator model is a manifest and qualification
+change, not a hostname special case.
 
 ## Formally Validated Profile
 
@@ -105,8 +109,12 @@ Every failed JSON check includes a stable `code`, `expected`, `observed`, and
 `remediation`. The major rejection classes are unsupported architecture or
 accelerator, insufficient or unavailable NPU, device health or occupancy,
 missing/inactive DataFlow, missing CANN headers/compiler, incompatible package
-or CANN/driver versions, and insufficient shared memory. A candidate profile
-adds an `unvalidated-compatibility-profile` warning even when all checks pass.
+or CANN/driver versions, a missing Ascend Triton runtime, insufficient shared
+memory, and missing or non-executable runtime assets. A missing runtime bundle is reported as
+`missing-runtime-asset` with the exact expected path and an instruction to
+provision the profile's content-addressed bundle; substituting another model
+or artifact is never treated as remediation. A candidate profile adds an
+`unvalidated-compatibility-profile` warning even when all checks pass.
 
 ## M1 Validated Extension
 

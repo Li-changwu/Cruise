@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 from types import SimpleNamespace
@@ -23,6 +24,7 @@ from vllm_ascend_resident_epoch.runtime_config import (
     RuntimeConfigError,
     load_runtime_config,
 )
+from vllm_ascend_resident_epoch.triton_compat import ensure_triton_ascend_runtime
 from vllm_ascend_resident_epoch.version import (
     HOST_UDF_INPUTS,
     HOST_UDF_OUTPUTS,
@@ -166,6 +168,25 @@ def test_compatibility_manifest_matches_versioned_contracts():
     assert requirements["architectures"] == ["aarch64"]
     assert requirements["accelerators"] == ["Ascend 910B2"]
     assert requirements["required_python_modules"] == ["dataflow"]
+    assert requirements["required_python_symbols"] == [
+        {
+            "id": "ascend-triton-runtime",
+            "alternatives": [
+                {
+                    "module": "triton.language.extra",
+                    "attribute": "ascend.libdevice.pow",
+                },
+                {
+                    "module": "triton.language.extra.cann",
+                    "attribute": "libdevice.pow",
+                },
+            ],
+            "remediation": (
+                "install the Ascend Triton build qualified by the selected "
+                "vLLM-Ascend profile"
+            ),
+        }
+    ]
     assert {item["name"] for item in requirements["required_cann_files"]} == {
         "meta_flow_func.h",
         "aarch64-target-linux-gnu-g++",
@@ -191,6 +212,8 @@ def test_compatibility_manifest_matches_versioned_contracts():
     assert candidate["software"]["vllm_ascend"]["commit"] == profile["software"][
         "vllm_ascend"
     ]["commit"]
+    for item in manifest["profiles"]:
+        assert (ROOT / item["evidence"]).is_file()
 
 
 def test_npu_doctor_checks_driver_separately_from_npu_smi(monkeypatch):
@@ -341,6 +364,54 @@ def test_cann_capability_identifies_installed_but_inactive_dataflow(
     assert str(tmp_path / "python" / "site-packages") in check.remediation
 
 
+def test_cann_capability_accepts_triton_cann_namespace(monkeypatch):
+    requirements = get_capability_requirements()
+    report = doctor_module.DoctorReport(mode="npu", profile="test", checks=[])
+
+    def import_module(name):
+        if name == "dataflow":
+            return SimpleNamespace(__file__="/cann/dataflow/__init__.py")
+        if name == "triton.language.extra":
+            return SimpleNamespace()
+        if name == "triton.language.extra.cann":
+            return SimpleNamespace(libdevice=SimpleNamespace(pow=object()))
+        raise AssertionError(name)
+
+    monkeypatch.setattr(doctor_module.importlib, "import_module", import_module)
+    monkeypatch.setattr(doctor_module, "_find_cann_component", lambda root, item: None)
+
+    doctor_module._check_cann_capabilities(report, requirements, Path("missing"))
+
+    check = {item.name: item for item in report.checks}[
+        "python-symbol-ascend-triton-runtime"
+    ]
+    assert check.status == "pass"
+    assert check.code is None
+    assert "triton.language.extra.cann.libdevice.pow" in check.observed
+
+
+def test_triton_compat_installs_legacy_ascend_alias(monkeypatch):
+    extra = SimpleNamespace()
+    cann = SimpleNamespace(libdevice=SimpleNamespace(pow=object()))
+
+    def import_module(name):
+        if name == "triton.language.extra":
+            return extra
+        if name == "triton.language.extra.cann":
+            return cann
+        raise AssertionError(name)
+
+    monkeypatch.setattr(
+        "vllm_ascend_resident_epoch.triton_compat.importlib.import_module",
+        import_module,
+    )
+
+    resolved = ensure_triton_ascend_runtime()
+
+    assert resolved == "triton.language.extra.cann.libdevice.pow"
+    assert extra.ascend is cann
+
+
 def test_shared_memory_rejection_reports_required_and_observed(monkeypatch):
     requirements = get_capability_requirements()
 
@@ -461,6 +532,28 @@ def test_runtime_config_validates_paths_hashes_and_weight_manifest(
         config.validate_paths(deep=False)
 
 
+def test_runtime_doctor_reports_actionable_missing_asset(tmp_path, monkeypatch):
+    config = _load_test_runtime_config(tmp_path, monkeypatch)
+    config.assets.server.unlink()
+    monkeypatch.setattr(
+        doctor_module,
+        "run_npu_doctor",
+        lambda profile, device: doctor_module.DoctorReport(
+            mode="npu", profile=profile, checks=[]
+        ),
+    )
+
+    report = doctor_module.run_runtime_doctor(config, deep=True)
+
+    check = {item.name: item for item in report.checks}["runtime-assets"]
+    assert check.status == "fail"
+    assert check.code == "missing-runtime-asset"
+    assert str(config.assets.server) in check.expected
+    assert check.observed == "missing or not a regular file"
+    assert config.compatibility_profile in check.remediation
+    assert "do not substitute" in check.remediation
+
+
 def test_runtime_environment_is_complete(tmp_path, monkeypatch):
     config = _load_test_runtime_config(tmp_path, monkeypatch)
     run_directory = tmp_path / "run"
@@ -475,7 +568,40 @@ def test_runtime_environment_is_complete(tmp_path, monkeypatch):
     assert environment["VLLM_ASCEND_RESIDENT_EPOCH_BACKEND_FACTORY"].endswith(
         ":create_sidecar_engine"
     )
+    graph_external_weights = Path(
+        environment["VLLM_ASCEND_RESIDENT_EPOCH_EXTERNAL_WEIGHTS"]
+    )
+    assert graph_external_weights == run_directory / "graph-external-weights"
+    assert graph_external_weights.is_dir()
+    assert environment["VLLM_ASCEND_RESIDENT_EPOCH_RUNTIME_WEIGHTS"] == str(
+        config.assets.external_weights
+    )
     assert str(config.custom_opp_vendors[0]) in environment["ASCEND_CUSTOM_OPP_PATH"]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX device path contract")
+def test_runtime_weights_may_use_persistent_storage_outside_scratch(
+    tmp_path, monkeypatch
+):
+    config = _load_test_runtime_config(tmp_path, monkeypatch)
+    persistent_weights = tmp_path / "persistent-assets" / "weights"
+    persistent_weights.parent.mkdir()
+    config.assets.external_weights.rename(persistent_weights)
+    object.__setattr__(config.runtime, "scratch_root", Path("/dev/shm/cruise-test"))
+    object.__setattr__(config.assets, "external_weights", persistent_weights)
+
+    config._validate_device_paths()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX device path contract")
+def test_runtime_weights_must_stay_outside_cleanup_tree(tmp_path, monkeypatch):
+    config = _load_test_runtime_config(tmp_path, monkeypatch)
+    scratch = Path("/dev/shm/cruise-test")
+    object.__setattr__(config.runtime, "scratch_root", scratch)
+    object.__setattr__(config.assets, "external_weights", scratch / "weights")
+
+    with pytest.raises(RuntimeConfigError, match="cleanup-managed scratch_root"):
+        config._validate_device_paths()
 
 
 def test_no_npu_smoke_and_cli_exit_success(capsys):

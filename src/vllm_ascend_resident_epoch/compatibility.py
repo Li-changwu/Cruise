@@ -97,6 +97,51 @@ def validate_compatibility_manifest(manifest: dict[str, Any]) -> None:
         requirements.get("required_python_modules"),
         "capability_requirements.required_python_modules",
     )
+    required_python_symbols = requirements.get("required_python_symbols")
+    if not isinstance(required_python_symbols, list) or not required_python_symbols:
+        raise CompatibilityError(
+            "capability_requirements.required_python_symbols must be a non-empty list"
+        )
+    symbol_ids: set[str] = set()
+    for symbol in required_python_symbols:
+        if not isinstance(symbol, dict) or set(symbol) != {
+            "id",
+            "alternatives",
+            "remediation",
+        }:
+            raise CompatibilityError(
+                "each required Python symbol must contain id, alternatives, and "
+                "remediation"
+            )
+        if any(
+            not isinstance(symbol[name], str) or not symbol[name].strip()
+            for name in ("id", "remediation")
+        ):
+            raise CompatibilityError("required Python symbol fields must be non-empty")
+        alternatives = symbol["alternatives"]
+        if not isinstance(alternatives, list) or not alternatives:
+            raise CompatibilityError(
+                "required Python symbol alternatives must be a non-empty list"
+            )
+        for alternative in alternatives:
+            if not isinstance(alternative, dict) or set(alternative) != {
+                "module",
+                "attribute",
+            }:
+                raise CompatibilityError(
+                    "each Python symbol alternative must contain module and attribute"
+                )
+            if any(
+                not isinstance(alternative[name], str)
+                or not alternative[name].strip()
+                for name in ("module", "attribute")
+            ):
+                raise CompatibilityError(
+                    "Python symbol alternative fields must be non-empty"
+                )
+        if symbol["id"] in symbol_ids:
+            raise CompatibilityError("required Python symbols contain duplicate ids")
+        symbol_ids.add(symbol["id"])
     for name in ("minimum_accelerator_count", "minimum_shared_memory_free_bytes"):
         value = requirements.get(name)
         if not isinstance(value, int) or isinstance(value, bool) or value < 1:

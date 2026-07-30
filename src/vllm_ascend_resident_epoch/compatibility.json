@@ -31,6 +31,22 @@
     "required_python_modules": [
       "dataflow"
     ],
+    "required_python_symbols": [
+      {
+        "id": "ascend-triton-runtime",
+        "alternatives": [
+          {
+            "module": "triton.language.extra",
+            "attribute": "ascend.libdevice.pow"
+          },
+          {
+            "module": "triton.language.extra.cann",
+            "attribute": "libdevice.pow"
+          }
+        ],
+        "remediation": "install the Ascend Triton build qualified by the selected vLLM-Ascend profile"
+      }
+    ],
     "required_cann_files": [
       {
         "id": "dataflow-sdk-header",
@@ -110,7 +126,7 @@
     {
       "id": "attempt74-910b2-cann900-npu01-r1",
       "status": "candidate-m0-validation",
-      "evidence": "evidence/M0-CANN900-NPU01-20260730.md",
+      "evidence": "evidence/M0-CANN900-NPU01-20260731.md",
       "hardware": {
         "architecture": "aarch64",
         "accelerator": "Ascend 910B2",

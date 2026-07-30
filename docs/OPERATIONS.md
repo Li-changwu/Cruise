@@ -19,8 +19,9 @@ No model execution is attempted after a failed doctor or runtime validation.
 SIGINT and SIGTERM are forwarded to the whole child process group. The worker
 requests a sidecar shutdown; timeout escalation terminates and then kills only
 that process group. The per-run directory is removed only when its parent and
-marker match the directory created by Cruise. External weights are required to
-live outside that cleanup tree.
+marker match the directory created by Cruise. Immutable AIR runtime weights are
+required to live outside that cleanup tree. GraphPp-generated external weights
+live inside the run directory and are removed on every stop.
 
 The shared scratch root is retained as an empty marked directory so another
 run can reuse it. `cruise cleanup --config ...` removes it only when no other
@@ -65,8 +66,10 @@ to replay and therefore remains fail-stop even for a prepared error.
 
 ## Logging and Data Handling
 
-Runtime caches, CANN logs, sockets and temporary output are placed below the
-per-run `/dev/shm` directory. Prompt text, generated text, credentials and raw
+Runtime caches, GraphPp-generated weights, CANN logs, sockets and temporary
+output are placed below the per-run `/dev/shm` directory. The content-addressed
+AIR runtime-weight bundle is read-only persistent input and is retained across
+install/start/stop cycles. Prompt text, generated text, credentials and raw
 model tensors are not intentionally logged by the Cruise control layer. Formal
 profiling remains opt-in and must follow `docs/REPOSITORY_POLICY.md`; it is not
 a normal product-health mechanism.

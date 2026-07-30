@@ -377,6 +377,46 @@ def _check_cann_capabilities(
                 remediation="none",
             )
 
+    for symbol in requirements["required_python_symbols"]:
+        expected = "one of " + ", ".join(
+            f"{item['module']}.{item['attribute']}"
+            for item in symbol["alternatives"]
+        )
+        matched: str | None = None
+        failures: list[str] = []
+        for alternative in symbol["alternatives"]:
+            qualified = f"{alternative['module']}.{alternative['attribute']}"
+            try:
+                value: object = importlib.import_module(alternative["module"])
+                for name in alternative["attribute"].split("."):
+                    value = getattr(value, name)
+            except Exception as exc:
+                failures.append(f"{qualified}: {type(exc).__name__}: {exc}")
+            else:
+                matched = qualified
+                break
+        if matched is None:
+            observed = "unavailable: " + "; ".join(failures)
+            _add_requirement(
+                report,
+                f"python-symbol-{symbol['id']}",
+                False,
+                code="missing-python-runtime-capability",
+                expected=expected,
+                observed=observed,
+                remediation=symbol["remediation"],
+            )
+        else:
+            _add_requirement(
+                report,
+                f"python-symbol-{symbol['id']}",
+                True,
+                code="missing-python-runtime-capability",
+                expected=expected,
+                observed=f"available as {matched}",
+                remediation="none",
+            )
+
     for component in requirements["required_cann_files"]:
         component_id = component["id"]
         basename = component["name"]
@@ -697,7 +737,15 @@ def run_runtime_doctor(config: CruiseRuntimeConfig, *, deep: bool) -> DoctorRepo
     try:
         config.validate_paths(deep=deep)
     except RuntimeConfigError as exc:
-        report.add("runtime-assets", "fail", str(exc))
+        report.add(
+            "runtime-assets",
+            "fail",
+            str(exc),
+            code=exc.code,
+            expected=exc.expected,
+            observed=exc.observed,
+            remediation=exc.remediation,
+        )
     else:
         report.add(
             "runtime-assets",

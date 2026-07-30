@@ -17,7 +17,20 @@ from .version import (
 
 
 class RuntimeConfigError(ValueError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str | None = None,
+        expected: str | None = None,
+        observed: str | None = None,
+        remediation: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.expected = expected
+        self.observed = observed
+        self.remediation = remediation
 
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -184,12 +197,41 @@ class CruiseRuntimeConfig:
         }
         for name, path in required_files.items():
             if not path.is_file():
-                raise RuntimeConfigError(f"{name} is not a file: {path}")
+                raise RuntimeConfigError(
+                    f"{name} is not a file: {path}",
+                    code="missing-runtime-asset",
+                    expected=f"regular file for {name} at {path}",
+                    observed="missing or not a regular file",
+                    remediation=(
+                        "provision the content-addressed asset bundle declared by "
+                        f"profile {self.compatibility_profile}; do not substitute an "
+                        "unqualified model or artifact"
+                    ),
+                )
         if os.name == "posix" and not self.assets.server.stat().st_mode & 0o111:
-            raise RuntimeConfigError(f"server is not executable: {self.assets.server}")
+            raise RuntimeConfigError(
+                f"server is not executable: {self.assets.server}",
+                code="invalid-runtime-asset-permissions",
+                expected=f"executable server at {self.assets.server}",
+                observed="regular file without an executable bit",
+                remediation="restore the executable mode from the qualified asset bundle",
+            )
         if not self.assets.external_weights.is_dir():
             raise RuntimeConfigError(
-                f"external_weights is not a directory: {self.assets.external_weights}"
+                f"external_weights is not a directory: {self.assets.external_weights}",
+                code="missing-runtime-asset",
+                expected=(
+                    "external weight directory with "
+                    f"{self.integrity.external_weight_files} files and "
+                    f"{self.integrity.external_weight_bytes} bytes at "
+                    f"{self.assets.external_weights}"
+                ),
+                observed="missing or not a directory",
+                remediation=(
+                    "provision the content-addressed runtime weights declared by "
+                    f"profile {self.compatibility_profile}; do not download or reuse a "
+                    "different model revision"
+                ),
             )
 
         self._validate_device_paths()
@@ -203,11 +245,12 @@ class CruiseRuntimeConfig:
             return
         scratch = self.runtime.scratch_root.resolve()
         weights = self.assets.external_weights.resolve()
-        for name, path in (("scratch_root", scratch), ("external_weights", weights)):
-            try:
-                path.relative_to("/dev/shm")
-            except ValueError as exc:
-                raise RuntimeConfigError(f"{name} must be below /dev/shm: {path}") from exc
+        try:
+            scratch.relative_to("/dev/shm")
+        except ValueError as exc:
+            raise RuntimeConfigError(
+                f"scratch_root must be below /dev/shm: {scratch}"
+            ) from exc
         if scratch == Path("/dev/shm"):
             raise RuntimeConfigError("scratch_root must not be /dev/shm itself")
         try:
@@ -303,7 +346,8 @@ class CruiseRuntimeConfig:
         cache = run_directory / "cache"
         logs = run_directory / "logs"
         temporary = run_directory / "tmp"
-        for path in (cache, logs, temporary):
+        graph_external_weights = run_directory / "graph-external-weights"
+        for path in (cache, logs, temporary, graph_external_weights):
             path.mkdir(parents=True, exist_ok=True)
 
         environment.update(
@@ -332,6 +376,9 @@ class CruiseRuntimeConfig:
                 ),
                 "VLLM_ASCEND_RESIDENT_EPOCH_TILING": str(self.assets.tiling),
                 "VLLM_ASCEND_RESIDENT_EPOCH_EXTERNAL_WEIGHTS": str(
+                    graph_external_weights
+                ),
+                "VLLM_ASCEND_RESIDENT_EPOCH_RUNTIME_WEIGHTS": str(
                     self.assets.external_weights
                 ),
                 "VLLM_ASCEND_RESIDENT_EPOCH_SOCKET": str(

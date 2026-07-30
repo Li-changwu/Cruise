@@ -156,6 +156,25 @@ installation-capability checkpoint only: the CANN 9.0.0 profile remains
 `candidate-m0-validation`, and no model or runtime asset was used by this
 increment.
 
+M0 NPU0-1 checkpoint (2026-07-31): a clean `main` checkout on the large
+`/workspace` volume produced and installed a non-editable wheel in
+`vllm-hust-dev`; package smoke and the CANN 9.0.0 candidate-profile doctor
+passed on idle physical NPU 0. A later asset audit corrected the initial
+missing-model diagnosis: the machine already contained the exact frozen
+Qwen2.5-7B-Instruct, AIR, tiling, baseline, and custom OPP trees under an
+existing `/dev/shm/cruise-m0-assets-npu01-r1` owner path. No model was
+downloaded or moved. Cruise materialized the 342-file, 15,231,237,408-byte
+runtime bundle once into a manifest-addressed `/workspace/cruise-assets`
+store; a second deep invocation returned `reused=true` with no duplicate or
+staging residue. Runtime doctor failures preserve stable `code`, `expected`,
+`observed`, and `remediation` fields. The active Triton build exposes the new
+`extra.cann` namespace, so the capability contract accepts either qualified
+symbol and the plugin installs a process-local legacy alias when needed. The
+complete remote suite passes 109 tests with four CANN ownership warnings.
+Evidence is in
+[`M0-CANN900-NPU01-20260731.md`](../evidence/M0-CANN900-NPU01-20260731.md).
+This checkpoint does not close M0 or authorize M1 execution.
+
 M0 remains open. The lifecycle documentation exists, but the final checkbox
 and exit gate require content-addressed external-asset provisioning outside the
 root disk followed by two consecutive real-model

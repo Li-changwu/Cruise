@@ -25,8 +25,17 @@ builds `ASCEND_CUSTOM_OPP_PATH` and `LD_LIBRARY_PATH` from these roots; generate
 ## Runtime Fields
 
 `scratch_root` must be a dedicated child of `/dev/shm`, never `/dev/shm`
-itself. `external_weights` must also be below `/dev/shm` but outside the managed
-scratch root so normal cleanup cannot delete model assets.
+itself. `external_weights` is the immutable 342-file AIR runtime-weight bundle.
+It may live on a dedicated persistent data volume and must remain outside the
+managed scratch root so normal cleanup cannot delete model assets. The path is
+bound to the selected profile by its manifest SHA256, file count, byte count,
+model identity, and optional per-file deep hashes.
+
+GraphPp-generated external weights are a different lifecycle class. Cruise
+creates their directory below the per-run `/dev/shm` tree and removes it with
+the run. The legacy internal environment variable named
+`VLLM_ASCEND_RESIDENT_EPOCH_EXTERNAL_WEIGHTS` refers to that generated scratch,
+not to the persistent 342-file bundle.
 
 `max_steps` is one of 1, 2, 4 or 8 and cannot exceed `logical_capacity`.
 `minimum_scratch_free_bytes` is checked before the child starts.

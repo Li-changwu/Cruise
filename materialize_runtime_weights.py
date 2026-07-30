@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import hashlib
 import json
+import os
+import shutil
 from collections import defaultdict
 from pathlib import Path
 
@@ -32,6 +35,11 @@ LOGICAL_CAPACITY = 8
 EXPECTED_CHECKPOINT_TENSORS = 339
 EXPECTED_EXTERNAL_FILES = 342
 EXPECTED_EXTERNAL_BYTES = 15_231_237_408
+EXPECTED_MANIFEST_SHA256 = (
+    "2ec95bf8e78cfaf091782b3c531b19b9cced35dcfab0e418c756e25abe456761"
+)
+ASSET_STORE_MARKER = ".cruise-asset-store-v1"
+ASSET_STORE_MARKER_CONTENT = "Cruise content-addressed asset store v1\n"
 
 
 def sha256(path: Path) -> str:
@@ -141,17 +149,144 @@ def validate_model_identity(model_dir: Path) -> tuple[Path, Path]:
     return config_path, index_path
 
 
+def resolve_output_location(
+    output_dir: Path, persistent_asset_root: Path | None
+) -> tuple[Path, Path | None]:
+    output_dir = output_dir.resolve()
+    try:
+        output_dir.relative_to("/dev/shm")
+    except ValueError:
+        pass
+    else:
+        if output_dir == Path("/dev/shm"):
+            raise RuntimeError("runtime-weight output must not be /dev/shm itself")
+        return output_dir, None
+
+    if persistent_asset_root is None:
+        raise RuntimeError(
+            "runtime weights outside /dev/shm require --persistent-asset-root"
+        )
+    asset_root = persistent_asset_root.resolve()
+    if asset_root == Path(asset_root.anchor):
+        raise RuntimeError("persistent asset root must be a dedicated child directory")
+    expected = asset_root / "runtime-weights" / EXPECTED_MANIFEST_SHA256
+    if output_dir != expected:
+        raise RuntimeError(
+            "persistent runtime-weight output must equal the content-addressed path "
+            f"{expected}"
+        )
+    return output_dir, asset_root
+
+
+def prepare_asset_store(asset_root: Path) -> None:
+    marker = asset_root / ASSET_STORE_MARKER
+    if asset_root.exists():
+        if not asset_root.is_dir():
+            raise RuntimeError(f"persistent asset root is not a directory: {asset_root}")
+        if marker.exists():
+            if marker.read_text(encoding="ascii") != ASSET_STORE_MARKER_CONTENT:
+                raise RuntimeError(f"persistent asset marker is invalid: {marker}")
+            return
+        if any(asset_root.iterdir()):
+            raise RuntimeError(
+                f"refusing to adopt non-empty unmarked asset root: {asset_root}"
+            )
+    else:
+        asset_root.mkdir(parents=True, mode=0o700)
+    marker.write_text(ASSET_STORE_MARKER_CONTENT, encoding="ascii")
+
+
+def validate_existing_bundle(output_dir: Path, manifest_path: Path) -> None:
+    if not output_dir.is_dir() or not manifest_path.is_file():
+        raise RuntimeError(
+            "content-addressed runtime-weight bundle is incomplete: "
+            f"weights={output_dir}, manifest={manifest_path}"
+        )
+    if sha256(manifest_path) != EXPECTED_MANIFEST_SHA256:
+        raise RuntimeError("existing runtime-weight manifest hash is incompatible")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    records = manifest.get("files")
+    if not isinstance(records, list) or len(records) != EXPECTED_EXTERNAL_FILES:
+        raise RuntimeError("existing runtime-weight manifest file list is incomplete")
+    files = sorted(path for path in output_dir.iterdir() if path.is_file())
+    if len(files) != EXPECTED_EXTERNAL_FILES:
+        raise RuntimeError("existing runtime-weight file count is incompatible")
+    if sum(path.stat().st_size for path in files) != EXPECTED_EXTERNAL_BYTES:
+        raise RuntimeError("existing runtime-weight byte count is incompatible")
+    by_name = {
+        record.get("name"): record for record in records if isinstance(record, dict)
+    }
+    if set(by_name) != {path.name for path in files}:
+        raise RuntimeError("existing runtime-weight names are incompatible")
+    for path in files:
+        record = by_name[path.name]
+        if path.stat().st_size != record.get("bytes"):
+            raise RuntimeError(f"existing runtime-weight size mismatch: {path.name}")
+        if sha256(path) != record.get("sha256"):
+            raise RuntimeError(f"existing runtime-weight hash mismatch: {path.name}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--persistent-asset-root", type=Path)
     args = parser.parse_args()
 
     model_dir = args.model_dir.resolve(strict=True)
-    output_dir = args.output_dir.resolve()
-    if not str(output_dir).startswith("/dev/shm/"):
-        raise RuntimeError("runtime weights must be materialized under /dev/shm")
+    target_dir, asset_root = resolve_output_location(
+        args.output_dir, args.persistent_asset_root
+    )
+    manifest_path = args.manifest.resolve()
+    if asset_root is not None:
+        prepare_asset_store(asset_root)
+        expected_manifest = (
+            asset_root / "manifests" / f"{EXPECTED_MANIFEST_SHA256}.json"
+        )
+        if manifest_path != expected_manifest:
+            raise RuntimeError(
+                "persistent runtime-weight manifest must equal the "
+                f"content-addressed path {expected_manifest}"
+            )
+        if target_dir.exists():
+            validate_existing_bundle(target_dir, manifest_path)
+            print(
+                "CRUISE_RUNTIME_WEIGHTS "
+                + json.dumps(
+                    {
+                        "manifest_sha256": EXPECTED_MANIFEST_SHA256,
+                        "output_dir": str(target_dir),
+                        "reused": True,
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+            return 0
+        target_dir.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        output_dir = target_dir.with_name(
+            f".{target_dir.name}.staging-{os.getpid()}"
+        )
+        temporary_manifest = manifest_path.with_name(
+            f".{manifest_path.name}.staging-{os.getpid()}"
+        )
+    else:
+        output_dir = target_dir
+        temporary_manifest = manifest_path
+
+    cleanup_enabled = True
+
+    def cleanup_partial_output() -> None:
+        if not cleanup_enabled:
+            return
+        if output_dir != target_dir and output_dir.exists():
+            shutil.rmtree(output_dir)
+        if temporary_manifest != manifest_path:
+            temporary_manifest.unlink(missing_ok=True)
+
+    atexit.register(cleanup_partial_output)
     output_dir.mkdir(parents=True, exist_ok=False)
 
     config_path, index_path = validate_model_identity(model_dir)
@@ -251,15 +386,31 @@ def main() -> int:
         "external_bytes": total_bytes,
         "files": files,
     }
-    args.manifest.parent.mkdir(parents=True, exist_ok=True)
-    args.manifest.write_text(
+    temporary_manifest.parent.mkdir(parents=True, exist_ok=True)
+    temporary_manifest.write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    observed_manifest_sha256 = sha256(temporary_manifest)
+    if observed_manifest_sha256 != EXPECTED_MANIFEST_SHA256:
+        raise RuntimeError(
+            "runtime-weight manifest changed: "
+            f"expected {EXPECTED_MANIFEST_SHA256}, observed "
+            f"{observed_manifest_sha256}"
+        )
+    if asset_root is not None:
+        output_dir.rename(target_dir)
+        temporary_manifest.replace(manifest_path)
+    cleanup_enabled = False
     print(
-        "ATTEMPT71_RUNTIME_WEIGHTS "
+        "CRUISE_RUNTIME_WEIGHTS "
         + json.dumps(
-            {key: value for key, value in manifest.items() if key != "files"},
+            {
+                **{key: value for key, value in manifest.items() if key != "files"},
+                "manifest_sha256": observed_manifest_sha256,
+                "output_dir": str(target_dir),
+                "reused": False,
+            },
             sort_keys=True,
         ),
         flush=True,

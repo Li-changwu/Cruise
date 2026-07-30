@@ -12,6 +12,7 @@ from .contract import (
     get_plan,
 )
 from .kv_transfer import capture_kv_snapshot
+from .triton_compat import ensure_triton_ascend_runtime
 
 
 def _execute_model_with_fallback(
@@ -50,6 +51,7 @@ def _execute_model_with_fallback(
 
 
 def register() -> None:
+    ensure_triton_ascend_runtime()
     from vllm_ascend.worker.worker import NPUWorker
 
     if hasattr(NPUWorker, "_resident_epoch_original_execute_model"):
