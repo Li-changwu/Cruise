@@ -1,0 +1,11 @@
+{
+  "gate": "Attempt 71 runtime AIR relocation",
+  "pass": true,
+  "source_node_count": 14595,
+  "reloaded_node_count": 14595,
+  "node_signature_equal": true,
+  "rewritten_file_constants": 342,
+  "audited_file_constants": 342,
+  "old_prefix": "/root/ascend-control-g4-20260723/export-attempt69c-b4",
+  "new_prefix": "/workspace/cruise-assets/runtime-weights/2ec95bf8e78cfaf091782b3c531b19b9cced35dcfab0e418c756e25abe456761"
+}

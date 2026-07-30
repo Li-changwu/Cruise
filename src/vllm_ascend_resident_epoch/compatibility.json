@@ -125,8 +125,8 @@
     },
     {
       "id": "attempt74-910b2-cann900-npu01-r1",
-      "status": "candidate-m0-validation",
-      "evidence": "evidence/M0-CANN900-NPU01-20260731.md",
+      "status": "m0-qualified-developer-preview",
+      "evidence": "evidence/M0-LIFECYCLE-NPU01-20260731.md",
       "hardware": {
         "architecture": "aarch64",
         "accelerator": "Ascend 910B2",

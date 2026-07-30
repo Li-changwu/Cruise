@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "compatibility_profile": "attempt74-910b2-cann900-npu01-r1",
+  "device_id": 0,
+  "cann_set_env": "/usr/local/Ascend/cann-9.0.0/set_env.sh",
+  "custom_opp_vendors": [
+    "/dev/shm/cruise-m0-assets-npu01-r1/custom-opp/install-attempt56r1/vendors/vllm-ascend",
+    "/dev/shm/cruise-m0-assets-npu01-r1/custom-opp/install-attempt69a-b4-barrier/vendors/vllm-ascend",
+    "/dev/shm/cruise-m0-assets-npu01-r1/custom-opp/install-attempt47/vendors/vllm-ascend"
+  ],
+  "runtime": {
+    "scratch_root": "/dev/shm/cruise-m0-8408a68-cycle1-run",
+    "minimum_scratch_free_bytes": 34359738368,
+    "max_steps": 8,
+    "logical_capacity": 8,
+    "startup_timeout_seconds": 3600,
+    "persistent_output_limit_bytes": 104857600
+  },
+  "assets": {
+    "server": "/dev/shm/cruise-m0-8408a68-cycle1-prep/native-build/resident_epoch_server",
+    "air": "/dev/shm/cruise-m0-8408a68-cycle1-prep/qwen_b4_decoder_step.air",
+    "graph_config": "/workspace/Cruise/config/graph_config.json",
+    "function_config": "/dev/shm/cruise-m0-8408a68-cycle1-prep/resident_epoch_func.json",
+    "tiling": "/dev/shm/cruise-m0-assets-npu01-r1/frozen/explicit_tiling.bin",
+    "external_weights": "/workspace/cruise-assets/runtime-weights/2ec95bf8e78cfaf091782b3c531b19b9cced35dcfab0e418c756e25abe456761",
+    "external_weights_manifest": "/workspace/cruise-assets/manifests/2ec95bf8e78cfaf091782b3c531b19b9cced35dcfab0e418c756e25abe456761.json",
+    "resource_config": "/dev/shm/cruise-m0-8408a68-cycle1-prep/numa_config.physical0.json",
+    "model_config": "/dev/shm/cruise-m0-assets-npu01-r1/model-frozen/config.json",
+    "model_index": "/dev/shm/cruise-m0-assets-npu01-r1/model-frozen/model.safetensors.index.json"
+  },
+  "integrity": {
+    "air_sha256": "5ab48ca6c4c7b228f32c272ff639ebb8e8e3af32ff1ca5738d2e9681248662ab",
+    "graph_config_sha256": "341cc9b8af8fc36d42c9cbaca2fcc31ec594ebcd03063fc556a7ccec71c1d31e",
+    "tiling_sha256": "1fc40ec0d67e231128773a5448cdd3333bdd1b97ea8a67bb7ba881d43b0da51f",
+    "external_weights_manifest_sha256": "2ec95bf8e78cfaf091782b3c531b19b9cced35dcfab0e418c756e25abe456761",
+    "external_weight_files": 342,
+    "external_weight_bytes": 15231237408,
+    "model_config_sha256": "7463bb0ea78315365e6c6b74de4e73bbcc8359dfb0c5a737584e077d42c0b03c",
+    "model_index_sha256": "624bf7c47cd12468fdc16e38a47cf4f19e0415b859a223ba3c027eed2f0e1028"
+  }
+}

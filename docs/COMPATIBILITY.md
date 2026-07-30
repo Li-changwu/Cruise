@@ -53,14 +53,15 @@ SHA256
 AIR, tiling, controller, graph, and baseline hashes are recorded in the
 machine-readable profile and the Attempt 74 evidence.
 
-## Qualification Candidate
+## NPU0-1 Qualified Profile
 
 Profile `attempt74-910b2-cann900-npu01-r1` records the NPU0-1 qualification
-candidate: Ascend 910B2, CANN/driver/npu-smi 9.0.0/26.0.rc1/26.0.rc1, Python
-3.11.15, torch-npu 2.9.0.post2, and the declared vLLM/vLLM-Ascend commits. Its
-status remains `candidate-m0-validation`; passing `doctor` proves installation
-readiness, not formal product support. The status may be promoted only after
-the required lifecycle and correctness evidence is committed.
+target: Ascend 910B2, CANN/driver/npu-smi 9.0.0/26.0.rc1/26.0.rc1, Python
+3.11.15, torch-npu 2.9.0.post2, and the declared vLLM/vLLM-Ascend commits. Two
+independent real-model install, deep-doctor, start, stop, cleanup, and uninstall
+cycles passed on physical NPU 0. Its status is therefore
+`m0-qualified-developer-preview`. This qualifies the bounded M0 deployment
+contract; it does not establish Stable v1.0 serving semantics.
 
 ## Versioned Contracts
 
@@ -130,6 +131,7 @@ or row reuse after a nontrivial prefill.
 ## Claim Boundary
 
 The CANN 8.5.1 profile is a formally validated research baseline, not Stable
-v1.0. CANN 9.0.0 is currently a qualification candidate. Adding another
-version or accelerator requires its own profile and same-spec correctness
-evidence; broad version ranges must not be inferred.
+v1.0. The CANN 9.0.0 NPU0-1 profile is qualified only for the bounded M0
+Developer Preview deployment contract. Adding another version or accelerator
+requires its own profile and same-spec correctness evidence; broad version
+ranges must not be inferred.

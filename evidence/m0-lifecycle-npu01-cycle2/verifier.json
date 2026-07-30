@@ -1,0 +1,14 @@
+{
+  "case_count": 13,
+  "device_epochs": 13,
+  "distributed_destroyed": true,
+  "feed_calls": 13,
+  "fetch_calls": 13,
+  "model_calls": 49,
+  "pass": true,
+  "resolved_classes": {
+    "executor": "vllm.v1.executor.uniproc_executor.UniProcExecutor",
+    "scheduler": "vllm_ascend_resident_epoch.scheduler.ResidentEpochScheduler",
+    "worker": "vllm_ascend_resident_epoch.worker.ResidentEpochWorker"
+  }
+}

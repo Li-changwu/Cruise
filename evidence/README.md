@@ -19,8 +19,14 @@ real-model lifecycle condition.
 The NPU0-1 CANN 9.0.0 installation checkpoint is summarized in
 [`M0-CANN900-NPU01-20260731.md`](M0-CANN900-NPU01-20260731.md). It records the
 installed-wheel and physical-NPU-0 qualification results, the corrected frozen
-asset inventory, content-addressed persistent-weight provisioning and reuse,
-and why M0 and M1 remain open pending the repeated lifecycle gate.
+asset inventory, and content-addressed persistent-weight provisioning and
+reuse.
+
+The final M0 repeated-lifecycle acceptance is summarized in
+[`M0-LIFECYCLE-NPU01-20260731.md`](M0-LIFECYCLE-NPU01-20260731.md). Its compact
+raw evidence is retained in [`m0-lifecycle-npu01-cycle1/`](m0-lifecycle-npu01-cycle1/)
+and [`m0-lifecycle-npu01-cycle2/`](m0-lifecycle-npu01-cycle2/). M0 is closed;
+M1 serving semantics remain open.
 
 The first M1 ownership/commit-state checkpoint is summarized in
 [`M1-COMMIT-STATE-20260729.md`](M1-COMMIT-STATE-20260729.md). It records the

@@ -1,0 +1,215 @@
+{
+  "checks": [
+    {
+      "code": null,
+      "detail": "attempt74-910b2-cann900-npu01-r1",
+      "expected": null,
+      "name": "compatibility-profile",
+      "observed": null,
+      "remediation": null,
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=one of ['aarch64']; profile=aarch64; observed=aarch64; remediation=install Cruise on a supported aarch64 host",
+      "expected": "one of ['aarch64']; profile=aarch64",
+      "name": "architecture",
+      "observed": "aarch64",
+      "remediation": "install Cruise on a supported aarch64 host",
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=3.11.15; observed=3.11.15; remediation=activate an environment with Python 3.11.15 or select a profile validated for this interpreter",
+      "expected": "3.11.15",
+      "name": "python-profile",
+      "observed": "3.11.15",
+      "remediation": "activate an environment with Python 3.11.15 or select a profile validated for this interpreter",
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=2.9.0; observed=2.9.0+cpu; remediation=install the torch build declared by profile attempt74-910b2-cann900-npu01-r1 or qualify this package combination as a new profile",
+      "expected": "2.9.0",
+      "name": "torch",
+      "observed": "2.9.0+cpu",
+      "remediation": "install the torch build declared by profile attempt74-910b2-cann900-npu01-r1 or qualify this package combination as a new profile",
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=2.9.0.post2; observed=2.9.0.post2; remediation=install the torch-npu build declared by profile attempt74-910b2-cann900-npu01-r1 or qualify this package combination as a new profile",
+      "expected": "2.9.0.post2",
+      "name": "torch-npu",
+      "observed": "2.9.0.post2",
+      "remediation": "install the torch-npu build declared by profile attempt74-910b2-cann900-npu01-r1 or qualify this package combination as a new profile",
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=0.20.1.post1.dev363+gec4847981; observed=0.20.1.post1.dev363+gec4847981; remediation=install the vllm build declared by profile attempt74-910b2-cann900-npu01-r1 or qualify this package combination as a new profile",
+      "expected": "0.20.1.post1.dev363+gec4847981",
+      "name": "vllm",
+      "observed": "0.20.1.post1.dev363+gec4847981",
+      "remediation": "install the vllm build declared by profile attempt74-910b2-cann900-npu01-r1 or qualify this package combination as a new profile",
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=0.19.1.post1.dev255+ge967f235; observed=0.19.1.post1.dev255+ge967f235; remediation=install the vllm-ascend build declared by profile attempt74-910b2-cann900-npu01-r1 or qualify this package combination as a new profile",
+      "expected": "0.19.1.post1.dev255+ge967f235",
+      "name": "vllm-ascend",
+      "observed": "0.19.1.post1.dev255+ge967f235",
+      "remediation": "install the vllm-ascend build declared by profile attempt74-910b2-cann900-npu01-r1 or qualify this package combination as a new profile",
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=9.0.0; observed=9.0.0 at /usr/local/Ascend/cann-9.0.0; remediation=source CANN 9.0.0 or select a profile validated for CANN 9.0.0",
+      "expected": "9.0.0",
+      "name": "cann",
+      "observed": "9.0.0 at /usr/local/Ascend/cann-9.0.0",
+      "remediation": "source CANN 9.0.0 or select a profile validated for CANN 9.0.0",
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=importable; observed=/usr/local/Ascend/cann-9.0.0/python/site-packages/dataflow/__init__.py; remediation=none",
+      "expected": "importable",
+      "name": "python-module-dataflow",
+      "observed": "/usr/local/Ascend/cann-9.0.0/python/site-packages/dataflow/__init__.py",
+      "remediation": "none",
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=one of triton.language.extra.ascend.libdevice.pow, triton.language.extra.cann.libdevice.pow; observed=available as triton.language.extra.cann.libdevice.pow; remediation=none",
+      "expected": "one of triton.language.extra.ascend.libdevice.pow, triton.language.extra.cann.libdevice.pow",
+      "name": "python-symbol-ascend-triton-runtime",
+      "observed": "available as triton.language.extra.cann.libdevice.pow",
+      "remediation": "none",
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=CANN file meta_flow_func.h; observed=/usr/local/Ascend/cann-9.0.0/aarch64-linux/include/flow_func/meta_flow_func.h; remediation=install the CANN component that provides meta_flow_func.h and source the matching toolkit environment",
+      "expected": "CANN file meta_flow_func.h",
+      "name": "dataflow-sdk-header",
+      "observed": "/usr/local/Ascend/cann-9.0.0/aarch64-linux/include/flow_func/meta_flow_func.h",
+      "remediation": "install the CANN component that provides meta_flow_func.h and source the matching toolkit environment",
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=CANN file aarch64-target-linux-gnu-g++; observed=/usr/local/Ascend/cann-9.0.0/tools/hcc/bin/aarch64-target-linux-gnu-g++; remediation=install the CANN component that provides aarch64-target-linux-gnu-g++ and source the matching toolkit environment",
+      "expected": "CANN file aarch64-target-linux-gnu-g++",
+      "name": "device-cross-compiler",
+      "observed": "/usr/local/Ascend/cann-9.0.0/tools/hcc/bin/aarch64-target-linux-gnu-g++",
+      "remediation": "install the CANN component that provides aarch64-target-linux-gnu-g++ and source the matching toolkit environment",
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=26.0.rc1; observed=26.0.rc1; remediation=install driver tools 26.0.rc1 or select a profile validated for 26.0.rc1",
+      "expected": "26.0.rc1",
+      "name": "npu-smi",
+      "observed": "26.0.rc1",
+      "remediation": "install driver tools 26.0.rc1 or select a profile validated for 26.0.rc1",
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=26.0.rc1; observed=26.0.rc1; remediation=install driver 26.0.rc1 or qualify driver 26.0.rc1 as a new profile",
+      "expected": "26.0.rc1",
+      "name": "driver",
+      "observed": "26.0.rc1",
+      "remediation": "install driver 26.0.rc1 or qualify driver 26.0.rc1 as a new profile",
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=at least 1 supported accelerator(s); observed=2 supported; 2 total; remediation=select a host with enough supported Ascend accelerators",
+      "expected": "at least 1 supported accelerator(s)",
+      "name": "npu-count",
+      "observed": "2 supported; 2 total",
+      "remediation": "select a host with enough supported Ascend accelerators",
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=one of ['910B2']; profile=910B2; observed=910B2; remediation=use a supported accelerator or add a separately qualified profile",
+      "expected": "one of ['910B2']; profile=910B2",
+      "name": "npu-product",
+      "observed": "910B2",
+      "remediation": "use a supported accelerator or add a separately qualified profile",
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=health=OK; observed=device=0 product=910B2 health=OK; remediation=resolve the NPU health alarm or select another healthy device",
+      "expected": "health=OK",
+      "name": "npu-device",
+      "observed": "device=0 product=910B2 health=OK",
+      "remediation": "resolve the NPU health alarm or select another healthy device",
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=no active compute processes; observed=idle; remediation=stop the listed workload or select an idle NPU",
+      "expected": "no active compute processes",
+      "name": "npu-availability",
+      "observed": "idle",
+      "remediation": "stop the listed workload or select an idle NPU",
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "expected=at least 34359738368 free bytes; observed=1064604618752 free bytes; remediation=free /dev/shm space or enlarge the tmpfs mount",
+      "expected": "at least 34359738368 free bytes",
+      "name": "shared-memory",
+      "observed": "1064604618752 free bytes",
+      "remediation": "free /dev/shm space or enlarge the tmpfs mount",
+      "status": "pass"
+    },
+    {
+      "code": "unvalidated-compatibility-profile",
+      "detail": "expected=validated profile; observed=candidate-m0-validation; remediation=complete the profile qualification before claiming product support",
+      "expected": "validated profile",
+      "name": "profile-status",
+      "observed": "candidate-m0-validation",
+      "remediation": "complete the profile qualification before claiming product support",
+      "status": "warn"
+    },
+    {
+      "code": null,
+      "detail": "profile status=candidate-m0-validation; this is not Stable v1.0",
+      "expected": null,
+      "name": "maturity",
+      "observed": null,
+      "remediation": null,
+      "status": "warn"
+    },
+    {
+      "code": null,
+      "detail": "all paths, contracts, counts, bytes, and configured hashes passed; external weights were deep-hashed",
+      "expected": null,
+      "name": "runtime-assets",
+      "observed": null,
+      "remediation": null,
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "required=34359738368 free=1064604618752 filesystem=/dev/shm",
+      "expected": null,
+      "name": "scratch-capacity",
+      "observed": null,
+      "remediation": null,
+      "status": "pass"
+    }
+  ],
+  "mode": "runtime",
+  "pass": true,
+  "profile": "attempt74-910b2-cann900-npu01-r1",
+  "schema_version": 2
+}

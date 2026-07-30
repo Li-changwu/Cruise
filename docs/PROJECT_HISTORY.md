@@ -133,7 +133,7 @@ not hidden v1.0 requirements.
 - [x] Version the Python contract, sidecar wire protocol, Host-UDF ABI, graph
   configuration, and external assets; reject incompatible combinations before
   model execution.
-- [ ] Provide documented clean install, start, stop, upgrade, rollback, and
+- [x] Provide documented clean install, start, stop, upgrade, rollback, and
   uninstall procedures without editing vLLM or vLLM-Ascend source files.
 - [x] Add a bounded no-NPU smoke path and a one-command NPU installation check.
 
@@ -175,12 +175,19 @@ Evidence is in
 [`M0-CANN900-NPU01-20260731.md`](../evidence/M0-CANN900-NPU01-20260731.md).
 This checkpoint does not close M0 or authorize M1 execution.
 
-M0 remains open. The lifecycle documentation exists, but the final checkbox
-and exit gate require content-addressed external-asset provisioning outside the
-root disk followed by two consecutive real-model
-`install -> runtime doctor --deep -> start -> stop -> cleanup` cycles. Each
-cycle must leave a clean checkout, no process/socket/scratch leak, and less than
-100 MiB of persistent runtime output.
+M0 closed on NPU0-1 physical NPU 0 (2026-07-31). Commit `8408a68` passed two
+independent real-model
+`build -> install -> smoke -> NPU doctor -> runtime doctor --deep -> start ->
+stop -> verify -> cleanup -> uninstall` cycles in `vllm-hust-dev`. Each cycle
+verified 13 EngineCore cases, 13 Feed/Fetch pairs, and 49 device model calls;
+left no package, process, socket, scratch, or source-tree residue; and retained
+only 88 KiB of structured evidence. The 342-file, 15,231,237,408-byte runtime
+bundle remained a single content-addressed read-only asset on `/workspace`.
+The qualification also found and fixed pre-start CANN cache-directory creation
+and post-cleanup sidecar artifact verification defects. Evidence is in
+[`M0-LIFECYCLE-NPU01-20260731.md`](../evidence/M0-LIFECYCLE-NPU01-20260731.md).
+The NPU0-1 profile is now `m0-qualified-developer-preview`; this closes M0 but
+does not close M1 or claim Stable v1.0.
 
 Exit evidence: a clean checkout can be installed and diagnosed on a supported
 machine using only documented commands, and a repeated install/start/stop cycle

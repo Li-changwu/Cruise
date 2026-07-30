@@ -201,15 +201,15 @@ def test_compatibility_manifest_matches_versioned_contracts():
     assert profile["hardware"]["accelerator"] == "Ascend 910B2"
     assert profile["software"]["driver"] == "25.2.1"
     assert profile["software"]["cann"] == "8.5.1"
-    candidate = get_compatibility_profile("attempt74-910b2-cann900-npu01-r1")
-    assert candidate["status"] == "candidate-m0-validation"
-    assert candidate["hardware"]["npu_smi_version"] == "26.0.rc1"
-    assert candidate["software"]["driver"] == "26.0.rc1"
-    assert candidate["software"]["cann"] == "9.0.0"
-    assert candidate["software"]["vllm"]["commit"] == profile["software"][
+    qualified = get_compatibility_profile("attempt74-910b2-cann900-npu01-r1")
+    assert qualified["status"] == "m0-qualified-developer-preview"
+    assert qualified["hardware"]["npu_smi_version"] == "26.0.rc1"
+    assert qualified["software"]["driver"] == "26.0.rc1"
+    assert qualified["software"]["cann"] == "9.0.0"
+    assert qualified["software"]["vllm"]["commit"] == profile["software"][
         "vllm"
     ]["commit"]
-    assert candidate["software"]["vllm_ascend"]["commit"] == profile["software"][
+    assert qualified["software"]["vllm_ascend"]["commit"] == profile["software"][
         "vllm_ascend"
     ]["commit"]
     for item in manifest["profiles"]:

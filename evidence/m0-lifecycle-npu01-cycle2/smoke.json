@@ -1,0 +1,35 @@
+{
+  "checks": [
+    {
+      "code": null,
+      "detail": "schema=2 profiles=2",
+      "expected": null,
+      "name": "compatibility-manifest",
+      "observed": null,
+      "remediation": null,
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "3.11.15",
+      "expected": null,
+      "name": "python",
+      "observed": null,
+      "remediation": null,
+      "status": "pass"
+    },
+    {
+      "code": null,
+      "detail": "plan/result validation passed",
+      "expected": null,
+      "name": "contract-smoke",
+      "observed": null,
+      "remediation": null,
+      "status": "pass"
+    }
+  ],
+  "mode": "source-smoke",
+  "pass": true,
+  "profile": null,
+  "schema_version": 2
+}
