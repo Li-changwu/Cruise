@@ -20,11 +20,13 @@ The three routes are:
 
 Every route uses the same Qwen2.5-7B-Instruct revision, tokenizer, NPU, 512 MiB
 KV-cache budget, synchronous scheduling, maximum batch size four, warmup
-manifest, and measured request manifest. The server uses vLLM generation
-defaults rather than the model's `generation_config.json`, and every request
-explicitly fixes all supported greedy-sampling fields, including a repetition
-penalty of one. Initialization is excluded and reported separately. Each route
-receives three independent service starts in the blocked order:
+manifest, and measured request manifest. Every route uses the versioned
+single-primary-EOS generation config in this directory instead of inheriting
+the model's additional EOS token. Every request explicitly fixes all supported
+greedy-sampling fields, including a repetition penalty of one. This preserves
+the declared single-EOS support boundary without admitting arbitrary stop
+tokens. Initialization is excluded and reported separately. Each route receives
+three independent service starts in the blocked order:
 
 ```text
 eager-1, graph-1, cruise-1,

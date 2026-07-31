@@ -24,6 +24,7 @@ frozen_air=${frozen}/qwen_b4_decoder_step_attempt69c_r2.air
 tiling=${frozen}/explicit_tiling.bin
 old_weight_prefix=${CRUISE_OLD_WEIGHT_PREFIX:-/root/ascend-control-g4-20260723/export-attempt69c-b4}
 workload=${CRUISE_M4A_WORKLOAD:-${source_dir}/experiments/m4a_performance/workload.json}
+generation_config=${source_dir}/experiments/m4a_performance/generation_config/generation_config.json
 runner=${source_dir}/experiments/m4a_performance/run_benchmark.py
 verifier=${source_dir}/experiments/m4a_performance/verify_results.py
 
@@ -52,6 +53,7 @@ required=(
   "${runner}"
   "${verifier}"
   "${workload}"
+  "${generation_config}"
   "${source_dir}/materialize_runtime_weights.py"
   "${source_dir}/prepare_resource_config.py"
   "${source_dir}/prepare_runtime_config.py"
@@ -208,7 +210,7 @@ run_step prepare-resource-config 120s python3 \
   printf 'formal_m3\topen\n'
   printf 'formal_m4\topen\n'
 } >"${evidence}/deployment-config.tsv"
-sha256sum "${workload}" "${frozen_air}" "${tiling}" "${resource_config}" \
+sha256sum "${workload}" "${generation_config}" "${frozen_air}" "${tiling}" "${resource_config}" \
   "${runtime_weights_manifest}" >"${evidence}/input-integrity.log"
 git -C "${vllm_root}" rev-parse HEAD >"${evidence}/vllm-commit.txt"
 git -C "${vllm_ascend_root}" rev-parse HEAD \

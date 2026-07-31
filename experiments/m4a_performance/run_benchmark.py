@@ -29,6 +29,7 @@ from experiments.m1_batched_prefill.run_differential import (
 
 
 MODES = ("eager", "graph", "cruise")
+GENERATION_CONFIG_DIR = Path(__file__).with_name("generation_config")
 BLOCKED_ORDER = (
     "eager-1",
     "graph-1",
@@ -267,7 +268,7 @@ def server_command(
         str(port),
         "--trust-remote-code",
         "--generation-config",
-        "vllm",
+        str(GENERATION_CONFIG_DIR),
         "--dtype",
         "bfloat16",
         "--max-model-len",

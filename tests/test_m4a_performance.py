@@ -78,9 +78,21 @@ def test_m4a_commands_separate_eager_graph_and_cruise(tmp_path):
     assert "--scheduler-cls" in commands["cruise"]
     assert all("--no-async-scheduling" in command for command in commands.values())
     assert all(
-        command[command.index("--generation-config") + 1] == "vllm"
+        Path(command[command.index("--generation-config") + 1]).name
+        == "generation_config"
         for command in commands.values()
     )
+    generation_configs = {
+        command[command.index("--generation-config") + 1]
+        for command in commands.values()
+    }
+    assert len(generation_configs) == 1
+    generation_config = json.loads(
+        (Path(next(iter(generation_configs))) / "generation_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert generation_config == {"eos_token_id": 151645}
     budgets = {
         command[command.index("--kv-cache-memory-bytes") + 1]
         for command in commands.values()
