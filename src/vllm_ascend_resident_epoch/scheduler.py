@@ -4,6 +4,7 @@ from vllm.sampling_params import RequestOutputKind
 from vllm.v1.core.sched.scheduler import Scheduler
 from vllm.v1.outputs import ModelRunnerOutput
 
+from .benchmark_metrics import ResidentEpochBenchmarkMetrics
 from .config import ResidentEpochConfig
 from .contract import (
     CONTRACT_VERSION,
@@ -29,6 +30,9 @@ class ResidentEpochScheduler(Scheduler):
         self._resident_epoch_generations: dict[str, int] = {}
         self._resident_epoch_device_owned: set[str] = set()
         self._resident_epoch_next_generation = 1
+        self._resident_epoch_benchmark_metrics = (
+            ResidentEpochBenchmarkMetrics.from_env()
+        )
         if self.vllm_config.speculative_config is not None:
             raise ValueError("resident epoch scheduler cannot be combined with speculative decoding")
         if self.scheduler_config.async_scheduling:
@@ -53,6 +57,8 @@ class ResidentEpochScheduler(Scheduler):
             self._resident_epoch_next_generation = 1
         if not hasattr(self, "_resident_epoch_device_owned"):
             self._resident_epoch_device_owned = set()
+        if not hasattr(self, "_resident_epoch_benchmark_metrics"):
+            self._resident_epoch_benchmark_metrics = ResidentEpochBenchmarkMetrics()
         return config
 
     def _assign_resident_rows(self, req_ids: tuple[str, ...]) -> None:
@@ -176,6 +182,7 @@ class ResidentEpochScheduler(Scheduler):
         self._resident_epoch_last_rejection = rejection
         self._resident_epoch_last_plan = plan
         self._resident_epoch_last_result = None
+        self._resident_epoch_benchmark_metrics.record_schedule(plan, rejection)
         if plan is not None:
             attach_plan(scheduler_output, plan)
         return scheduler_output
@@ -316,6 +323,7 @@ class ResidentEpochScheduler(Scheduler):
         if result is None:
             raise RuntimeError("resident epoch plan did not receive execution metadata")
         self._resident_epoch_last_result = result
+        self._resident_epoch_benchmark_metrics.record_result(result)
         self._apply_resident_epoch_accounting(
             scheduler_output, model_runner_output, plan, result
         )

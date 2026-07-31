@@ -283,6 +283,23 @@ TP=PP=1, synchronous, greedy support contract. It does not claim M2 fault
 injection/soak, M3 observability, M4 performance qualification, or Stable
 v1.0. Those remain the next ordered milestones.
 
+#### M4a early performance preflight (active)
+
+M4a is intentionally being executed before M2 and M3 as a research-value
+gate, not as a formal milestone closure. The frozen protocol compares stock
+eager, stock PIECEWISE ACLGraph, and Cruise under the same API workload on
+NPU0-1 physical NPU 0. Each route receives three independent service starts
+in blocked order. The primary claim retains the formal M4 thresholds: at least
+15% improvement in both median and p95 streaming TPOT and at least 30% lower
+Host CPU per output token versus the strongest stock route.
+
+The protocol explicitly treats streaming K=1 as the primary negative regime
+and non-streaming K=2 as explanatory evidence, not a substitute for TPOT. A
+threshold failure is retained as a valid result and triggers attribution; it
+does not fail cleanup or weaken the threshold. Source, workload, runner, and
+independent verifier live under [`experiments/m4a_performance/`](../experiments/m4a_performance/).
+M2, M3, and M4 below remain open regardless of the M4a outcome.
+
 ### M2: Lifecycle, Recovery, and Resource Safety
 
 - [ ] Add sidecar supervision, bounded startup and request timeouts, readiness

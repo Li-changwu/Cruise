@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "served_model_name": "cruise-m4a",
+  "tokenizer": "/data/shared_models/Qwen2.5-7B-Instruct",
+  "warmups": [
+    {
+      "name": "warmup-stream-c4",
+      "stream": true,
+      "prompt_token_ids": [9707, 11],
+      "max_tokens": 7,
+      "request_count": 8,
+      "concurrency": 4,
+      "arrival": "closed_loop"
+    },
+    {
+      "name": "warmup-nonstream-c4",
+      "stream": false,
+      "prompt_token_ids": [9707, 11],
+      "max_tokens": 7,
+      "request_count": 8,
+      "concurrency": 4,
+      "arrival": "closed_loop"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "short-stream-c1",
+      "stream": true,
+      "prompt_token_ids": [9707, 11],
+      "max_tokens": 2,
+      "request_count": 32,
+      "concurrency": 1,
+      "arrival": "closed_loop"
+    },
+    {
+      "name": "decode-stream-c1",
+      "stream": true,
+      "prompt_token_ids": [9707, 11],
+      "max_tokens": 7,
+      "request_count": 32,
+      "concurrency": 1,
+      "arrival": "closed_loop"
+    },
+    {
+      "name": "decode-stream-c4",
+      "stream": true,
+      "prompt_token_ids": [9707, 11],
+      "max_tokens": 7,
+      "request_count": 32,
+      "concurrency": 4,
+      "arrival": "closed_loop"
+    },
+    {
+      "name": "decode-nonstream-c1",
+      "stream": false,
+      "prompt_token_ids": [9707, 11],
+      "max_tokens": 7,
+      "request_count": 32,
+      "concurrency": 1,
+      "arrival": "closed_loop"
+    },
+    {
+      "name": "decode-nonstream-c4",
+      "stream": false,
+      "prompt_token_ids": [9707, 11],
+      "max_tokens": 7,
+      "request_count": 32,
+      "concurrency": 4,
+      "arrival": "closed_loop"
+    },
+    {
+      "name": "decode-bursty-c4",
+      "stream": false,
+      "prompt_token_ids": [9707, 11],
+      "max_tokens": 7,
+      "request_count": 32,
+      "concurrency": 4,
+      "arrival": "bursty",
+      "burst_gap_ms": 100
+    },
+    {
+      "name": "decode-overload-c8",
+      "stream": false,
+      "prompt_token_ids": [9707, 11],
+      "max_tokens": 7,
+      "request_count": 32,
+      "concurrency": 8,
+      "arrival": "closed_loop"
+    }
+  ],
+  "primary_scenario": "decode-stream-c4",
+  "thresholds": {
+    "median_tpot_improvement_percent": 15.0,
+    "p95_tpot_improvement_percent": 15.0,
+    "host_cpu_per_token_reduction_percent": 30.0
+  }
+}

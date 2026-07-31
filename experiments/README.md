@@ -7,3 +7,9 @@ before full decoder work began.
 Later source snapshots live under `history/attempts/`. Raw measurements are
 kept outside Git; compact accepted findings are summarized in the protocol and
 status documents referenced by the root README.
+
+`m4a_performance/` is the early three-route performance preflight. It compares
+stock eager, stock ACLGraph, and Cruise with a versioned API workload, blocked
+three-start ordering, exact semantic comparison, process-tree Host CPU
+measurement, benchmark-only resident-route counters, and an independent
+verifier. M4a does not close the formal M2, M3, or M4 milestones.
