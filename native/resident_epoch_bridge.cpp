@@ -428,11 +428,6 @@ extern "C" void *resident_epoch_create(
     *status = 6;
     return nullptr;
   }
-  if (aclrtSetDevice(0) != ACL_SUCCESS) {
-    aclFinalize();
-    *status = 7;
-    return nullptr;
-  }
   std::map<ge::AscendString, ge::AscendString> options = {
       {"ge.exec.deviceId", "0"},
       {"ge.exec.logicalDeviceClusterDeployMode", "SINGLE"},
@@ -442,8 +437,14 @@ extern "C" void *resident_epoch_create(
       {"ge.graphRunMode", "0"}};
   auto ret = ge::GEInitialize(options);
   if (ret != ge::SUCCESS) {
-    FinalizeAclRuntime();
+    aclFinalize();
     *status = 3;
+    return nullptr;
+  }
+  if (aclrtSetDevice(0) != ACL_SUCCESS) {
+    ge::GEFinalize();
+    aclFinalize();
+    *status = 7;
     return nullptr;
   }
   engine->session = std::make_shared<ge::Session>(
