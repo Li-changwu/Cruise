@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 
 #include <sys/socket.h>
@@ -168,8 +169,8 @@ int main(int argc, char **argv) {
       break;
     }
     Response response = EmptyResponse(0);
-    ResidentEpochIpcMetadata ipc_metadata{};
     const bool direct_device_import = request.operation == kDeviceIpcExecute;
+    std::unique_ptr<ResidentEpochIpcMetadata> ipc_metadata;
     if (request.magic != kRequestMagic ||
         request.version != kProtocolVersion) {
       response.transport_status = 69;
@@ -182,10 +183,12 @@ int main(int argc, char **argv) {
                request.operation != kDeviceIpcExecute) {
       response.transport_status = 71;
     } else {
-      if (direct_device_import &&
-          !ReadAll(client, &ipc_metadata, sizeof(ipc_metadata))) {
-        exit_status = 73;
-        break;
+      if (direct_device_import) {
+        ipc_metadata.reset(new ResidentEpochIpcMetadata());
+        if (!ReadAll(client, ipc_metadata.get(), sizeof(*ipc_metadata))) {
+          exit_status = 73;
+          break;
+        }
       }
       response.transport_status = resident_epoch_execute(
           engine, request.request_count, request.max_steps, request.token_ids,
@@ -198,7 +201,7 @@ int main(int argc, char **argv) {
             &response.declared_input_bytes, &response.declared_output_bytes,
             request.operation == kImportExecute ? transfer_path.c_str() : nullptr,
             request.transfer_id,
-            direct_device_import ? &ipc_metadata : nullptr);
+            direct_device_import ? ipc_metadata.get() : nullptr);
       if (request.operation == kImportExecute) unlink(transfer_path.c_str());
     }
     if (!WriteAll(client, &response, sizeof(response))) {

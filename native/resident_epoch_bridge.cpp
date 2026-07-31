@@ -279,6 +279,10 @@ bool PrepareDeviceIpcPayload(ResidentEpochEngine *engine,
   if (engine == nullptr || metadata == nullptr || payload_out == nullptr) {
     return false;
   }
+  int32_t current_device = -1;
+  if (aclrtGetDevice(&current_device) != ACL_SUCCESS || current_device != 0) {
+    return false;
+  }
   if (engine->device_import_payload == nullptr) {
     if (aclrtMalloc(&engine->device_import_payload,
                     CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES,
@@ -425,18 +429,6 @@ extern "C" void *resident_epoch_create(
   auto ret = ge::GEInitialize(options);
   if (ret != ge::SUCCESS) {
     *status = 3;
-    return nullptr;
-  }
-  const auto acl_init_status = aclInit(nullptr);
-  if (acl_init_status != ACL_SUCCESS &&
-      acl_init_status != ACL_ERROR_REPEAT_INITIALIZE) {
-    ge::GEFinalize();
-    *status = 6;
-    return nullptr;
-  }
-  if (aclrtSetDevice(0) != ACL_SUCCESS) {
-    ge::GEFinalize();
-    *status = 7;
     return nullptr;
   }
   engine->session = std::make_shared<ge::Session>(
