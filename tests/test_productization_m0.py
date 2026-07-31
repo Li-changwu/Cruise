@@ -458,6 +458,29 @@ def test_native_protocol_header_matches_python_constants():
     assert "constexpr uint16_t kProtocolVersion = 3" not in server
 
 
+def test_resident_sidecar_uses_ge_owned_acl_runtime():
+    cmake = (ROOT / "native" / "CMakeLists.txt").read_text(encoding="utf-8")
+    bridge = (ROOT / "native" / "resident_epoch_bridge.cpp").read_text(
+        encoding="utf-8"
+    )
+
+    assert '"${ASCEND_HOME_PATH}/lib64/libacl_rt.so"' in cmake
+    assert "libascendcl.so" not in cmake
+    for lifecycle_call in (
+        "aclInit(",
+        "aclFinalize(",
+        "aclrtSetDevice(",
+        "aclrtResetDevice(",
+    ):
+        assert lifecycle_call not in bridge
+    for transfer_call in (
+        "aclrtGetDevice(",
+        "aclrtIpcMemImportByKey(",
+        "aclrtMemcpy(",
+    ):
+        assert transfer_call in bridge
+
+
 @pytest.mark.parametrize(
     "relative",
     ["native/resident_epoch_bridge.cpp", "native/resident_epoch_bridge_old.cpp"],
