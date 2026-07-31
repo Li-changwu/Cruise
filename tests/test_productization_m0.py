@@ -464,6 +464,9 @@ def test_resident_sidecar_uses_ge_owned_acl_runtime():
     bridge = (ROOT / "native" / "resident_epoch_bridge.cpp").read_text(
         encoding="utf-8"
     )
+    transfer = (ROOT / "native" / "resident_device_transfer.cpp").read_text(
+        encoding="utf-8"
+    )
 
     assert "libacl_rt.so" not in cmake
     assert "libascendcl.so" not in cmake
@@ -474,23 +477,24 @@ def test_resident_sidecar_uses_ge_owned_acl_runtime():
         "aclrtResetDevice(",
     ):
         assert lifecycle_call not in bridge
+        assert lifecycle_call not in transfer
     for transfer_call in (
         'ResolveAclSymbol("aclrtGetDevice"',
         'ResolveAclSymbol("aclrtIpcMemImportByKey"',
         'ResolveAclSymbol("aclrtMemcpy"',
     ):
-        assert transfer_call in bridge
-    assert "dlsym(RTLD_DEFAULT, name)" in bridge
-    assert "dladdr(symbol, &info)" in bridge
-    assert 'kLibraryName[] = "libacl_rt.so"' in bridge
+        assert transfer_call in transfer
+    assert '#include "acl/acl_rt.h"' not in bridge
+    assert '#include <dlfcn.h>' not in bridge
+    assert "dlsym(RTLD_DEFAULT, name)" in transfer
+    assert "dladdr(symbol, &info)" in transfer
+    assert 'kLibraryName[] = "libacl_rt.so"' in transfer
     create_path = bridge.split(
         'extern "C" void *resident_epoch_create', maxsplit=1
     )[1].split('extern "C" int32_t resident_epoch_execute', maxsplit=1)[0]
-    device_ipc_path = bridge.split(
-        "bool PrepareDeviceIpcPayload", maxsplit=1
-    )[1].split("ge::Tensor MakeTensor", maxsplit=1)[0]
     assert "ResolveAclRuntime" not in create_path
-    assert "ResolveAclRuntime(engine->acl)" in device_ipc_path
+    assert "ResolveAclRuntime(g_state->acl)" in transfer
+    assert "$<TARGET_OBJECTS:resident_device_transfer_object>" in cmake
     for target in ("resident_epoch_bridge", "resident_epoch_server"):
         link_block = re.search(
             rf"target_link_libraries\({target} PRIVATE(.*?)\)",
