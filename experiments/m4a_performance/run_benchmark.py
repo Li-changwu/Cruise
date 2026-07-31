@@ -26,6 +26,7 @@ from experiments.m1_batched_prefill.run_differential import (
     WORKER_QUALNAME,
     configured_kv_cache_bytes,
 )
+from vllm_ascend_resident_epoch.benchmark_metrics import replay_event_journal
 
 
 MODES = ("eager", "graph", "cruise")
@@ -760,6 +761,12 @@ def run_service(
     route_metrics = None
     if route_metrics_path.is_file():
         route_metrics = json.loads(route_metrics_path.read_text(encoding="utf-8"))
+    event_path = route_metrics_path.with_name(
+        f"{route_metrics_path.stem}.events.jsonl"
+    )
+    if event_path.is_file():
+        route_metrics = replay_event_journal(event_path)
+        event_path.unlink()
     result["resident_route_metrics"] = route_metrics
     log_text = server_log.read_text(encoding="utf-8", errors="replace") if server_log.is_file() else ""
     result["mode_identity"] = _mode_identity(mode, log_text, route_metrics)

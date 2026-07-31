@@ -16,6 +16,7 @@ from experiments.m4a_performance.run_benchmark import (
 from experiments.m4a_performance.verify_results import verify
 from vllm_ascend_resident_epoch.benchmark_metrics import (
     ResidentEpochBenchmarkMetrics,
+    replay_event_journal,
 )
 
 
@@ -174,6 +175,11 @@ def test_benchmark_metrics_are_disabled_by_default_and_flush_once(tmp_path):
     assert payload["counters"]["host_schedule_calls"] == 1
     assert payload["epoch_steps"] == {"2": 1}
     assert payload["rejections"] == {"host-prefill-in-progress": 1}
+
+    replayed = replay_event_journal(output.with_name("metrics.events.jsonl"))
+    assert replayed["counters"] == payload["counters"]
+    assert replayed["epoch_steps"] == payload["epoch_steps"]
+    assert replayed["rejections"] == payload["rejections"]
 
 
 def _result(mode, label, manifest, *, tpot_ms, cpu_ms_per_token):
