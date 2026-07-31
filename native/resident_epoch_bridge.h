@@ -5,18 +5,29 @@
 #include "resident_epoch_protocol.h"
 
 #pragma pack(push, 1)
+struct ResidentEpochIpcSegment {
+  uint64_t source_offset;
+  uint64_t source_allocation_bytes;
+  uint64_t destination_offset;
+  uint64_t copy_bytes;
+  char key[CRUISE_RESIDENT_IPC_KEY_BYTES];
+};
+
 struct ResidentEpochIpcMetadata {
   uint64_t magic;
   uint32_t version;
   uint32_t import_mask;
-  uint64_t source_bytes;
+  uint32_t segment_count;
+  uint32_t reserved;
   int32_t row_generations[4];
   int32_t block_ids[4];
-  uint64_t source_offsets[56];
-  char keys[56][64];
+  ResidentEpochIpcSegment segments[CRUISE_RESIDENT_IPC_MAX_SEGMENTS];
 };
 #pragma pack(pop)
 
+static_assert(sizeof(ResidentEpochIpcSegment) ==
+                  CRUISE_RESIDENT_IPC_SEGMENT_BYTES,
+              "resident Device IPC segment ABI changed");
 static_assert(sizeof(ResidentEpochIpcMetadata) ==
                   CRUISE_RESIDENT_IPC_METADATA_BYTES,
               "resident Device IPC metadata ABI changed");

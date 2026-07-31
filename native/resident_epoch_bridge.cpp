@@ -24,7 +24,6 @@ namespace {
 constexpr int32_t kBatchSize = 4;
 constexpr int32_t kMaxEpochSteps = 8;
 constexpr int32_t kLogicalCapacity = 8;
-constexpr int32_t kPhysicalBlocks = 8;
 constexpr int32_t kBlocksPerRequest = 2;
 constexpr int32_t kBlockSize = 128;
 constexpr int32_t kVocabSize = 152064;
@@ -158,13 +157,18 @@ bool ValidateIpcMetadata(const ResidentEpochIpcMetadata *metadata,
   if (metadata == nullptr || input_row_generations == nullptr ||
       metadata->magic != CRUISE_RESIDENT_IPC_METADATA_MAGIC ||
       metadata->version != CRUISE_RESIDENT_IPC_METADATA_VERSION ||
-      metadata->source_bytes == 0 || metadata->import_mask == 0 ||
-      metadata->import_mask >= (1U << kBatchSize)) {
+      metadata->import_mask == 0 ||
+      metadata->import_mask >= (1U << kBatchSize) ||
+      metadata->segment_count == 0 ||
+      metadata->segment_count > CRUISE_RESIDENT_IPC_MAX_SEGMENTS ||
+      metadata->reserved != 0) {
     return false;
   }
+  uint64_t selected_rows = 0;
   for (int32_t row = 0; row < kBatchSize; ++row) {
     const bool selected = (metadata->import_mask & (1U << row)) != 0;
     if (selected) {
+      ++selected_rows;
       if (metadata->row_generations[row] <= 0 ||
           metadata->row_generations[row] != input_row_generations[row] ||
           metadata->block_ids[row] < 0) {
@@ -175,19 +179,44 @@ bool ValidateIpcMetadata(const ResidentEpochIpcMetadata *metadata,
       return false;
     }
   }
-  for (int32_t index = 0; index < CRUISE_RESIDENT_IPC_KEY_COUNT; ++index) {
-    for (int32_t row = 0; row < kBatchSize; ++row) {
-      if ((metadata->import_mask & (1U << row)) == 0) continue;
-      const uint64_t block_end =
-          (static_cast<uint64_t>(metadata->block_ids[row]) + 1U) *
-          CRUISE_RESIDENT_KV_BLOCK_BYTES;
-      if (metadata->source_offsets[index] > metadata->source_bytes ||
-          block_end >
-              metadata->source_bytes - metadata->source_offsets[index]) {
-        return false;
-      }
+  const uint64_t payload_bytes = CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES;
+  const uint64_t cache_bytes = payload_bytes / 2;
+  const uint64_t block_bytes = CRUISE_RESIDENT_KV_BLOCK_BYTES;
+  uint64_t total_bytes = 0;
+  std::vector<std::pair<uint64_t, uint64_t>> coverage;
+  std::map<uint64_t, std::vector<std::pair<uint64_t, uint64_t>>>
+      block_coverage;
+  coverage.reserve(metadata->segment_count);
+  for (uint32_t index = 0; index < metadata->segment_count; ++index) {
+    const auto &segment = metadata->segments[index];
+    if (segment.source_allocation_bytes == 0 || segment.copy_bytes == 0 ||
+        segment.source_offset > segment.source_allocation_bytes ||
+        segment.copy_bytes >
+            segment.source_allocation_bytes - segment.source_offset ||
+        segment.destination_offset > payload_bytes ||
+        segment.copy_bytes > payload_bytes - segment.destination_offset) {
+      return false;
     }
-    const char *key = metadata->keys[index];
+    const uint64_t cache_offset = segment.destination_offset % cache_bytes;
+    const uint64_t layer_row = cache_offset / block_bytes;
+    const uint64_t row = layer_row % kBatchSize;
+    const uint64_t block_offset = cache_offset % block_bytes;
+    if ((metadata->import_mask & (1U << row)) == 0 ||
+        segment.copy_bytes > block_bytes - block_offset) {
+      return false;
+    }
+    if (total_bytes > payload_bytes - segment.copy_bytes) return false;
+    total_bytes += segment.copy_bytes;
+    coverage.emplace_back(segment.destination_offset,
+                          segment.destination_offset + segment.copy_bytes);
+    const uint64_t block_start = segment.destination_offset - block_offset;
+    auto &block_spans = block_coverage[block_start];
+    if (block_spans.size() >= CRUISE_RESIDENT_IPC_MAX_SEGMENTS_PER_BLOCK) {
+      return false;
+    }
+    block_spans.emplace_back(segment.destination_offset,
+                             segment.destination_offset + segment.copy_bytes);
+    const char *key = segment.key;
     const size_t key_length = strnlen(key, CRUISE_RESIDENT_IPC_KEY_BYTES);
     if (key_length == 0) return false;
     if (key_length < CRUISE_RESIDENT_IPC_KEY_BYTES &&
@@ -195,7 +224,36 @@ bool ValidateIpcMetadata(const ResidentEpochIpcMetadata *metadata,
                     key + CRUISE_RESIDENT_IPC_KEY_BYTES,
                     [](char value) { return value != '\0'; })) return false;
   }
-  return true;
+  for (uint32_t index = metadata->segment_count;
+       index < CRUISE_RESIDENT_IPC_MAX_SEGMENTS; ++index) {
+    const auto &segment = metadata->segments[index];
+    if (segment.source_offset != 0 || segment.source_allocation_bytes != 0 ||
+        segment.destination_offset != 0 || segment.copy_bytes != 0 ||
+        std::any_of(segment.key,
+                    segment.key + CRUISE_RESIDENT_IPC_KEY_BYTES,
+                    [](char value) { return value != '\0'; })) {
+      return false;
+    }
+  }
+  std::sort(coverage.begin(), coverage.end());
+  for (size_t index = 1; index < coverage.size(); ++index) {
+    if (coverage[index].first < coverage[index - 1].second) return false;
+  }
+  if (block_coverage.size() !=
+      selected_rows * CRUISE_RESIDENT_IPC_KEY_COUNT) {
+    return false;
+  }
+  for (auto &[block_start, spans] : block_coverage) {
+    std::sort(spans.begin(), spans.end());
+    uint64_t cursor = block_start;
+    for (const auto &[start, end] : spans) {
+      if (start != cursor) return false;
+      cursor = end;
+    }
+    if (cursor != block_start + block_bytes) return false;
+  }
+  return total_bytes == selected_rows * CRUISE_RESIDENT_IPC_KEY_COUNT *
+                            CRUISE_RESIDENT_KV_BLOCK_BYTES;
 }
 
 void *ImportIpcMemory(ResidentEpochEngine *engine, const char *key) {
@@ -221,10 +279,6 @@ bool PrepareDeviceIpcPayload(ResidentEpochEngine *engine,
   if (engine == nullptr || metadata == nullptr || payload_out == nullptr) {
     return false;
   }
-  if (metadata->source_bytes <
-      static_cast<uint64_t>(kPhysicalBlocks) * CRUISE_RESIDENT_KV_BLOCK_BYTES) {
-    return false;
-  }
   if (engine->device_import_payload == nullptr) {
     if (aclrtMalloc(&engine->device_import_payload,
                     CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES,
@@ -237,35 +291,21 @@ bool PrepareDeviceIpcPayload(ResidentEpochEngine *engine,
                   CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES) != ACL_SUCCESS) {
     return false;
   }
-  const size_t cache_bytes = CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES / 2;
-  const size_t block_bytes = CRUISE_RESIDENT_KV_BLOCK_BYTES;
   auto *destination = static_cast<uint8_t *>(engine->device_import_payload);
-  for (int32_t layer = 0; layer < 28; ++layer) {
-    const char *key_key = metadata->keys[layer * 2];
-    const char *value_key = metadata->keys[layer * 2 + 1];
-    void *key_source = ImportIpcMemory(engine, key_key);
-    void *value_source = ImportIpcMemory(engine, value_key);
-    if (key_source == nullptr || value_source == nullptr) return false;
-    for (int32_t row = 0; row < kBatchSize; ++row) {
-      if ((metadata->import_mask & (1U << row)) == 0) continue;
-      const size_t source_offset =
-          static_cast<size_t>(metadata->block_ids[row]) * block_bytes;
-      const size_t key_source_offset =
-          static_cast<size_t>(metadata->source_offsets[layer * 2]) +
-          source_offset;
-      const size_t value_source_offset =
-          static_cast<size_t>(metadata->source_offsets[layer * 2 + 1]) +
-          source_offset;
-      const size_t row_offset =
-          (static_cast<size_t>(layer) * kBatchSize + row) * block_bytes;
-      if (aclrtMemcpy(destination + row_offset, block_bytes,
-                      static_cast<uint8_t *>(key_source) + key_source_offset,
-                      block_bytes, ACL_MEMCPY_DEVICE_TO_DEVICE) != ACL_SUCCESS ||
-          aclrtMemcpy(destination + cache_bytes + row_offset, block_bytes,
-                      static_cast<uint8_t *>(value_source) + value_source_offset,
-                      block_bytes, ACL_MEMCPY_DEVICE_TO_DEVICE) != ACL_SUCCESS) {
-        return false;
-      }
+  for (uint32_t index = 0; index < metadata->segment_count; ++index) {
+    const auto &segment = metadata->segments[index];
+    void *source = ImportIpcMemory(engine, segment.key);
+    if (source == nullptr) return false;
+    const size_t destination_offset =
+        static_cast<size_t>(segment.destination_offset);
+    const size_t source_offset = static_cast<size_t>(segment.source_offset);
+    const size_t copy_bytes = static_cast<size_t>(segment.copy_bytes);
+    if (aclrtMemcpy(
+            destination + destination_offset,
+            CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES - destination_offset,
+            static_cast<uint8_t *>(source) + source_offset, copy_bytes,
+            ACL_MEMCPY_DEVICE_TO_DEVICE) != ACL_SUCCESS) {
+      return false;
     }
   }
   *payload_out = engine->device_import_payload;

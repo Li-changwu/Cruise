@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 import os
 from pathlib import Path
@@ -16,7 +16,7 @@ TRANSFER_MAGIC = 0x4352554953454B56  # "CRUISEKV"
 TRANSFER_VERSION = 1
 TRANSFER_HEADER_BYTES = 80
 IPC_METADATA_MAGIC = 0x4352554953454950  # "CRUISEIP"
-IPC_METADATA_VERSION = 2
+IPC_METADATA_VERSION = 3
 IPC_KEY_BYTES = 64
 IPC_EXPORT_BUFFER_BYTES = 128
 LAYERS = 28
@@ -30,8 +30,13 @@ ROW_BYTES = 2 * BLOCK_SIZE * NUM_KV_HEADS * HEAD_SIZE * ELEMENT_BYTES
 PAYLOAD_BYTES = LAYERS * GRAPH_BATCH_SIZE * ROW_BYTES
 HEADER = struct.Struct("<QIIQQI4i7I")
 IPC_KEY_COUNT = LAYERS * 2
-IPC_METADATA_HEADER = struct.Struct(f"<QIIQ4i4i{IPC_KEY_COUNT}Q")
-IPC_METADATA_BYTES = IPC_METADATA_HEADER.size + IPC_KEY_COUNT * IPC_KEY_BYTES
+IPC_MAX_SEGMENTS_PER_BLOCK = 2
+IPC_MAX_SEGMENTS = (
+    IPC_KEY_COUNT * GRAPH_BATCH_SIZE * IPC_MAX_SEGMENTS_PER_BLOCK
+)
+IPC_METADATA_HEADER = struct.Struct("<QIIII4i4i")
+IPC_SEGMENT = struct.Struct(f"<QQQQ{IPC_KEY_BYTES}s")
+IPC_METADATA_BYTES = IPC_METADATA_HEADER.size + IPC_MAX_SEGMENTS * IPC_SEGMENT.size
 
 
 @dataclass(frozen=True)
@@ -65,6 +70,43 @@ class ResidentKVSnapshot:
 
 
 @dataclass(frozen=True)
+class DeviceKVSegment:
+    source_offset: int
+    source_allocation_bytes: int
+    destination_offset: int
+    copy_bytes: int
+    key: str
+
+    def validate(self) -> None:
+        if (
+            self.source_offset < 0
+            or self.source_allocation_bytes <= 0
+            or self.copy_bytes <= 0
+            or self.source_offset + self.copy_bytes
+            > self.source_allocation_bytes
+        ):
+            raise ValueError("device KV source segment is outside its allocation")
+        if (
+            self.destination_offset < 0
+            or self.destination_offset + self.copy_bytes > PAYLOAD_BYTES
+        ):
+            raise ValueError("device KV destination segment is outside the payload")
+        encoded = self.key.encode("ascii")
+        if not encoded or len(encoded) > IPC_KEY_BYTES:
+            raise ValueError("device KV IPC key does not fit the wire contract")
+
+    def wire_bytes(self) -> bytes:
+        self.validate()
+        return IPC_SEGMENT.pack(
+            self.source_offset,
+            self.source_allocation_bytes,
+            self.destination_offset,
+            self.copy_bytes,
+            self.key.encode("ascii").ljust(IPC_KEY_BYTES, b"\0"),
+        )
+
+
+@dataclass(frozen=True)
 class DeviceKVTransfer:
     """Metadata for importing stock NPU KV blocks without a Host payload."""
 
@@ -72,9 +114,7 @@ class DeviceKVTransfer:
     import_mask: int
     row_generations: tuple[int, ...]
     block_ids: tuple[int, ...]
-    source_bytes: int
-    source_offsets: tuple[int, ...]
-    keys: tuple[str, ...]
+    segments: tuple[DeviceKVSegment, ...]
 
     def validate(self) -> None:
         if self.transfer_id <= 0:
@@ -85,15 +125,6 @@ class DeviceKVTransfer:
             raise ValueError("device KV transfer block vector must have four rows")
         if self.import_mask <= 0 or self.import_mask >= 1 << GRAPH_BATCH_SIZE:
             raise ValueError("device KV transfer mask must select at least one row")
-        if self.source_bytes <= 0:
-            raise ValueError("device KV transfer source size must be positive")
-        if len(self.source_offsets) != IPC_KEY_COUNT:
-            raise ValueError(
-                f"device KV transfer must carry {IPC_KEY_COUNT} source offsets"
-            )
-        if len(self.keys) != IPC_KEY_COUNT:
-            raise ValueError(f"device KV transfer must carry {IPC_KEY_COUNT} keys")
-        block_bytes = BLOCK_ELEMENTS * ELEMENT_BYTES
         for row in range(GRAPH_BATCH_SIZE):
             selected = bool(self.import_mask & (1 << row))
             generation = self.row_generations[row]
@@ -101,21 +132,54 @@ class DeviceKVTransfer:
             if selected:
                 if generation <= 0 or block_id < 0:
                     raise ValueError("selected device KV rows need generation and block")
-                for source_offset in self.source_offsets:
-                    if (
-                        source_offset < 0
-                        or source_offset + (block_id + 1) * block_bytes
-                        > self.source_bytes
-                    ):
-                        raise ValueError(
-                            "device KV block is outside its exported allocation"
-                        )
             elif generation != 0 or block_id != 0:
                 raise ValueError("unselected device KV rows must be zeroed")
-        for key in self.keys:
-            encoded = key.encode("ascii")
-            if not encoded or len(encoded) > IPC_KEY_BYTES:
-                raise ValueError("device KV IPC key does not fit the wire contract")
+        if not self.segments or len(self.segments) > IPC_MAX_SEGMENTS:
+            raise ValueError("device KV transfer segment count is outside the ABI")
+        intervals: list[tuple[int, int]] = []
+        block_intervals: dict[int, list[tuple[int, int]]] = {}
+        total_bytes = 0
+        block_bytes = BLOCK_ELEMENTS * ELEMENT_BYTES
+        cache_bytes = PAYLOAD_BYTES // 2
+        for segment in self.segments:
+            segment.validate()
+            cache_offset = segment.destination_offset % cache_bytes
+            layer_row = cache_offset // block_bytes
+            row = layer_row % GRAPH_BATCH_SIZE
+            block_offset = cache_offset % block_bytes
+            if not self.import_mask & (1 << row):
+                raise ValueError("device KV segment targets an unselected row")
+            if block_offset + segment.copy_bytes > block_bytes:
+                raise ValueError("device KV segment crosses a destination block")
+            start = segment.destination_offset
+            end = start + segment.copy_bytes
+            intervals.append((start, end))
+            block_start = segment.destination_offset - block_offset
+            block_intervals.setdefault(block_start, []).append((start, end))
+            total_bytes += segment.copy_bytes
+        intervals.sort()
+        if any(
+            current[0] < previous[1]
+            for previous, current in zip(intervals, intervals[1:])
+        ):
+            raise ValueError("device KV destination segments overlap")
+        selected_rows = self.import_mask.bit_count()
+        expected_blocks = selected_rows * IPC_KEY_COUNT
+        if len(block_intervals) != expected_blocks:
+            raise ValueError("device KV segments do not cover every selected block")
+        for block_start, spans in block_intervals.items():
+            if len(spans) > IPC_MAX_SEGMENTS_PER_BLOCK:
+                raise ValueError("device KV block has too many allocation segments")
+            spans.sort()
+            cursor = block_start
+            for start, end in spans:
+                if start != cursor:
+                    raise ValueError("device KV block segments have a coverage gap")
+                cursor = end
+            if cursor != block_start + block_bytes:
+                raise ValueError("device KV block coverage is incomplete")
+        if total_bytes != selected_rows * IPC_KEY_COUNT * block_bytes:
+            raise ValueError("device KV segments do not cover every selected block")
 
     def wire_bytes(self) -> bytes:
         self.validate()
@@ -123,15 +187,13 @@ class DeviceKVTransfer:
             IPC_METADATA_MAGIC,
             IPC_METADATA_VERSION,
             self.import_mask,
-            self.source_bytes,
+            len(self.segments),
+            0,
             *self.row_generations,
             *self.block_ids,
-            *self.source_offsets,
         )
-        keys = b"".join(
-            key.encode("ascii").ljust(IPC_KEY_BYTES, b"\0") for key in self.keys
-        )
-        payload = header + keys
+        segment_bytes = b"".join(segment.wire_bytes() for segment in self.segments)
+        payload = (header + segment_bytes).ljust(IPC_METADATA_BYTES, b"\0")
         if len(payload) != IPC_METADATA_BYTES:
             raise AssertionError("device KV IPC metadata ABI size changed")
         return payload
@@ -140,20 +202,42 @@ class DeviceKVTransfer:
 @dataclass
 class _DeviceKVExportTable:
     signature: tuple[tuple[int, int, int, int, int], ...]
-    source_bytes: int
-    source_offsets: tuple[int, ...]
-    keys: tuple[str, ...]
+    view_bytes: int
+    exports: dict[tuple[int, int], str] = field(default_factory=dict)
+
+    def export_range(self, allocation_ptr: int, allocation_bytes: int) -> str:
+        allocation = (allocation_ptr, allocation_bytes)
+        existing = self.exports.get(allocation)
+        if existing is not None:
+            return existing
+        import acl
+
+        key, status = acl.rt.ipc_mem_get_export_key(
+            allocation_ptr,
+            allocation_bytes,
+            IPC_EXPORT_BUFFER_BYTES,
+            1,
+        )
+        if status != 0 or not isinstance(key, str) or not key:
+            self.close()
+            raise RuntimeError(
+                "failed to export stock KV allocation range, "
+                f"status={status}, allocation_bytes={allocation_bytes}"
+            )
+        self.exports[allocation] = key
+        return key
 
     def close(self) -> None:
         try:
             import acl
         except Exception:
             return
-        for key in dict.fromkeys(self.keys):
+        for key in dict.fromkeys(self.exports.values()):
             try:
                 acl.rt.ipc_mem_close(key)
             except Exception:
                 pass
+        self.exports.clear()
 
 
 def kv_payload_checksum(payload: bytes, import_mask: int) -> int:
@@ -238,35 +322,25 @@ def _device_tensor_signature(tensor: Any) -> tuple[int, int, int, int, int]:
     storage = tensor.untyped_storage()
     storage_ptr = int(storage.data_ptr())
     storage_bytes = int(storage.nbytes())
-    allocation_ptr, allocation_bytes = _device_allocation_range(data_ptr)
-    source_offset = data_ptr - allocation_ptr
     if (
         data_ptr <= 0
         or view_bytes <= 0
         or storage_ptr <= 0
         or storage_bytes <= 0
-        or allocation_ptr <= 0
-        or allocation_bytes <= 0
-        or source_offset < 0
-        or source_offset + view_bytes > allocation_bytes
     ):
         raise RuntimeError(
-            "stock KV cache entry has no exportable device allocation: "
+            "stock KV cache entry has no exportable device storage: "
             f"data_ptr={data_ptr}, view_bytes={view_bytes}, "
-            f"storage_ptr={storage_ptr}, storage_bytes={storage_bytes}, "
-            f"allocation_ptr={allocation_ptr}, "
-            f"allocation_bytes={allocation_bytes}, source_offset={source_offset}"
+            f"storage_ptr={storage_ptr}, storage_bytes={storage_bytes}"
         )
     storage_offset_bytes = int(tensor.storage_offset()) * int(tensor.element_size())
     if data_ptr - storage_ptr != storage_offset_bytes:
         raise RuntimeError("stock KV cache storage offset does not match its device pointer")
-    return data_ptr, view_bytes, allocation_ptr, allocation_bytes, source_offset
+    return data_ptr, view_bytes, storage_ptr, storage_bytes, storage_offset_bytes
 
 
 def _get_device_kv_exports(worker: Any, kv_caches: list[Any]) -> _DeviceKVExportTable:
     """Export each persistent stock KV allocation once per worker lifetime."""
-
-    import acl
 
     signature: list[tuple[int, int, int, int, int]] = []
     for layer_cache in kv_caches:
@@ -280,40 +354,14 @@ def _get_device_kv_exports(worker: Any, kv_caches: list[Any]) -> _DeviceKVExport
     view_bytes = signature[0][1]
     if any(entry[1] != view_bytes for entry in signature):
         raise RuntimeError("key/value KV allocations do not have a common size")
-    source_bytes = signature[0][3]
-    if any(entry[3] != source_bytes for entry in signature):
-        raise RuntimeError("key/value KV storages do not have a common size")
     current = getattr(worker, "_resident_epoch_device_kv_exports", None)
     if isinstance(current, _DeviceKVExportTable) and current.signature == tuple(signature):
         return current
     if isinstance(current, _DeviceKVExportTable):
         current.close()
-
-    exported_by_storage: dict[int, str] = {}
-    keys: list[str] = []
-    for _, _, storage_ptr, storage_bytes, _ in signature:
-        key = exported_by_storage.get(storage_ptr)
-        if key is None:
-            key, status = acl.rt.ipc_mem_get_export_key(
-                storage_ptr, storage_bytes, IPC_EXPORT_BUFFER_BYTES, 1
-            )
-            if status != 0 or not isinstance(key, str) or not key:
-                for exported in exported_by_storage.values():
-                    try:
-                        acl.rt.ipc_mem_close(exported)
-                    except Exception:
-                        pass
-                raise RuntimeError(
-                    "failed to export stock KV allocation, "
-                    f"status={status}, storage_bytes={storage_bytes}"
-                )
-            exported_by_storage[storage_ptr] = key
-        keys.append(key)
     table = _DeviceKVExportTable(
         signature=tuple(signature),
-        source_bytes=source_bytes,
-        source_offsets=tuple(entry[4] for entry in signature),
-        keys=tuple(keys),
+        view_bytes=view_bytes,
     )
     worker._resident_epoch_device_kv_exports = table
     return table
@@ -339,17 +387,67 @@ def capture_kv_device_transfer(worker: Any, plan: Any) -> DeviceKVTransfer:
         block_ids[request.row] = int(request.scheduler_block_ids[0])
         generations[request.row] = int(request.generation)
         import_mask |= 1 << request.row
-    transfer = DeviceKVTransfer(
-        transfer_id=secrets.randbits(63) or 1,
-        import_mask=import_mask,
-        row_generations=tuple(generations),
-        block_ids=tuple(block_ids),
-        source_bytes=table.source_bytes,
-        source_offsets=table.source_offsets,
-        keys=table.keys,
-    )
-    transfer.validate()
-    return transfer
+    block_bytes = BLOCK_ELEMENTS * ELEMENT_BYTES
+    cache_bytes = PAYLOAD_BYTES // 2
+    segments: list[DeviceKVSegment] = []
+    tensors = [tensor for layer_cache in kv_caches for tensor in layer_cache[:2]]
+    try:
+        for tensor_index, tensor in enumerate(tensors):
+            layer = tensor_index // 2
+            cache_base = 0 if tensor_index % 2 == 0 else cache_bytes
+            tensor_ptr = int(tensor.data_ptr())
+            for request in requests:
+                block_id = int(request.scheduler_block_ids[0])
+                block_start = tensor_ptr + block_id * block_bytes
+                block_end = block_start + block_bytes
+                if block_id < 0 or block_end > tensor_ptr + table.view_bytes:
+                    raise ValueError("scheduler block is outside the stock KV view")
+                destination_start = cache_base + (
+                    layer * GRAPH_BATCH_SIZE + request.row
+                ) * block_bytes
+                cursor = block_start
+                copied = 0
+                segment_count = 0
+                while cursor < block_end:
+                    allocation_ptr, allocation_bytes = _device_allocation_range(cursor)
+                    allocation_end = allocation_ptr + allocation_bytes
+                    if cursor < allocation_ptr or cursor >= allocation_end:
+                        raise RuntimeError(
+                            "CANN allocation range does not contain the KV cursor"
+                        )
+                    copy_bytes = min(block_end, allocation_end) - cursor
+                    if copy_bytes <= 0:
+                        raise RuntimeError("CANN allocation range made no KV progress")
+                    segment_count += 1
+                    if segment_count > IPC_MAX_SEGMENTS_PER_BLOCK:
+                        raise RuntimeError(
+                            "one KV block spans more CANN allocations than the ABI allows"
+                        )
+                    key = table.export_range(allocation_ptr, allocation_bytes)
+                    segments.append(
+                        DeviceKVSegment(
+                            source_offset=cursor - allocation_ptr,
+                            source_allocation_bytes=allocation_bytes,
+                            destination_offset=destination_start + copied,
+                            copy_bytes=copy_bytes,
+                            key=key,
+                        )
+                    )
+                    cursor += copy_bytes
+                    copied += copy_bytes
+        transfer = DeviceKVTransfer(
+            transfer_id=secrets.randbits(63) or 1,
+            import_mask=import_mask,
+            row_generations=tuple(generations),
+            block_ids=tuple(block_ids),
+            segments=tuple(segments),
+        )
+        transfer.validate()
+        return transfer
+    except Exception:
+        table.close()
+        worker._resident_epoch_device_kv_exports = None
+        raise
 
 
 def release_kv_device_exports(worker: Any) -> None:
