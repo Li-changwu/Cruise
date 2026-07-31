@@ -11,6 +11,7 @@ from vllm_ascend_resident_epoch.contract import (
     ResidentEpochPlan,
     ResidentEpochRequest,
 )
+import vllm_ascend_resident_epoch.kv_transfer as kv_transfer_module
 from vllm_ascend_resident_epoch.kv_transfer import (
     BLOCK_ELEMENTS,
     ELEMENT_BYTES,
@@ -54,6 +55,7 @@ def test_device_kv_transfer_wire_contract_contains_only_metadata():
 def test_device_kv_export_uses_storage_base_offsets_and_api_buffer(monkeypatch):
     calls = []
     closes = []
+    allocation_ranges = {}
 
     class FakeStorage:
         def __init__(self, pointer, size):
@@ -101,11 +103,21 @@ def test_device_kv_export_uses_storage_base_offsets_and_api_buffer(monkeypatch):
             return 0
 
     monkeypatch.setitem(sys.modules, "acl", SimpleNamespace(rt=FakeRuntime()))
+    monkeypatch.setattr(
+        kv_transfer_module,
+        "_device_allocation_range",
+        lambda pointer: allocation_ranges[pointer],
+    )
     kv_caches = []
     for layer in range(28):
         view_bytes = 8 * BLOCK_ELEMENTS * ELEMENT_BYTES
         storage = FakeStorage(0x100000 + layer * 0x400000, 2 * view_bytes)
-        kv_caches.append((FakeTensor(storage, 0), FakeTensor(storage, view_bytes)))
+        key = FakeTensor(storage, 0)
+        value = FakeTensor(storage, view_bytes)
+        allocation_bytes = storage.size + 2 * BLOCK_ELEMENTS * ELEMENT_BYTES
+        allocation_ranges[key.data_ptr()] = (storage.pointer, allocation_bytes)
+        allocation_ranges[value.data_ptr()] = (storage.pointer, allocation_bytes)
+        kv_caches.append((key, value))
     worker = SimpleNamespace(model_runner=SimpleNamespace(kv_caches=kv_caches))
     plan = ResidentEpochPlan(
         version=CONTRACT_VERSION,
@@ -135,7 +147,7 @@ def test_device_kv_export_uses_storage_base_offsets_and_api_buffer(monkeypatch):
     assert len(calls) == IPC_KEY_COUNT // 2
     assert all(call[2:] == (IPC_EXPORT_BUFFER_BYTES, 1) for call in calls)
     assert all(len(key) == IPC_KEY_BYTES for key in transfer.keys)
-    assert transfer.source_bytes == 2 * view_bytes
+    assert transfer.source_bytes == allocation_bytes
     assert transfer.source_offsets == (0, view_bytes) * (IPC_KEY_COUNT // 2)
     assert all(
         transfer.keys[index] == transfer.keys[index + 1]

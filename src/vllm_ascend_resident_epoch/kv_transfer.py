@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 import os
 from pathlib import Path
 import secrets
@@ -186,6 +187,49 @@ def _tensor_bytes(tensor: Any) -> bytes:
     return cpu.view(torch.uint16).numpy().tobytes()
 
 
+@lru_cache(maxsize=1)
+def _acl_address_range_api() -> tuple[Any, Any]:
+    import ctypes
+
+    try:
+        library = ctypes.CDLL("libascendcl.so")
+        function = library.aclrtMemGetAddressRange
+    except (OSError, AttributeError) as exc:
+        raise RuntimeError(
+            "CANN does not provide the required aclrtMemGetAddressRange API"
+        ) from exc
+    function.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_size_t),
+    ]
+    function.restype = ctypes.c_int
+    return library, function
+
+
+def _device_allocation_range(data_ptr: int) -> tuple[int, int]:
+    import ctypes
+
+    _, function = _acl_address_range_api()
+    base = ctypes.c_void_p()
+    size = ctypes.c_size_t()
+    status = int(
+        function(
+            ctypes.c_void_p(data_ptr),
+            ctypes.byref(base),
+            ctypes.byref(size),
+        )
+    )
+    allocation_ptr = int(base.value or 0)
+    allocation_bytes = int(size.value)
+    if status != 0 or allocation_ptr <= 0 or allocation_bytes <= 0:
+        raise RuntimeError(
+            "failed to resolve the CANN allocation containing stock KV, "
+            f"status={status}"
+        )
+    return allocation_ptr, allocation_bytes
+
+
 def _device_tensor_signature(tensor: Any) -> tuple[int, int, int, int, int]:
     if not getattr(tensor, "is_contiguous", lambda: False)():
         raise RuntimeError("stock KV cache entries must be contiguous for IPC export")
@@ -194,20 +238,25 @@ def _device_tensor_signature(tensor: Any) -> tuple[int, int, int, int, int]:
     storage = tensor.untyped_storage()
     storage_ptr = int(storage.data_ptr())
     storage_bytes = int(storage.nbytes())
-    source_offset = data_ptr - storage_ptr
+    allocation_ptr, allocation_bytes = _device_allocation_range(data_ptr)
+    source_offset = data_ptr - allocation_ptr
     if (
         data_ptr <= 0
         or view_bytes <= 0
         or storage_ptr <= 0
         or storage_bytes <= 0
+        or allocation_ptr <= 0
+        or allocation_bytes <= 0
         or source_offset < 0
-        or source_offset + view_bytes > storage_bytes
+        or source_offset + view_bytes > allocation_bytes
+        or storage_ptr < allocation_ptr
+        or storage_ptr + storage_bytes > allocation_ptr + allocation_bytes
     ):
         raise RuntimeError("stock KV cache entry has no exportable device allocation")
     storage_offset_bytes = int(tensor.storage_offset()) * int(tensor.element_size())
-    if source_offset != storage_offset_bytes:
+    if data_ptr - storage_ptr != storage_offset_bytes:
         raise RuntimeError("stock KV cache storage offset does not match its device pointer")
-    return data_ptr, view_bytes, storage_ptr, storage_bytes, source_offset
+    return data_ptr, view_bytes, allocation_ptr, allocation_bytes, source_offset
 
 
 def _get_device_kv_exports(worker: Any, kv_caches: list[Any]) -> _DeviceKVExportTable:
