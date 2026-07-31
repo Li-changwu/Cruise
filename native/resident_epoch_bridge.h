@@ -12,6 +12,7 @@ struct ResidentEpochIpcMetadata {
   uint64_t source_bytes;
   int32_t row_generations[4];
   int32_t block_ids[4];
+  uint64_t source_offsets[56];
   char keys[56][64];
 };
 #pragma pack(pop)

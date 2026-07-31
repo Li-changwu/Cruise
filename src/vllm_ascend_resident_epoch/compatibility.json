@@ -9,7 +9,7 @@
   "contracts": {
     "python_contract": 3,
     "runtime_config": 1,
-    "sidecar_protocol": 6,
+    "sidecar_protocol": 7,
     "sidecar_request_bytes": 136,
     "sidecar_response_bytes": 352,
     "host_udf_abi": 2,

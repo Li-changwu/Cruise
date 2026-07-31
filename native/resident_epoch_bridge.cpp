@@ -176,6 +176,17 @@ bool ValidateIpcMetadata(const ResidentEpochIpcMetadata *metadata,
     }
   }
   for (int32_t index = 0; index < CRUISE_RESIDENT_IPC_KEY_COUNT; ++index) {
+    for (int32_t row = 0; row < kBatchSize; ++row) {
+      if ((metadata->import_mask & (1U << row)) == 0) continue;
+      const uint64_t block_end =
+          (static_cast<uint64_t>(metadata->block_ids[row]) + 1U) *
+          CRUISE_RESIDENT_KV_BLOCK_BYTES;
+      if (metadata->source_offsets[index] > metadata->source_bytes ||
+          block_end >
+              metadata->source_bytes - metadata->source_offsets[index]) {
+        return false;
+      }
+    }
     const char *key = metadata->keys[index];
     const size_t key_length = strnlen(key, CRUISE_RESIDENT_IPC_KEY_BYTES);
     if (key_length == 0) return false;
@@ -239,13 +250,19 @@ bool PrepareDeviceIpcPayload(ResidentEpochEngine *engine,
       if ((metadata->import_mask & (1U << row)) == 0) continue;
       const size_t source_offset =
           static_cast<size_t>(metadata->block_ids[row]) * block_bytes;
+      const size_t key_source_offset =
+          static_cast<size_t>(metadata->source_offsets[layer * 2]) +
+          source_offset;
+      const size_t value_source_offset =
+          static_cast<size_t>(metadata->source_offsets[layer * 2 + 1]) +
+          source_offset;
       const size_t row_offset =
           (static_cast<size_t>(layer) * kBatchSize + row) * block_bytes;
       if (aclrtMemcpy(destination + row_offset, block_bytes,
-                      static_cast<uint8_t *>(key_source) + source_offset,
+                      static_cast<uint8_t *>(key_source) + key_source_offset,
                       block_bytes, ACL_MEMCPY_DEVICE_TO_DEVICE) != ACL_SUCCESS ||
           aclrtMemcpy(destination + cache_bytes + row_offset, block_bytes,
-                      static_cast<uint8_t *>(value_source) + source_offset,
+                      static_cast<uint8_t *>(value_source) + value_source_offset,
                       block_bytes, ACL_MEMCPY_DEVICE_TO_DEVICE) != ACL_SUCCESS) {
         return false;
       }

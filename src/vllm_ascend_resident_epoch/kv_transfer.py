@@ -15,7 +15,7 @@ TRANSFER_MAGIC = 0x4352554953454B56  # "CRUISEKV"
 TRANSFER_VERSION = 1
 TRANSFER_HEADER_BYTES = 80
 IPC_METADATA_MAGIC = 0x4352554953454950  # "CRUISEIP"
-IPC_METADATA_VERSION = 1
+IPC_METADATA_VERSION = 2
 IPC_KEY_BYTES = 64
 IPC_EXPORT_BUFFER_BYTES = 128
 LAYERS = 28
@@ -29,7 +29,7 @@ ROW_BYTES = 2 * BLOCK_SIZE * NUM_KV_HEADS * HEAD_SIZE * ELEMENT_BYTES
 PAYLOAD_BYTES = LAYERS * GRAPH_BATCH_SIZE * ROW_BYTES
 HEADER = struct.Struct("<QIIQQI4i7I")
 IPC_KEY_COUNT = LAYERS * 2
-IPC_METADATA_HEADER = struct.Struct("<QIIQ4i4i")
+IPC_METADATA_HEADER = struct.Struct(f"<QIIQ4i4i{IPC_KEY_COUNT}Q")
 IPC_METADATA_BYTES = IPC_METADATA_HEADER.size + IPC_KEY_COUNT * IPC_KEY_BYTES
 
 
@@ -72,6 +72,7 @@ class DeviceKVTransfer:
     row_generations: tuple[int, ...]
     block_ids: tuple[int, ...]
     source_bytes: int
+    source_offsets: tuple[int, ...]
     keys: tuple[str, ...]
 
     def validate(self) -> None:
@@ -85,6 +86,10 @@ class DeviceKVTransfer:
             raise ValueError("device KV transfer mask must select at least one row")
         if self.source_bytes <= 0:
             raise ValueError("device KV transfer source size must be positive")
+        if len(self.source_offsets) != IPC_KEY_COUNT:
+            raise ValueError(
+                f"device KV transfer must carry {IPC_KEY_COUNT} source offsets"
+            )
         if len(self.keys) != IPC_KEY_COUNT:
             raise ValueError(f"device KV transfer must carry {IPC_KEY_COUNT} keys")
         block_bytes = BLOCK_ELEMENTS * ELEMENT_BYTES
@@ -95,8 +100,15 @@ class DeviceKVTransfer:
             if selected:
                 if generation <= 0 or block_id < 0:
                     raise ValueError("selected device KV rows need generation and block")
-                if (block_id + 1) * block_bytes > self.source_bytes:
-                    raise ValueError("device KV block is outside its exported allocation")
+                for source_offset in self.source_offsets:
+                    if (
+                        source_offset < 0
+                        or source_offset + (block_id + 1) * block_bytes
+                        > self.source_bytes
+                    ):
+                        raise ValueError(
+                            "device KV block is outside its exported allocation"
+                        )
             elif generation != 0 or block_id != 0:
                 raise ValueError("unselected device KV rows must be zeroed")
         for key in self.keys:
@@ -113,6 +125,7 @@ class DeviceKVTransfer:
             self.source_bytes,
             *self.row_generations,
             *self.block_ids,
+            *self.source_offsets,
         )
         keys = b"".join(
             key.encode("ascii").ljust(IPC_KEY_BYTES, b"\0") for key in self.keys
@@ -125,8 +138,9 @@ class DeviceKVTransfer:
 
 @dataclass
 class _DeviceKVExportTable:
-    signature: tuple[tuple[int, int], ...]
+    signature: tuple[tuple[int, int, int, int, int], ...]
     source_bytes: int
+    source_offsets: tuple[int, ...]
     keys: tuple[str, ...]
 
     def close(self) -> None:
@@ -134,7 +148,7 @@ class _DeviceKVExportTable:
             import acl
         except Exception:
             return
-        for key in self.keys:
+        for key in dict.fromkeys(self.keys):
             try:
                 acl.rt.ipc_mem_close(key)
             except Exception:
@@ -172,14 +186,28 @@ def _tensor_bytes(tensor: Any) -> bytes:
     return cpu.view(torch.uint16).numpy().tobytes()
 
 
-def _device_tensor_signature(tensor: Any) -> tuple[int, int]:
+def _device_tensor_signature(tensor: Any) -> tuple[int, int, int, int, int]:
     if not getattr(tensor, "is_contiguous", lambda: False)():
         raise RuntimeError("stock KV cache entries must be contiguous for IPC export")
     data_ptr = int(tensor.data_ptr())
-    source_bytes = int(tensor.numel()) * int(tensor.element_size())
-    if data_ptr <= 0 or source_bytes <= 0:
+    view_bytes = int(tensor.numel()) * int(tensor.element_size())
+    storage = tensor.untyped_storage()
+    storage_ptr = int(storage.data_ptr())
+    storage_bytes = int(storage.nbytes())
+    source_offset = data_ptr - storage_ptr
+    if (
+        data_ptr <= 0
+        or view_bytes <= 0
+        or storage_ptr <= 0
+        or storage_bytes <= 0
+        or source_offset < 0
+        or source_offset + view_bytes > storage_bytes
+    ):
         raise RuntimeError("stock KV cache entry has no exportable device allocation")
-    return data_ptr, source_bytes
+    storage_offset_bytes = int(tensor.storage_offset()) * int(tensor.element_size())
+    if source_offset != storage_offset_bytes:
+        raise RuntimeError("stock KV cache storage offset does not match its device pointer")
+    return data_ptr, view_bytes, storage_ptr, storage_bytes, source_offset
 
 
 def _get_device_kv_exports(worker: Any, kv_caches: list[Any]) -> _DeviceKVExportTable:
@@ -187,41 +215,51 @@ def _get_device_kv_exports(worker: Any, kv_caches: list[Any]) -> _DeviceKVExport
 
     import acl
 
-    signature: list[tuple[int, int]] = []
+    signature: list[tuple[int, int, int, int, int]] = []
     for layer_cache in kv_caches:
         if not isinstance(layer_cache, (tuple, list)) or len(layer_cache) < 2:
             raise RuntimeError("stock vLLM KV cache layer is not a K/V pair")
         for tensor in layer_cache[:2]:
             if str(getattr(tensor, "dtype", None)) != "torch.bfloat16":
                 raise ValueError("device KV IPC currently requires bfloat16 caches")
-            pointer, source_bytes = _device_tensor_signature(tensor)
-            signature.append((pointer, source_bytes))
+            signature.append(_device_tensor_signature(tensor))
 
-    source_bytes = signature[0][1]
-    if any(size != source_bytes for _, size in signature):
+    view_bytes = signature[0][1]
+    if any(entry[1] != view_bytes for entry in signature):
         raise RuntimeError("key/value KV allocations do not have a common size")
+    source_bytes = signature[0][3]
+    if any(entry[3] != source_bytes for entry in signature):
+        raise RuntimeError("key/value KV storages do not have a common size")
     current = getattr(worker, "_resident_epoch_device_kv_exports", None)
     if isinstance(current, _DeviceKVExportTable) and current.signature == tuple(signature):
         return current
     if isinstance(current, _DeviceKVExportTable):
         current.close()
 
+    exported_by_storage: dict[int, str] = {}
     keys: list[str] = []
-    for pointer, size in signature:
-        key, status = acl.rt.ipc_mem_get_export_key(
-            pointer, size, IPC_EXPORT_BUFFER_BYTES, 1
-        )
-        if status != 0 or not isinstance(key, str) or not key:
-            for exported in keys:
-                try:
-                    acl.rt.ipc_mem_close(exported)
-                except Exception:
-                    pass
-            raise RuntimeError(f"failed to export stock KV allocation, status={status}")
+    for _, _, storage_ptr, storage_bytes, _ in signature:
+        key = exported_by_storage.get(storage_ptr)
+        if key is None:
+            key, status = acl.rt.ipc_mem_get_export_key(
+                storage_ptr, storage_bytes, IPC_EXPORT_BUFFER_BYTES, 1
+            )
+            if status != 0 or not isinstance(key, str) or not key:
+                for exported in exported_by_storage.values():
+                    try:
+                        acl.rt.ipc_mem_close(exported)
+                    except Exception:
+                        pass
+                raise RuntimeError(
+                    "failed to export stock KV allocation, "
+                    f"status={status}, storage_bytes={storage_bytes}"
+                )
+            exported_by_storage[storage_ptr] = key
         keys.append(key)
     table = _DeviceKVExportTable(
         signature=tuple(signature),
         source_bytes=source_bytes,
+        source_offsets=tuple(entry[4] for entry in signature),
         keys=tuple(keys),
     )
     worker._resident_epoch_device_kv_exports = table
@@ -254,6 +292,7 @@ def capture_kv_device_transfer(worker: Any, plan: Any) -> DeviceKVTransfer:
         row_generations=tuple(generations),
         block_ids=tuple(block_ids),
         source_bytes=table.source_bytes,
+        source_offsets=table.source_offsets,
         keys=table.keys,
     )
     transfer.validate()

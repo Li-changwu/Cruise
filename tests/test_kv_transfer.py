@@ -20,12 +20,14 @@ from vllm_ascend_resident_epoch.kv_transfer import (
     IPC_KEY_BYTES,
     IPC_KEY_COUNT,
     IPC_METADATA_BYTES,
+    IPC_METADATA_HEADER,
     PAYLOAD_BYTES,
     TRANSFER_HEADER_BYTES,
     DeviceKVTransfer,
     capture_kv_device_transfer,
     capture_kv_snapshot,
     kv_payload_checksum,
+    release_kv_device_exports,
 )
 
 
@@ -36,6 +38,8 @@ def test_device_kv_transfer_wire_contract_contains_only_metadata():
         row_generations=(11, 0, 13, 0),
         block_ids=(2, 0, 5, 0),
         source_bytes=8 * BLOCK_ELEMENTS * ELEMENT_BYTES,
+        source_offsets=(0, BLOCK_ELEMENTS * ELEMENT_BYTES)
+        * (IPC_KEY_COUNT // 2),
         keys=tuple(f"{index:064x}" for index in range(IPC_KEY_COUNT)),
     )
 
@@ -43,23 +47,37 @@ def test_device_kv_transfer_wire_contract_contains_only_metadata():
 
     assert len(wire) == IPC_METADATA_BYTES
     assert IPC_METADATA_BYTES < PAYLOAD_BYTES // 1000
+    assert IPC_METADATA_HEADER.unpack_from(wire)[12:] == transfer.source_offsets
     assert wire[-IPC_KEY_BYTES:] == f"{IPC_KEY_COUNT - 1:064x}".encode()
 
 
-def test_device_kv_export_uses_a_null_terminated_api_buffer(monkeypatch):
+def test_device_kv_export_uses_storage_base_offsets_and_api_buffer(monkeypatch):
     calls = []
+    closes = []
+
+    class FakeStorage:
+        def __init__(self, pointer, size):
+            self.pointer = pointer
+            self.size = size
+
+        def data_ptr(self):
+            return self.pointer
+
+        def nbytes(self):
+            return self.size
 
     class FakeTensor:
         dtype = "torch.bfloat16"
 
-        def __init__(self, pointer):
-            self.pointer = pointer
+        def __init__(self, storage, offset):
+            self.storage = storage
+            self.offset = offset
 
         def is_contiguous(self):
             return True
 
         def data_ptr(self):
-            return self.pointer
+            return self.storage.pointer + self.offset
 
         def numel(self):
             return 8 * BLOCK_ELEMENTS
@@ -67,17 +85,27 @@ def test_device_kv_export_uses_a_null_terminated_api_buffer(monkeypatch):
         def element_size(self):
             return ELEMENT_BYTES
 
+        def untyped_storage(self):
+            return self.storage
+
+        def storage_offset(self):
+            return self.offset // ELEMENT_BYTES
+
     class FakeRuntime:
         def ipc_mem_get_export_key(self, pointer, size, buffer_bytes, flag):
             calls.append((pointer, size, buffer_bytes, flag))
             return f"{pointer:064x}", 0
 
+        def ipc_mem_close(self, key):
+            closes.append(key)
+            return 0
+
     monkeypatch.setitem(sys.modules, "acl", SimpleNamespace(rt=FakeRuntime()))
     kv_caches = []
     for layer in range(28):
-        kv_caches.append(
-            (FakeTensor(0x1000 + layer * 2), FakeTensor(0x1001 + layer * 2))
-        )
+        view_bytes = 8 * BLOCK_ELEMENTS * ELEMENT_BYTES
+        storage = FakeStorage(0x100000 + layer * 0x400000, 2 * view_bytes)
+        kv_caches.append((FakeTensor(storage, 0), FakeTensor(storage, view_bytes)))
     worker = SimpleNamespace(model_runner=SimpleNamespace(kv_caches=kv_caches))
     plan = ResidentEpochPlan(
         version=CONTRACT_VERSION,
@@ -104,9 +132,19 @@ def test_device_kv_export_uses_a_null_terminated_api_buffer(monkeypatch):
 
     transfer = capture_kv_device_transfer(worker, plan)
 
-    assert len(calls) == IPC_KEY_COUNT
+    assert len(calls) == IPC_KEY_COUNT // 2
     assert all(call[2:] == (IPC_EXPORT_BUFFER_BYTES, 1) for call in calls)
     assert all(len(key) == IPC_KEY_BYTES for key in transfer.keys)
+    assert transfer.source_bytes == 2 * view_bytes
+    assert transfer.source_offsets == (0, view_bytes) * (IPC_KEY_COUNT // 2)
+    assert all(
+        transfer.keys[index] == transfer.keys[index + 1]
+        for index in range(0, IPC_KEY_COUNT, 2)
+    )
+
+    release_kv_device_exports(worker)
+
+    assert len(closes) == IPC_KEY_COUNT // 2
 
 
 def test_capture_stock_paged_kv_uses_scheduler_block_and_resident_row():
