@@ -65,6 +65,7 @@ def test_m4a_hardware_runner_preserves_storage_and_milestone_contract():
     assert script.index("if run_step verify") < script.rindex("result-integrity.log")
     assert "local mode=$1 runtime=" not in script
     assert '--run-label "${mode}-profile"' in script
+    assert 'local runtime=${scratch}/p/${route_code}' in script
     assert "huggingface-cli" not in script
     assert "wget " not in script
     assert "curl " not in script

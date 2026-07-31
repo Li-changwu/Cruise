@@ -288,7 +288,8 @@ find_profile_target() {
 
 run_profile_route() {
   local mode=$1
-  local runtime=${runs}/profile-${mode}
+  local route_code=${mode:0:1}
+  local runtime=${scratch}/p/${route_code}
   local ready=${runtime}/profile-ready.json
   local start=${runtime}/profile-start
   local result=${evidence}/profile-${mode}.json
