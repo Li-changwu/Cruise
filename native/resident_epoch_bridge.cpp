@@ -327,6 +327,7 @@ bool PrepareDeviceIpcPayload(ResidentEpochEngine *engine,
   if (engine == nullptr || metadata == nullptr || payload_out == nullptr) {
     return false;
   }
+  if (!ResolveAclRuntime(engine->acl)) return false;
   int32_t current_device = -1;
   if (engine->acl.get_device(&current_device) != ACL_SUCCESS ||
       current_device != 0) {
@@ -478,11 +479,6 @@ extern "C" void *resident_epoch_create(
   auto ret = ge::GEInitialize(options);
   if (ret != ge::SUCCESS) {
     *status = 3;
-    return nullptr;
-  }
-  if (!ResolveAclRuntime(engine->acl)) {
-    ge::GEFinalize();
-    *status = 6;
     return nullptr;
   }
   engine->session = std::make_shared<ge::Session>(

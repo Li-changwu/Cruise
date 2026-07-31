@@ -483,6 +483,14 @@ def test_resident_sidecar_uses_ge_owned_acl_runtime():
     assert "dlsym(RTLD_DEFAULT, name)" in bridge
     assert "dladdr(symbol, &info)" in bridge
     assert 'kLibraryName[] = "libacl_rt.so"' in bridge
+    create_path = bridge.split(
+        'extern "C" void *resident_epoch_create', maxsplit=1
+    )[1].split('extern "C" int32_t resident_epoch_execute', maxsplit=1)[0]
+    device_ipc_path = bridge.split(
+        "bool PrepareDeviceIpcPayload", maxsplit=1
+    )[1].split("ge::Tensor MakeTensor", maxsplit=1)[0]
+    assert "ResolveAclRuntime" not in create_path
+    assert "ResolveAclRuntime(engine->acl)" in device_ipc_path
     for target in ("resident_epoch_bridge", "resident_epoch_server"):
         link_block = re.search(
             rf"target_link_libraries\({target} PRIVATE(.*?)\)",
