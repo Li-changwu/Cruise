@@ -12,4 +12,8 @@ status documents referenced by the root README.
 stock eager, stock ACLGraph, and Cruise with a versioned API workload, blocked
 three-start ordering, exact semantic comparison, process-tree Host CPU
 measurement, benchmark-only resident-route counters, and an independent
-verifier. M4a does not close the formal M2, M3, or M4 milestones.
+verifier. Its explicit profiling mode pauses after warmup, attaches only to a
+representative scenario, limits transient `msprof` output to marker-owned
+`/dev/shm`, and persists only compact summaries. The NPU0-1 preflight is a
+recorded negative result; M4a does not close the formal M2, M3, or M4
+milestones.

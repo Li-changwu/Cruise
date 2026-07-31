@@ -1,0 +1,43 @@
+{
+  "checks": {
+    "all_raw_runs_passed": true,
+    "exact_semantics_reconstructed": true,
+    "formal_milestones_remain_open": true,
+    "input_hashes_match": true,
+    "nine_ordered_inputs": true,
+    "reported_execution_pass_matches": true,
+    "reported_qualification_pass_matches": true,
+    "reported_values_match": true,
+    "route_coverage_reconstructed": false,
+    "three_starts_per_mode": true
+  },
+  "comparison": "/workspace/cruise-runs/m4a-performance-npu01-20260731-r5/evidence/comparison.json",
+  "execution_pass": false,
+  "gate": "independent M4a evidence verifier",
+  "pass": false,
+  "qualification_pass": false,
+  "reconstructed_primary_metrics": {
+    "cruise": {
+      "host_cpu_ms_per_output_token": 915.8779761904744,
+      "tpot_p50": 193.75720708333336,
+      "tpot_p95": 200.71809575
+    },
+    "eager": {
+      "host_cpu_ms_per_output_token": 21.056547619047628,
+      "tpot_p50": 57.353830916666666,
+      "tpot_p95": 59.054130083333334
+    },
+    "graph": {
+      "host_cpu_ms_per_output_token": 13.139880952380972,
+      "tpot_p50": 28.800544416666668,
+      "tpot_p95": 35.10885245833333
+    }
+  },
+  "reconstructed_threshold_values": {
+    "host_cpu_per_token_reduction_percent": -6870.215175537915,
+    "median_tpot_improvement_percent": -572.7553628160149,
+    "p95_tpot_improvement_percent": -471.7022394514583,
+    "strongest_baseline": "graph"
+  },
+  "schema_version": 1
+}

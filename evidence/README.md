@@ -59,3 +59,11 @@ semantic differential. Compact JSON evidence is retained in
 [`m1-api-npu01-20260731/`](m1-api-npu01-20260731/). The failed-attempt causes
 are summarized in [`M1-RUN-FAILURES-20260731.md`](M1-RUN-FAILURES-20260731.md);
 raw logs and scratch remain outside Git.
+
+The early M4a performance gate is summarized in
+[`M4A-PERFORMANCE-NPU01-20260731.md`](M4A-PERFORMANCE-NPU01-20260731.md).
+The negative result retains all nine bounded route JSON files under
+[`m4a-performance-npu01-20260731-r5/`](m4a-performance-npu01-20260731-r5/)
+and the representative profiler-attribution JSON under
+[`m4a-attribution-npu01-20260731-r4/`](m4a-attribution-npu01-20260731-r4/).
+No raw profiler tree or server log is versioned.

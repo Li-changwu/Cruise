@@ -1,0 +1,1367 @@
+{
+  "checks": {
+    "all_scenarios_passed": true,
+    "all_warmups_passed": true,
+    "clean_logger_exit": true,
+    "clean_server_exit": true,
+    "mode_identity_proven": true
+  },
+  "command": [
+    "/home/changwu/miniconda3/envs/vllm-hust-dev/bin/vllm",
+    "serve",
+    "/dev/shm/cruise-m0-assets-npu01-r1/model-frozen",
+    "--tokenizer",
+    "/dev/shm/cruise-m0-assets-npu01-r1/model-frozen",
+    "--served-model-name",
+    "cruise-m4a",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "35485",
+    "--trust-remote-code",
+    "--generation-config",
+    "/workspace/Cruise/experiments/m4a_performance/generation_config",
+    "--dtype",
+    "bfloat16",
+    "--max-model-len",
+    "128",
+    "--max-num-seqs",
+    "4",
+    "--max-num-batched-tokens",
+    "128",
+    "--gpu-memory-utilization",
+    "0.35",
+    "--kv-cache-memory-bytes",
+    "536870912",
+    "--worker-cls",
+    "vllm_ascend.worker.worker.NPUWorker",
+    "--no-async-scheduling"
+  ],
+  "gate": "M4a three-route API performance preflight",
+  "initialization_ms": 148077.031842,
+  "logger_returncode": 0,
+  "mode": "graph",
+  "mode_identity": {
+    "aclgraph_replayed": true,
+    "enforce_eager_false": true,
+    "piecewise_aclgraph_enabled": true
+  },
+  "model": "/dev/shm/cruise-m0-assets-npu01-r1/model-frozen",
+  "pass": true,
+  "profile_ready_file": "/dev/shm/cruise-m4ap-npu01-r4/p/g/profile-ready.json",
+  "profile_start_file": "/dev/shm/cruise-m4ap-npu01-r4/p/g/profile-start",
+  "resident_route_metrics": null,
+  "run_label": "graph-profile",
+  "runtime_dir": "/dev/shm/cruise-m4ap-npu01-r4/p/g",
+  "scenarios": [
+    {
+      "metrics": {
+        "duration_ms": 2207.481582,
+        "host_cpu_ms_per_output_token": 14.017857142857144,
+        "host_cpu_seconds": 3.1400000000000006,
+        "inter_token_ms": {
+          "count": 192,
+          "max": 84.640178,
+          "mean": 31.031021380208347,
+          "min": 26.622959,
+          "p50": 27.566153,
+          "p95": 59.26604289999999,
+          "p99": 65.38528710000003
+        },
+        "normalized_request_ms_per_output_token": {
+          "count": 32,
+          "max": 45.514281999999994,
+          "mean": 39.21653636160715,
+          "min": 35.74988442857143,
+          "p50": 38.13010164285714,
+          "p95": 45.279533771428575,
+          "p99": 45.47432282285714
+        },
+        "output_tokens": 224,
+        "output_tokens_per_second": 101.47310030874813,
+        "request_count": 32,
+        "request_latency_ms": {
+          "count": 32,
+          "max": 318.599974,
+          "mean": 274.51575453125,
+          "min": 250.249191,
+          "p50": 266.9107115,
+          "p95": 316.9567364,
+          "p99": 318.32025976
+        },
+        "requests_per_second": 14.49615718696402,
+        "tpot_ms": {
+          "count": 32,
+          "max": 39.99089583333333,
+          "mean": 31.03102138020833,
+          "min": 27.495398833333333,
+          "p50": 29.52583033333333,
+          "p95": 38.94589568333333,
+          "p99": 39.670128965
+        },
+        "ttft_ms": {
+          "count": 32,
+          "max": 140.096121,
+          "mean": 87.34533871875,
+          "min": 53.935666,
+          "p50": 86.184718,
+          "p95": 138.5549583,
+          "p99": 139.6612778
+        }
+      },
+      "npu_usage_after": "NPU ID                         : 0\n\tChip Count                     : 1\n\n\tDDR Capacity(MB)               : 0\n\tDDR Usage Rate(%)              : 0\n\tDDR Hugepages Total(page)      : 0\n\tDDR Hugepages Usage Rate(%)    : 0\n\tHBM Capacity(MB)               : 65536\n\tHBM Usage Rate(%)              : 28\n\tAicore Usage Rate(%)           : 0\n\tAivector Usage Rate(%)         : 0\n\tAicpu Usage Rate(%)            : 0\n\tCtrlcpu Usage Rate(%)          : 5\n\tDDR Bandwidth Usage Rate(%)    : 0\n\tHBM Bandwidth Usage Rate(%)    : 20\n\tNPU Utilization(%)             : 31\n\tAicube Usage Rate(%)           : 0\n\tChip ID                        : 0",
+      "npu_usage_before": "NPU ID                         : 0\n\tChip Count                     : 1\n\n\tDDR Capacity(MB)               : 0\n\tDDR Usage Rate(%)              : 0\n\tDDR Hugepages Total(page)      : 0\n\tDDR Hugepages Usage Rate(%)    : 0\n\tHBM Capacity(MB)               : 65536\n\tHBM Usage Rate(%)              : 28\n\tAicore Usage Rate(%)           : 0\n\tAivector Usage Rate(%)         : 0\n\tAicpu Usage Rate(%)            : 0\n\tCtrlcpu Usage Rate(%)          : 3\n\tDDR Bandwidth Usage Rate(%)    : 0\n\tHBM Bandwidth Usage Rate(%)    : 0\n\tNPU Utilization(%)             : 0\n\tAicube Usage Rate(%)           : 0\n\tChip ID                        : 0",
+      "pass": true,
+      "process_tree_after": {
+        "cpu_seconds": 106.69,
+        "process_count": 3,
+        "rss_bytes": 4114939904
+      },
+      "process_tree_before": {
+        "cpu_seconds": 103.55,
+        "process_count": 3,
+        "rss_bytes": 4114726912
+      },
+      "records": [
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            36.423148,
+            27.185192,
+            27.144613,
+            29.608683,
+            28.848955,
+            28.184474
+          ],
+          "latency_ms": 318.599974,
+          "pass": true,
+          "request_index": 0,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 29.56584416666667,
+          "ttft_ms": 140.096121,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            36.438778,
+            27.198692,
+            27.141143,
+            29.609193,
+            28.622021,
+            28.726368
+          ],
+          "latency_ms": 317.69767,
+          "pass": true,
+          "request_index": 1,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 29.622699166666667,
+          "ttft_ms": 138.693401,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            84.640178,
+            36.417879,
+            27.192302,
+            27.145273,
+            29.614633,
+            28.614701
+          ],
+          "latency_ms": 288.396188,
+          "pass": true,
+          "request_index": 2,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 38.93749433333333,
+          "ttft_ms": 53.935666,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            36.451998,
+            27.189392,
+            27.146203,
+            29.576564,
+            28.870454,
+            27.680288
+          ],
+          "latency_ms": 316.350518,
+          "pass": true,
+          "request_index": 3,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 29.4858165,
+          "ttft_ms": 138.441687,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            64.378098,
+            27.186403,
+            27.534462,
+            59.934425,
+            27.163733,
+            27.539863
+          ],
+          "latency_ms": 289.611975,
+          "pass": true,
+          "request_index": 4,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 38.956164,
+          "ttft_ms": 55.21822,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            27.186912,
+            27.527112,
+            59.936656,
+            27.159343,
+            27.922201,
+            27.684228
+          ],
+          "latency_ms": 290.251767,
+          "pass": true,
+          "request_index": 5,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 32.902742,
+          "ttft_ms": 91.771175,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            27.185413,
+            27.538782,
+            59.929025,
+            27.168463,
+            27.731887,
+            27.96883
+          ],
+          "latency_ms": 289.287435,
+          "pass": true,
+          "request_index": 6,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 32.9204,
+          "ttft_ms": 90.53619,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            27.187242,
+            27.500813,
+            59.964115,
+            27.131933,
+            27.937181,
+            27.182763
+          ],
+          "latency_ms": 288.295652,
+          "pass": true,
+          "request_index": 7,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 32.817341166666665,
+          "ttft_ms": 90.398604,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            75.569088,
+            27.236861,
+            27.158053,
+            29.527485,
+            47.53559,
+            32.918298
+          ],
+          "latency_ms": 301.286861,
+          "pass": true,
+          "request_index": 8,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 39.99089583333333,
+          "ttft_ms": 60.686084,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            27.244391,
+            27.147983,
+            29.524645,
+            47.533571,
+            33.294327,
+            29.216774
+          ],
+          "latency_ms": 303.79885,
+          "pass": true,
+          "request_index": 9,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 32.3269485,
+          "ttft_ms": 108.763449,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            27.24053,
+            27.152474,
+            29.517785,
+            47.54324,
+            33.109163,
+            29.490456
+          ],
+          "latency_ms": 302.875856,
+          "pass": true,
+          "request_index": 10,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 32.34227466666667,
+          "ttft_ms": 107.577813,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            27.2399,
+            27.150024,
+            29.553864,
+            47.505301,
+            33.312767,
+            28.67796
+          ],
+          "latency_ms": 301.881684,
+          "pass": true,
+          "request_index": 11,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 32.239969333333335,
+          "ttft_ms": 107.412928,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            60.10486,
+            31.905767,
+            30.420961,
+            26.782505,
+            26.631499,
+            27.349709
+          ],
+          "latency_ms": 266.4912,
+          "pass": true,
+          "request_index": 12,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 33.8658835,
+          "ttft_ms": 62.646338,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            31.894838,
+            30.411311,
+            26.781234,
+            26.63755,
+            27.720978,
+            33.219621
+          ],
+          "latency_ms": 271.506068,
+          "pass": true,
+          "request_index": 13,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 29.44425533333333,
+          "ttft_ms": 93.736618,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            31.912887,
+            30.408911,
+            26.790325,
+            26.622959,
+            27.548593,
+            33.496023
+          ],
+          "latency_ms": 270.561605,
+          "pass": true,
+          "request_index": 14,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 29.463283,
+          "ttft_ms": 92.522593,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            31.877328,
+            30.44192,
+            26.753166,
+            26.660878,
+            27.713459,
+            32.717625
+          ],
+          "latency_ms": 269.546395,
+          "pass": true,
+          "request_index": 15,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 29.36072933333333,
+          "ttft_ms": 92.389827,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            58.723603,
+            27.428376,
+            26.980759,
+            28.01407,
+            26.667958,
+            27.293911
+          ],
+          "latency_ms": 256.065225,
+          "pass": true,
+          "request_index": 16,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 32.51811283333333,
+          "ttft_ms": 59.928978,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            27.429776,
+            26.97645,
+            28.009209,
+            26.665199,
+            27.508804,
+            30.940636
+          ],
+          "latency_ms": 254.235997,
+          "pass": true,
+          "request_index": 17,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 27.921679,
+          "ttft_ms": 85.629004,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            27.433406,
+            26.981669,
+            28.01238,
+            26.657958,
+            27.531714,
+            31.016464
+          ],
+          "latency_ms": 253.269055,
+          "pass": true,
+          "request_index": 18,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 27.93893183333333,
+          "ttft_ms": 84.39115,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            27.397197,
+            26.980789,
+            28.0094,
+            26.694548,
+            27.507634,
+            30.414741
+          ],
+          "latency_ms": 252.262414,
+          "pass": true,
+          "request_index": 19,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 27.8340515,
+          "ttft_ms": 84.250334,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            58.187258,
+            27.609251,
+            26.724316,
+            29.278544,
+            26.738176,
+            27.882974
+          ],
+          "latency_ms": 254.775142,
+          "pass": true,
+          "request_index": 20,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 32.73675316666667,
+          "ttft_ms": 57.685752,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            27.598441,
+            26.723277,
+            29.271434,
+            26.746965,
+            28.271743,
+            27.190713
+          ],
+          "latency_ms": 252.199866,
+          "pass": true,
+          "request_index": 21,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 27.633762166666667,
+          "ttft_ms": 85.300154,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            27.597522,
+            26.731496,
+            29.273984,
+            26.738156,
+            28.082928,
+            27.485915
+          ],
+          "latency_ms": 251.261522,
+          "pass": true,
+          "request_index": 22,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 27.651666833333334,
+          "ttft_ms": 84.093447,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            27.632231,
+            26.693357,
+            29.272584,
+            26.777305,
+            28.257783,
+            26.675358
+          ],
+          "latency_ms": 250.249191,
+          "pass": true,
+          "request_index": 23,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 27.55143633333333,
+          "ttft_ms": 83.920402,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            62.122356,
+            26.665318,
+            27.449416,
+            27.536473,
+            32.818433,
+            27.694328
+          ],
+          "latency_ms": 261.478121,
+          "pass": true,
+          "request_index": 24,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 34.04772066666666,
+          "ttft_ms": 56.503906,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            26.652909,
+            27.444286,
+            27.536663,
+            32.814333,
+            28.102987,
+            32.047855
+          ],
+          "latency_ms": 267.330223,
+          "pass": true,
+          "request_index": 25,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 29.099838833333333,
+          "ttft_ms": 91.632412,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            26.647339,
+            27.457625,
+            27.525104,
+            32.819043,
+            27.916012,
+            32.338896
+          ],
+          "latency_ms": 266.38231,
+          "pass": true,
+          "request_index": 26,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 29.1173365,
+          "ttft_ms": 90.416637,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            26.682638,
+            27.416517,
+            27.564872,
+            32.816423,
+            28.092867,
+            31.545399
+          ],
+          "latency_ms": 265.35483,
+          "pass": true,
+          "request_index": 27,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 29.019786,
+          "ttft_ms": 90.239982,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            60.026435,
+            26.924442,
+            26.770496,
+            30.423302,
+            26.702139,
+            26.938321
+          ],
+          "latency_ms": 257.080281,
+          "pass": true,
+          "request_index": 28,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 32.96418916666667,
+          "ttft_ms": 58.584466,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            26.925182,
+            26.797975,
+            30.404653,
+            26.694268,
+            27.369819,
+            27.573914
+          ],
+          "latency_ms": 253.071577,
+          "pass": true,
+          "request_index": 29,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 27.627635166666668,
+          "ttft_ms": 86.740432,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            26.908652,
+            26.761896,
+            30.439852,
+            26.687109,
+            27.184924,
+            27.567434
+          ],
+          "latency_ms": 251.963909,
+          "pass": true,
+          "request_index": 30,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 27.5916445,
+          "ttft_ms": 85.542417,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        },
+        {
+          "checks": {
+            "done_boundary": true,
+            "exact_output_length": true,
+            "length_finish": true
+          },
+          "done": true,
+          "finish_reason": "length",
+          "inter_token_ms": [
+            26.896802,
+            26.825115,
+            30.377103,
+            26.724328,
+            27.35697,
+            26.792075
+          ],
+          "latency_ms": 251.084784,
+          "pass": true,
+          "request_index": 31,
+          "stop_reason": null,
+          "tokens": [
+            358,
+            2776,
+            4460,
+            311,
+            1855,
+            264,
+            2025
+          ],
+          "tpot_ms": 27.495398833333333,
+          "ttft_ms": 85.364652,
+          "usage": {
+            "completion_tokens": 7,
+            "prompt_tokens": 2,
+            "total_tokens": 9
+          }
+        }
+      ],
+      "scenario": {
+        "arrival": "closed_loop",
+        "burst_gap_ms": 0,
+        "concurrency": 4,
+        "max_tokens": 7,
+        "name": "decode-stream-c4",
+        "prompt_token_ids": [
+          9707,
+          11
+        ],
+        "request_count": 32,
+        "stream": true
+      }
+    }
+  ],
+  "schema_version": 1,
+  "server_log": "/workspace/cruise-runs/m4ap-npu01-r4/evidence/api-server-graph-profile.log",
+  "server_log_metadata": "/workspace/cruise-runs/m4ap-npu01-r4/evidence/api-server-graph-profile.meta.json",
+  "server_returncode": 0,
+  "tokenizer": "/dev/shm/cruise-m0-assets-npu01-r1/model-frozen",
+  "warmups": [
+    {
+      "all_requests_passed": true,
+      "request_count": 8,
+      "scenario": {
+        "arrival": "closed_loop",
+        "burst_gap_ms": 0,
+        "concurrency": 4,
+        "max_tokens": 7,
+        "name": "warmup-stream-c4",
+        "prompt_token_ids": [
+          9707,
+          11
+        ],
+        "request_count": 8,
+        "stream": true
+      }
+    },
+    {
+      "all_requests_passed": true,
+      "request_count": 8,
+      "scenario": {
+        "arrival": "closed_loop",
+        "burst_gap_ms": 0,
+        "concurrency": 4,
+        "max_tokens": 7,
+        "name": "warmup-nonstream-c4",
+        "prompt_token_ids": [
+          9707,
+          11
+        ],
+        "request_count": 8,
+        "stream": false
+      }
+    }
+  ]
+}

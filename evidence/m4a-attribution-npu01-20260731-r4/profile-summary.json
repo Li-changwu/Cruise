@@ -1,0 +1,50 @@
+{
+  "claim_boundary": "Idle gaps are reported only when exported task_time CSVs contain timestamped AI Core tasks. Host logical timing is never substituted.",
+  "comparison_status": "not_observed_by_current_msprof_path",
+  "gate": "M4a representative dynamic msprof attribution",
+  "routes": {
+    "cruise": {
+      "ai_core_gap_status": "not_observed",
+      "ai_core_idle_gap_us": {
+        "count": 0
+      },
+      "ai_core_task_count": 0,
+      "ai_core_task_duration_us": {
+        "count": 0
+      },
+      "ai_core_tasks_observed": false,
+      "raw_profile_files": [],
+      "route": "cruise",
+      "task_time_schemas": [],
+      "task_types": {},
+      "timeline_path": null,
+      "timeline_rows_retained": 0,
+      "timeline_truncated": false
+    },
+    "graph": {
+      "ai_core_gap_status": "not_observed",
+      "ai_core_idle_gap_us": {
+        "count": 0
+      },
+      "ai_core_task_count": 0,
+      "ai_core_task_duration_us": {
+        "count": 0
+      },
+      "ai_core_tasks_observed": false,
+      "raw_profile_files": [],
+      "route": "graph",
+      "task_time_schemas": [],
+      "task_types": {},
+      "timeline_path": null,
+      "timeline_rows_retained": 0,
+      "timeline_truncated": false
+    }
+  },
+  "runner_status": {
+    "profile-cruise-benchmark": 0,
+    "profile-cruise-msprof": 255,
+    "profile-graph-benchmark": 0,
+    "profile-graph-msprof": 255
+  },
+  "schema_version": 1
+}

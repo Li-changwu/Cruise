@@ -283,7 +283,7 @@ TP=PP=1, synchronous, greedy support contract. It does not claim M2 fault
 injection/soak, M3 observability, M4 performance qualification, or Stable
 v1.0. Those remain the next ordered milestones.
 
-#### M4a early performance preflight (active)
+#### M4a early performance preflight (negative result recorded)
 
 M4a is intentionally being executed before M2 and M3 as a research-value
 gate, not as a formal milestone closure. The frozen protocol compares stock
@@ -299,6 +299,42 @@ threshold failure is retained as a valid result and triggers attribution; it
 does not fail cleanup or weaken the threshold. Source, workload, runner, and
 independent verifier live under [`experiments/m4a_performance/`](../experiments/m4a_performance/).
 M2, M3, and M4 below remain open regardless of the M4a outcome.
+
+The frozen NPU0-1 run completed all nine independent service starts with exact
+cross-route API semantics and clean per-run shutdown. Cruise proved 484 Device
+epochs and one Feed/Fetch per epoch in every start. It nevertheless reached
+only 1,251/1,280 expected Device request-tokens because mixed prefill/decode
+schedules advanced 29 tokens on the Host. This makes `execution_pass=false`
+even though all nine raw service results passed.
+
+ACLGraph was the strongest baseline on `decode-stream-c4`. Its aggregate TPOT
+p50/p95 and Host CPU/token were 28.801/35.109/13.140 ms; Cruise measured
+193.757/200.718/915.878 ms. The frozen 15%/15%/30% qualification checks all
+failed. A representative graph/Cruise rerun reproduced the direction, while
+dynamic `msprof --pid` returned `no valid pid` because neither process exposed
+a dynamic-profiling socket. AI Core gap therefore remains `not_observed`; Host
+logical timing is not substituted.
+
+Attribution identified three structural blockers: the streaming API forces
+K=1 and retains one Feed/Fetch per token; each first Device epoch constructs a
+56 MiB static B=4 Paged-KV snapshot through NPU-to-Host-to-DataFlow transfer;
+and Device isolation begins too late to prevent all mixed prefill/decode Host
+steps. The compact report and raw JSON are in
+[`M4A-PERFORMANCE-NPU01-20260731.md`](../evidence/M4A-PERFORMANCE-NPU01-20260731.md).
+
+M4b corrective entry plan:
+
+- [ ] Replace the full Host KV snapshot with unified Device ownership or a
+  proven direct Device transfer; use sparse Host packing only as an
+  intermediate attribution step.
+- [ ] Isolate mixed prefill/decode before the first eligible decode and reach
+  1,280/1,280 Device request-tokens on the frozen workload.
+- [ ] Add bounded K>1 execution with incremental streaming token egress so the
+  streaming path no longer requires one Feed/Fetch per token.
+- [ ] Rerun the unchanged three-start gate and independently verify semantics,
+  TPOT, Host CPU, throughput, TTFT, route coverage, and cleanup.
+- [ ] Keep M2, M3, and formal M4 open; do not lower any failed threshold or
+  claim accelerator idle-gap reduction without Device task timestamps.
 
 ### M2: Lifecycle, Recovery, and Resource Safety
 

@@ -1,0 +1,16 @@
+key	value
+run_id	m4a-performance-npu01-20260731-r5
+source_dir	/workspace/Cruise
+conda_env	vllm-hust-dev
+physical_npu	0
+scratch_dir	/dev/shm/cruise-m4a-performance-npu01-20260731-r5
+evidence_dir	/workspace/cruise-runs/m4a-performance-npu01-20260731-r5/evidence
+model	/dev/shm/cruise-m0-assets-npu01-r1/model-frozen
+runtime_weights	/workspace/cruise-assets/runtime-weights/2ec95bf8e78cfaf091782b3c531b19b9cced35dcfab0e418c756e25abe456761
+runtime_asset_root	/workspace/cruise-assets
+resource_config	/dev/shm/cruise-m4a-performance-npu01-20260731-r5/numa_config.physical0.json
+dataflow_deploy_root	/dev/shm/cruise-m4a-performance-npu01-20260731-r5/dataflow-deploy
+vllm_kv_cache_bytes	536870912
+formal_m2	open
+formal_m3	open
+formal_m4	open
