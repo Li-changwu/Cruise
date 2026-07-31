@@ -16,6 +16,7 @@ vllm_root=${CRUISE_VLLM_ROOT:-${HOME}/vllm-hust}
 vllm_ascend_root=${CRUISE_VLLM_ASCEND_ROOT:-${HOME}/vllm-ascend-hust}
 runtime_asset_root=${CRUISE_RUNTIME_ASSET_ROOT:-/workspace/cruise-assets}
 vllm_kv_cache_bytes=${CRUISE_VLLM_KV_CACHE_BYTES:-536870912}
+profile_attribution=${CRUISE_M4A_PROFILE_ATTRIBUTION:-0}
 
 model=${artifacts}/model-frozen
 export CRUISE_API_TOKENIZER=${CRUISE_API_TOKENIZER:-${model}}
@@ -27,6 +28,7 @@ workload=${CRUISE_M4A_WORKLOAD:-${source_dir}/experiments/m4a_performance/worklo
 generation_config=${source_dir}/experiments/m4a_performance/generation_config/generation_config.json
 runner=${source_dir}/experiments/m4a_performance/run_benchmark.py
 verifier=${source_dir}/experiments/m4a_performance/verify_results.py
+profile_analyzer=${source_dir}/experiments/m4a_performance/analyze_profiles.py
 
 build=${scratch}/native-build
 controller=${scratch}/controller
@@ -43,6 +45,7 @@ driver_tmp=${scratch}/driver-tmp
 runtime_workdir=${scratch}/runtime-workdir
 deploy_root=${scratch}/dataflow-deploy
 runs=${scratch}/runs
+profile_root=${scratch}/profiles
 resource_config_template=${CRUISE_RESOURCE_CONFIG_TEMPLATE:-${source_dir}/experiments/synthetic-p0/numa_config.physical7.json}
 resource_config=${scratch}/numa_config.physical${physical_npu}.json
 status=${evidence}/status.tsv
@@ -52,6 +55,7 @@ required=(
   "${guard}"
   "${runner}"
   "${verifier}"
+  "${profile_analyzer}"
   "${workload}"
   "${generation_config}"
   "${source_dir}/materialize_runtime_weights.py"
@@ -75,6 +79,15 @@ for path in "${required[@]}"; do
 done
 [[ -f "${conda_sh}" && -f "${cann_set_env}" ]] || exit 96
 [[ -d "${runtime_weights}" ]] || exit 96
+[[ "${profile_attribution}" == 0 || "${profile_attribution}" == 1 ]] || exit 96
+if [[ "${profile_attribution}" == 1 ]]; then
+  for command in jq msprof pgrep ps; do
+    command -v "${command}" >/dev/null || {
+      printf 'missing profiling command: %s\n' "${command}" >&2
+      exit 96
+    }
+  done
+fi
 
 source "${guard}"
 export STORAGE_GUARD_MAX_SCRATCH_GIB=96
@@ -109,9 +122,11 @@ trap finalize EXIT
 mkdir -p "${build}" "${controller}" "${config_dir}" \
   "${external_weights}" "${driver_cache}" "${driver_cann_logs}" \
   "${driver_tmp}" "${runtime_workdir}" "${deploy_root}" "${runs}"
+mkdir -p "${profile_root}"
 for path in "${build}" "${controller}" "${config_dir}" "${runtime_air}" \
   "${external_weights}" "${driver_cache}" "${driver_cann_logs}" \
   "${driver_tmp}" "${runtime_workdir}" "${deploy_root}" "${runs}" \
+  "${profile_root}" \
   "${resource_config}"; do
   storage_guard_assert_scratch_path "${path}"
 done
@@ -206,6 +221,7 @@ run_step prepare-resource-config 120s python3 \
   printf 'resource_config\t%s\n' "${resource_config}"
   printf 'dataflow_deploy_root\t%s\n' "${deploy_root}"
   printf 'vllm_kv_cache_bytes\t%s\n' "${vllm_kv_cache_bytes}"
+  printf 'execution_scope\t%s\n' "$([[ "${profile_attribution}" == 1 ]] && printf profiling || printf formal)"
   printf 'formal_m2\topen\n'
   printf 'formal_m3\topen\n'
   printf 'formal_m4\topen\n'
@@ -240,6 +256,119 @@ run_step relocate-runtime-air 600s "${build}/relocate_air_paths" \
   "${runtime_weights}" "${evidence}/air-relocation.json"
 
 cd "${runtime_workdir}"
+
+retain_bounded_log() {
+  local source_log=$1 name=$2
+  python3 "${source_dir}/storage_guard/bounded_log.py" \
+    --output "${evidence}/${name}.log" \
+    --metadata "${evidence}/${name}.meta.json" \
+    --head-bytes 1048576 --tail-bytes 1048576 <"${source_log}"
+}
+
+find_profile_target() {
+  local api_pid=$1 pattern=$2 candidates candidate current parent
+  for _ in $(seq 1 600); do
+    candidates=$(pgrep -f -- "${pattern}" || true)
+    for candidate in ${candidates}; do
+      current=${candidate}
+      while [[ ${current} -gt 1 ]]; do
+        if [[ ${current} -eq ${api_pid} ]]; then
+          printf '%s\n' "${candidate}"
+          return 0
+        fi
+        parent=$(ps -o ppid= -p "${current}" 2>/dev/null | tr -d ' ')
+        [[ "${parent}" =~ ^[0-9]+$ ]] || break
+        current=${parent}
+      done
+    done
+    sleep 0.5
+  done
+  return 1
+}
+
+run_profile_route() {
+  local mode=$1 runtime=${runs}/profile-${mode}
+  local ready=${runtime}/profile-ready.json start=${runtime}/profile-start
+  local result=${evidence}/profile-${mode}.json
+  local benchmark_stdout=${scratch}/profile-${mode}-benchmark.stdout
+  local msprof_stdout=${scratch}/profile-${mode}-msprof.stdout
+  local target_pattern target_pid api_pid benchmark_pid profiler_pid
+  local benchmark_status=0 profiler_status=0
+
+  wait_npu_ready "pre-profile-${mode}"
+  if [[ "${mode}" == cruise ]]; then
+    find "${external_weights}" -depth -mindepth 1 -delete
+    target_pattern=${build}/resident_epoch_server
+  else
+    target_pattern='VLLM::EngineCore'
+  fi
+
+  timeout --signal=TERM --kill-after=30s 7200s python3 "${runner}" \
+    --mode "${mode}" --run-label "profile-${mode}" --model "${model}" \
+    --workload "${workload}" --runtime-dir "${runtime}" \
+    --only-scenario decode-stream-c4 \
+    --profile-ready-file "${ready}" --profile-start-file "${start}" \
+    --output "${result}" >"${benchmark_stdout}" 2>&1 &
+  benchmark_pid=$!
+
+  for _ in $(seq 1 2400); do
+    [[ -f "${ready}" ]] && break
+    if ! kill -0 "${benchmark_pid}" 2>/dev/null; then
+      break
+    fi
+    sleep 0.5
+  done
+  if [[ ! -f "${ready}" ]]; then
+    if wait "${benchmark_pid}"; then benchmark_status=0; else benchmark_status=$?; fi
+    retain_bounded_log "${benchmark_stdout}" "profile-${mode}-benchmark"
+    printf 'profile-%s-ready\t%s\n' "${mode}" "${benchmark_status}" >>"${status}"
+    [[ ${benchmark_status} -ne 0 ]] || benchmark_status=97
+    return "${benchmark_status}"
+  fi
+
+  api_pid=$(jq -er '.api_server_pid' "${ready}")
+  if ! target_pid=$(find_profile_target "${api_pid}" "${target_pattern}"); then
+    : >"${start}"
+    if wait "${benchmark_pid}"; then benchmark_status=0; else benchmark_status=$?; fi
+    retain_bounded_log "${benchmark_stdout}" "profile-${mode}-benchmark"
+    printf 'profile-%s-target\t124\n' "${mode}" >>"${status}"
+    return 124
+  fi
+  printf '%s\n' "${target_pid}" >"${evidence}/profile-${mode}-target-pid.txt"
+  timeout --signal=TERM --kill-after=30s 180s msprof \
+    --output="${profile_root}/${mode}" --dynamic=on --pid="${target_pid}" \
+    --duration=30 --runtime-api=on --ge-api=l0 --task-time=l1 \
+    --ai-core=on --aic-metrics=PipeUtilization --storage-limit=256MB \
+    >"${msprof_stdout}" 2>&1 &
+  profiler_pid=$!
+  sleep 8
+  : >"${start}"
+
+  if wait "${benchmark_pid}"; then benchmark_status=0; else benchmark_status=$?; fi
+  if wait "${profiler_pid}"; then profiler_status=0; else profiler_status=$?; fi
+  retain_bounded_log "${benchmark_stdout}" "profile-${mode}-benchmark"
+  retain_bounded_log "${msprof_stdout}" "profile-${mode}-msprof"
+  printf 'profile-%s-benchmark\t%s\n' "${mode}" "${benchmark_status}" >>"${status}"
+  printf 'profile-%s-msprof\t%s\n' "${mode}" "${profiler_status}" >>"${status}"
+  [[ ${benchmark_status} -eq 0 ]]
+}
+
+if [[ "${profile_attribution}" == 1 ]]; then
+  run_profile_route graph
+  run_profile_route cruise
+  run_step analyze-profiles 300s python3 "${profile_analyzer}" \
+    --profile-root "${profile_root}" --evidence-dir "${evidence}" \
+    --status "${status}" \
+    --output "${evidence}/profile-summary.json"
+  wait_npu_ready final
+  git -C "${source_dir}" status --porcelain --untracked-files=all \
+    >"${evidence}/source-worktree-final.txt"
+  [[ ! -s "${evidence}/source-worktree-final.txt" ]] || exit 93
+  sha256sum "${evidence}"/*.json >"${evidence}/result-integrity.log"
+  printf 'complete\t0\n' >>"${status}"
+  exit 0
+fi
+
 order=(eager-1 graph-1 cruise-1 cruise-2 graph-2 eager-2 graph-3 cruise-3 eager-3)
 result_args=()
 for label in "${order[@]}"; do
@@ -257,12 +386,22 @@ for label in "${order[@]}"; do
   result_args+=(--result "${result}")
 done
 
-run_step compare 300s python3 "${runner}" --mode compare \
+comparison_status=0
+if run_step compare 300s python3 "${runner}" --mode compare \
   --workload "${workload}" "${result_args[@]}" \
-  --output "${evidence}/comparison.json"
-run_step verify 300s python3 "${verifier}" \
+  --output "${evidence}/comparison.json"; then
+  :
+else
+  comparison_status=$?
+fi
+verification_status=0
+if run_step verify 300s python3 "${verifier}" \
   --comparison "${evidence}/comparison.json" --workload "${workload}" \
-  "${result_args[@]}" --output "${evidence}/verifier.json"
+  "${result_args[@]}" --output "${evidence}/verifier.json"; then
+  :
+else
+  verification_status=$?
+fi
 
 wait_npu_ready final
 git -C "${source_dir}" status --porcelain --untracked-files=all \
@@ -270,3 +409,9 @@ git -C "${source_dir}" status --porcelain --untracked-files=all \
 [[ ! -s "${evidence}/source-worktree-final.txt" ]] || exit 93
 sha256sum "${evidence}"/*.json >"${evidence}/result-integrity.log"
 printf 'complete\t0\n' >>"${status}"
+if [[ ${comparison_status} -ne 0 ]]; then
+  exit "${comparison_status}"
+fi
+if [[ ${verification_status} -ne 0 ]]; then
+  exit "${verification_status}"
+fi

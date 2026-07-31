@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import math
@@ -588,6 +588,9 @@ async def _run_load(
     base_url: str,
     manifest: PerformanceManifest,
     process: subprocess.Popen[Any],
+    *,
+    profile_ready_file: Path | None = None,
+    profile_start_file: Path | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     import httpx
 
@@ -606,6 +609,29 @@ async def _run_load(
                     "all_requests_passed": all(record["pass"] for record in records),
                 }
             )
+        if profile_ready_file is not None:
+            assert profile_start_file is not None
+            profile_ready_file.parent.mkdir(parents=True, exist_ok=True)
+            profile_ready_file.write_text(
+                json.dumps(
+                    {
+                        "runner_pid": os.getpid(),
+                        "api_server_pid": process.pid,
+                    },
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            deadline = time.monotonic() + 600
+            while not profile_start_file.is_file():
+                if process.poll() is not None:
+                    raise RuntimeError(
+                        "API server exited while waiting for profiler attach"
+                    )
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("profiler attach barrier timed out")
+                await asyncio.sleep(0.1)
         for scenario in manifest.scenarios:
             npu_before = _npu_usage_snapshot()
             process_before = _process_tree_snapshot(process.pid)
@@ -673,9 +699,26 @@ def run_service(
     manifest: PerformanceManifest,
     output: Path,
     runtime_dir: Path,
+    profile_ready_file: Path | None = None,
+    profile_start_file: Path | None = None,
 ) -> dict[str, Any]:
     if not manifest.tokenizer.is_dir():
         raise FileNotFoundError(f"tokenizer directory not found: {manifest.tokenizer}")
+    if profile_ready_file is not None:
+        assert profile_start_file is not None
+        resolved_runtime = runtime_dir.resolve(strict=False)
+        resolved_barriers = tuple(
+            path.resolve(strict=False)
+            for path in (profile_ready_file, profile_start_file)
+        )
+        if resolved_barriers[0] == resolved_barriers[1]:
+            raise ValueError("profiler barrier files must be distinct")
+        if any(
+            resolved_runtime not in path.parents for path in resolved_barriers
+        ):
+            raise ValueError("profiler barrier files must be inside runtime-dir")
+        if any(path.exists() for path in resolved_barriers):
+            raise FileExistsError("profiler barrier file already exists")
     runtime_dir.mkdir(parents=True, exist_ok=False)
     for child in ("cache", "cann-logs", "tmp"):
         (runtime_dir / child).mkdir()
@@ -715,6 +758,12 @@ def run_service(
         "runtime_dir": str(runtime_dir),
         "server_log": str(server_log),
         "server_log_metadata": str(logger_metadata),
+        "profile_ready_file": (
+            str(profile_ready_file) if profile_ready_file is not None else None
+        ),
+        "profile_start_file": (
+            str(profile_start_file) if profile_start_file is not None else None
+        ),
         "warmups": [],
         "scenarios": [],
         "pass": False,
@@ -739,7 +788,13 @@ def run_service(
             time.perf_counter_ns() - initialized_at
         ) / 1_000_000
         result["warmups"], result["scenarios"] = asyncio.run(
-            _run_load(base_url, manifest, process)
+            _run_load(
+                base_url,
+                manifest,
+                process,
+                profile_ready_file=profile_ready_file,
+                profile_start_file=profile_start_file,
+            )
         )
     except Exception as exc:
         result["error"] = f"{type(exc).__name__}: {exc}"
@@ -972,12 +1027,30 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--run-label")
     parser.add_argument("--runtime-dir", type=Path)
+    parser.add_argument("--only-scenario", choices=sorted(REQUIRED_SCENARIOS))
+    parser.add_argument("--profile-ready-file", type=Path)
+    parser.add_argument("--profile-start-file", type=Path)
     parser.add_argument("--result", action="append", type=Path, default=[])
     args = parser.parse_args()
 
     manifest = with_tokenizer_override(
         load_manifest(args.workload.resolve(strict=True))
     )
+    if (args.profile_ready_file is None) != (args.profile_start_file is None):
+        parser.error("both profiler barrier files must be supplied together")
+    if args.mode == "compare" and (
+        args.only_scenario is not None or args.profile_ready_file is not None
+    ):
+        parser.error("focused profiling options are invalid in compare mode")
+    if args.only_scenario is not None:
+        manifest = replace(
+            manifest,
+            scenarios=tuple(
+                scenario
+                for scenario in manifest.scenarios
+                if scenario.name == args.only_scenario
+            ),
+        )
     if args.mode == "compare":
         if len(args.result) != 9:
             parser.error("compare mode requires nine ordered --result paths")
@@ -996,6 +1069,8 @@ def main() -> int:
             manifest=manifest,
             output=args.output,
             runtime_dir=args.runtime_dir,
+            profile_ready_file=args.profile_ready_file,
+            profile_start_file=args.profile_start_file,
         )
     write_result(args.output, result)
     return 0 if result["pass"] else 1

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import signal
 from pathlib import Path
@@ -6,6 +7,7 @@ from types import SimpleNamespace
 from experiments.m4a_performance.run_benchmark import (
     BLOCKED_ORDER,
     _completion_request_body,
+    _run_load,
     _scenario_metrics,
     _stop_server,
     compare_results,
@@ -13,6 +15,7 @@ from experiments.m4a_performance.run_benchmark import (
     percentile,
     server_command,
 )
+from experiments.m4a_performance.analyze_profiles import _analyze_route
 from experiments.m4a_performance.verify_results import verify
 from vllm_ascend_resident_epoch.benchmark_metrics import (
     ResidentEpochBenchmarkMetrics,
@@ -56,9 +59,80 @@ def test_m4a_hardware_runner_preserves_storage_and_milestone_contract():
     assert "formal_m2\\topen" in script
     assert "formal_m3\\topen" in script
     assert "formal_m4\\topen" in script
+    assert "if run_step compare" in script
+    assert "if run_step verify" in script
+    assert script.index("if run_step compare") < script.index("if run_step verify")
+    assert script.index("if run_step verify") < script.rindex("result-integrity.log")
     assert "huggingface-cli" not in script
     assert "wget " not in script
     assert "curl " not in script
+
+
+def test_profile_barrier_is_released_after_warmups(tmp_path, monkeypatch):
+    manifest = load_manifest(WORKLOAD)
+    manifest = SimpleNamespace(
+        served_model_name=manifest.served_model_name,
+        warmups=(),
+        scenarios=(),
+    )
+    ready = tmp_path / "ready.json"
+    start = tmp_path / "start"
+    start.write_text("start\n", encoding="utf-8")
+    process = SimpleNamespace(pid=123, poll=lambda: None)
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setattr("httpx.AsyncClient", lambda **_kwargs: Client())
+    warmups, scenarios = asyncio.run(
+        _run_load(
+            "http://127.0.0.1:1",
+            manifest,
+            process,
+            profile_ready_file=ready,
+            profile_start_file=start,
+        )
+    )
+
+    assert warmups == []
+    assert scenarios == []
+    ready_data = json.loads(ready.read_text(encoding="utf-8"))
+    assert ready_data["api_server_pid"] == 123
+    assert ready_data["runner_pid"] > 0
+
+
+def test_profile_analyzer_reports_only_observed_ai_core_idle_gaps(tmp_path):
+    profile_root = tmp_path / "profiles"
+    route_root = profile_root / "graph" / "summary"
+    evidence = tmp_path / "evidence"
+    route_root.mkdir(parents=True)
+    evidence.mkdir()
+    (route_root / "task_time_0.csv").write_text(
+        "Task Type,Task Start Time(us),Task Duration(us),Op Name\n"
+        "AI_CORE,10,5,a\n"
+        "AI_CORE,12,10,b\n"
+        "AICPU,25,4,c\n"
+        "AI_VECTOR_CORE,30,5,d\n",
+        encoding="utf-8",
+    )
+
+    result = _analyze_route(profile_root, "graph", evidence)
+
+    assert result["ai_core_tasks_observed"]
+    assert result["ai_core_task_count"] == 3
+    assert result["ai_core_idle_gap_us"] == {
+        "count": 1,
+        "min": 8.0,
+        "mean": 8.0,
+        "p50": 8.0,
+        "p95": 8.0,
+        "p99": 8.0,
+        "max": 8.0,
+    }
 
 
 def test_m4a_commands_separate_eager_graph_and_cruise(tmp_path):
