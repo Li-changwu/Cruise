@@ -349,6 +349,11 @@ int64_t ProcessCpuUs() {
          static_cast<int64_t>(value.tv_nsec) / 1000LL;
 }
 
+void FinalizeAclRuntime() {
+  aclrtResetDevice(0);
+  aclFinalize();
+}
+
 ge::dflow::FlowGraph BuildDeviceFlow(const std::string &air_path,
                                      const std::string &graph_config,
                                      const std::string &func_config) {
@@ -419,6 +424,15 @@ extern "C" void *resident_epoch_create(
     return nullptr;
   }
   auto flow_graph = BuildDeviceFlow(air_path, graph_config, func_config);
+  if (aclInit(nullptr) != ACL_SUCCESS) {
+    *status = 6;
+    return nullptr;
+  }
+  if (aclrtSetDevice(0) != ACL_SUCCESS) {
+    aclFinalize();
+    *status = 7;
+    return nullptr;
+  }
   std::map<ge::AscendString, ge::AscendString> options = {
       {"ge.exec.deviceId", "0"},
       {"ge.exec.logicalDeviceClusterDeployMode", "SINGLE"},
@@ -428,6 +442,7 @@ extern "C" void *resident_epoch_create(
       {"ge.graphRunMode", "0"}};
   auto ret = ge::GEInitialize(options);
   if (ret != ge::SUCCESS) {
+    FinalizeAclRuntime();
     *status = 3;
     return nullptr;
   }
@@ -438,6 +453,7 @@ extern "C" void *resident_epoch_create(
   if (!graph.IsValid()) {
     engine->session.reset();
     ge::GEFinalize();
+    FinalizeAclRuntime();
     *status = 5;
     return nullptr;
   }
@@ -445,6 +461,7 @@ extern "C" void *resident_epoch_create(
   if (ret != ge::SUCCESS) {
     engine->session.reset();
     ge::GEFinalize();
+    FinalizeAclRuntime();
     *status = 4;
     return nullptr;
   }
@@ -696,6 +713,7 @@ extern "C" void resident_epoch_destroy(void *opaque) {
     }
     engine->session.reset();
     ge::GEFinalize();
+    FinalizeAclRuntime();
   }
   delete engine;
   g_engine_active = false;
