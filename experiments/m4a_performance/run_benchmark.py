@@ -266,6 +266,8 @@ def server_command(
         "--port",
         str(port),
         "--trust-remote-code",
+        "--generation-config",
+        "vllm",
         "--dtype",
         "bfloat16",
         "--max-model-len",
@@ -377,6 +379,26 @@ def _npu_usage_snapshot() -> str:
     return rendered[:8192]
 
 
+def _completion_request_body(
+    model_name: str, scenario: Scenario
+) -> dict[str, Any]:
+    return {
+        "model": model_name,
+        "prompt": list(scenario.prompt_token_ids),
+        "max_tokens": scenario.max_tokens,
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "top_k": 0,
+        "min_p": 0.0,
+        "presence_penalty": 0.0,
+        "frequency_penalty": 0.0,
+        "repetition_penalty": 1.0,
+        "min_tokens": 0,
+        "ignore_eos": False,
+        "return_token_ids": True,
+    }
+
+
 async def _request(
     client: Any,
     base_url: str,
@@ -384,13 +406,7 @@ async def _request(
     scenario: Scenario,
     request_index: int,
 ) -> dict[str, Any]:
-    body: dict[str, Any] = {
-        "model": model_name,
-        "prompt": list(scenario.prompt_token_ids),
-        "max_tokens": scenario.max_tokens,
-        "temperature": 0.0,
-        "return_token_ids": True,
-    }
+    body = _completion_request_body(model_name, scenario)
     started = time.perf_counter_ns()
     token_times_ns: list[int] = []
     tokens: list[int] = []

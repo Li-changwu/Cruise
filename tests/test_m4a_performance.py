@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from experiments.m4a_performance.run_benchmark import (
     BLOCKED_ORDER,
+    _completion_request_body,
     _scenario_metrics,
     compare_results,
     load_manifest,
@@ -74,11 +75,36 @@ def test_m4a_commands_separate_eager_graph_and_cruise(tmp_path):
     assert "--scheduler-cls" not in commands["graph"]
     assert "--scheduler-cls" in commands["cruise"]
     assert all("--no-async-scheduling" in command for command in commands.values())
+    assert all(
+        command[command.index("--generation-config") + 1] == "vllm"
+        for command in commands.values()
+    )
     budgets = {
         command[command.index("--kv-cache-memory-bytes") + 1]
         for command in commands.values()
     }
     assert budgets == {str(512 * 1024 * 1024)}
+
+
+def test_m4a_requests_explicitly_freeze_supported_greedy_sampling():
+    manifest = load_manifest(WORKLOAD)
+    body = _completion_request_body("cruise-m4a", manifest.scenarios[0])
+
+    assert body == {
+        "model": "cruise-m4a",
+        "prompt": [9707, 11],
+        "max_tokens": 2,
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "top_k": 0,
+        "min_p": 0.0,
+        "presence_penalty": 0.0,
+        "frequency_penalty": 0.0,
+        "repetition_penalty": 1.0,
+        "min_tokens": 0,
+        "ignore_eos": False,
+        "return_token_ids": True,
+    }
 
 
 def test_benchmark_metrics_are_disabled_by_default_and_flush_once(tmp_path):
