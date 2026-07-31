@@ -19,7 +19,7 @@ import time
 import traceback
 from typing import Any, Iterable
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import ProxyHandler, build_opener
 
 from experiments.m1_batched_prefill.run_differential import (
     SCHEDULER_QUALNAME,
@@ -236,11 +236,12 @@ def _free_port() -> int:
 def _wait_ready(base_url: str, process: subprocess.Popen[Any], timeout: int) -> None:
     deadline = time.monotonic() + timeout
     last_error = "server did not respond"
+    opener = build_opener(ProxyHandler({}))
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise RuntimeError(f"API server exited during startup: {process.returncode}")
         try:
-            with urlopen(f"{base_url}/health", timeout=2) as response:
+            with opener.open(f"{base_url}/health", timeout=2) as response:
                 if response.status == 200:
                     return
                 last_error = f"health returned {response.status}"
@@ -597,7 +598,7 @@ async def _run_load(
     timeout = httpx.Timeout(600.0, connect=30.0)
     warmup_results: list[dict[str, Any]] = []
     scenario_results: list[dict[str, Any]] = []
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
         for scenario in manifest.warmups:
             records = await _execute_scenario(
                 client, base_url, manifest.served_model_name, scenario

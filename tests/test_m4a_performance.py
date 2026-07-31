@@ -10,6 +10,7 @@ from experiments.m4a_performance.run_benchmark import (
     _run_load,
     _scenario_metrics,
     _stop_server,
+    _wait_ready,
     compare_results,
     load_manifest,
     percentile,
@@ -90,7 +91,13 @@ def test_profile_barrier_is_released_after_warmups(tmp_path, monkeypatch):
         async def __aexit__(self, *_args):
             return None
 
-    monkeypatch.setattr("httpx.AsyncClient", lambda **_kwargs: Client())
+    client_options = {}
+
+    def create_client(**kwargs):
+        client_options.update(kwargs)
+        return Client()
+
+    monkeypatch.setattr("httpx.AsyncClient", create_client)
     warmups, scenarios = asyncio.run(
         _run_load(
             "http://127.0.0.1:1",
@@ -103,9 +110,43 @@ def test_profile_barrier_is_released_after_warmups(tmp_path, monkeypatch):
 
     assert warmups == []
     assert scenarios == []
+    assert client_options["trust_env"] is False
     ready_data = json.loads(ready.read_text(encoding="utf-8"))
     assert ready_data["api_server_pid"] == 123
     assert ready_data["runner_pid"] > 0
+
+
+def test_wait_ready_bypasses_environment_proxy(monkeypatch):
+    handlers = []
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    class Opener:
+        def open(self, url, timeout):
+            assert url == "http://127.0.0.1:8000/health"
+            assert timeout == 2
+            return Response()
+
+    def build_opener(*args):
+        handlers.extend(args)
+        return Opener()
+
+    monkeypatch.setattr(
+        "experiments.m4a_performance.run_benchmark.build_opener", build_opener
+    )
+    process = SimpleNamespace(returncode=None, poll=lambda: None)
+
+    _wait_ready("http://127.0.0.1:8000", process, timeout=1)
+
+    assert len(handlers) == 1
+    assert handlers[0].proxies == {}
 
 
 def test_profile_analyzer_reports_only_observed_ai_core_idle_gaps(tmp_path):
