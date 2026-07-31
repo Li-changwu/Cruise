@@ -249,10 +249,14 @@ def _device_tensor_signature(tensor: Any) -> tuple[int, int, int, int, int]:
         or allocation_bytes <= 0
         or source_offset < 0
         or source_offset + view_bytes > allocation_bytes
-        or storage_ptr < allocation_ptr
-        or storage_ptr + storage_bytes > allocation_ptr + allocation_bytes
     ):
-        raise RuntimeError("stock KV cache entry has no exportable device allocation")
+        raise RuntimeError(
+            "stock KV cache entry has no exportable device allocation: "
+            f"data_ptr={data_ptr}, view_bytes={view_bytes}, "
+            f"storage_ptr={storage_ptr}, storage_bytes={storage_bytes}, "
+            f"allocation_ptr={allocation_ptr}, "
+            f"allocation_bytes={allocation_bytes}, source_offset={source_offset}"
+        )
     storage_offset_bytes = int(tensor.storage_offset()) * int(tensor.element_size())
     if data_ptr - storage_ptr != storage_offset_bytes:
         raise RuntimeError("stock KV cache storage offset does not match its device pointer")

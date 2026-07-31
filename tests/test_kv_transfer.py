@@ -159,6 +159,54 @@ def test_device_kv_export_uses_storage_base_offsets_and_api_buffer(monkeypatch):
     assert len(closes) == IPC_KEY_COUNT // 2
 
 
+def test_device_kv_signature_allows_storage_to_span_cann_allocations(monkeypatch):
+    view_bytes = 8 * BLOCK_ELEMENTS * ELEMENT_BYTES
+
+    class FakeStorage:
+        def data_ptr(self):
+            return 0x100000
+
+        def nbytes(self):
+            return 32 * view_bytes
+
+    class FakeTensor:
+        def is_contiguous(self):
+            return True
+
+        def data_ptr(self):
+            return 0x100000 + 8 * view_bytes
+
+        def numel(self):
+            return view_bytes // ELEMENT_BYTES
+
+        def element_size(self):
+            return ELEMENT_BYTES
+
+        def untyped_storage(self):
+            return FakeStorage()
+
+        def storage_offset(self):
+            return 8 * view_bytes // ELEMENT_BYTES
+
+    allocation_ptr = 0x100000 + 8 * view_bytes
+    allocation_bytes = 10 * BLOCK_ELEMENTS * ELEMENT_BYTES
+    monkeypatch.setattr(
+        kv_transfer_module,
+        "_device_allocation_range",
+        lambda pointer: (allocation_ptr, allocation_bytes),
+    )
+
+    signature = kv_transfer_module._device_tensor_signature(FakeTensor())
+
+    assert signature == (
+        allocation_ptr,
+        view_bytes,
+        allocation_ptr,
+        allocation_bytes,
+        0,
+    )
+
+
 def test_capture_stock_paged_kv_uses_scheduler_block_and_resident_row():
     key = torch.zeros((2, 128, 4, 128), dtype=torch.bfloat16)
     value = torch.zeros_like(key)
