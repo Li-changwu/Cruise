@@ -16,7 +16,6 @@ set(CANN_LIBRARIES
   "${ASCEND_HOME_PATH}/lib64/libflow_graph.so"
   "${ASCEND_HOME_PATH}/lib64/libge_runner.so"
   "${ASCEND_HOME_PATH}/lib64/libdflow_runner.so"
-  "${ASCEND_HOME_PATH}/lib64/libacl_rt.so"
   "${ASCEND_HOME_PATH}/lib64/libfmk_parser.so"
   "${ASCEND_HOME_PATH}/lib64/libfmk_onnx_parser.so")
 
@@ -45,7 +44,8 @@ add_library(resident_epoch_bridge SHARED
 target_link_libraries(resident_epoch_bridge PRIVATE
   -Wl,--whole-archive
   ${CANN_LIBRARIES}
-  -Wl,--no-whole-archive)
+  -Wl,--no-whole-archive
+  ${CMAKE_DL_LIBS})
 
 add_library(resident_epoch_bridge_old SHARED
   $<TARGET_OBJECTS:resident_epoch_bridge_old_object>)
@@ -73,7 +73,8 @@ target_compile_options(resident_epoch_server PRIVATE
 target_link_libraries(resident_epoch_server PRIVATE
   -Wl,--whole-archive
   ${CANN_LIBRARIES}
-  -Wl,--no-whole-archive)
+  -Wl,--no-whole-archive
+  ${CMAKE_DL_LIBS})
 
 add_executable(resident_epoch_server_old
   resident_epoch_server.cpp

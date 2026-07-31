@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 from types import SimpleNamespace
 
@@ -464,7 +465,7 @@ def test_resident_sidecar_uses_ge_owned_acl_runtime():
         encoding="utf-8"
     )
 
-    assert '"${ASCEND_HOME_PATH}/lib64/libacl_rt.so"' in cmake
+    assert "libacl_rt.so" not in cmake
     assert "libascendcl.so" not in cmake
     for lifecycle_call in (
         "aclInit(",
@@ -474,11 +475,22 @@ def test_resident_sidecar_uses_ge_owned_acl_runtime():
     ):
         assert lifecycle_call not in bridge
     for transfer_call in (
-        "aclrtGetDevice(",
-        "aclrtIpcMemImportByKey(",
-        "aclrtMemcpy(",
+        'ResolveAclSymbol("aclrtGetDevice"',
+        'ResolveAclSymbol("aclrtIpcMemImportByKey"',
+        'ResolveAclSymbol("aclrtMemcpy"',
     ):
         assert transfer_call in bridge
+    assert "dlsym(RTLD_DEFAULT, name)" in bridge
+    assert "dladdr(symbol, &info)" in bridge
+    assert 'kLibraryName[] = "libacl_rt.so"' in bridge
+    for target in ("resident_epoch_bridge", "resident_epoch_server"):
+        link_block = re.search(
+            rf"target_link_libraries\({target} PRIVATE(.*?)\)",
+            cmake,
+            re.DOTALL,
+        )
+        assert link_block is not None
+        assert "${CMAKE_DL_LIBS}" in link_block.group(1)
 
 
 @pytest.mark.parametrize(

@@ -12,6 +12,8 @@
 #include <time.h>
 #include <vector>
 
+#include <dlfcn.h>
+
 #include "acl/acl_rt.h"
 #include "all_ops.h"
 #include "flow_graph/data_flow.h"
@@ -60,10 +62,21 @@ const std::array<InputSpec, 7> kInputSpecs = {{
     {{72}, ge::DT_UINT8, 72},
 }};
 
+struct AclRuntimeApi {
+  decltype(&aclrtGetDevice) get_device = nullptr;
+  decltype(&aclrtIpcMemImportByKey) ipc_import = nullptr;
+  decltype(&aclrtIpcMemClose) ipc_close = nullptr;
+  decltype(&aclrtMalloc) malloc = nullptr;
+  decltype(&aclrtFree) free = nullptr;
+  decltype(&aclrtMemset) memset = nullptr;
+  decltype(&aclrtMemcpy) memcpy = nullptr;
+};
+
 struct ResidentEpochEngine {
   std::shared_ptr<ge::Session> session;
   std::array<uint8_t, 72> tiling;
   std::mutex execute_mutex;
+  AclRuntimeApi acl;
   void *device_import_payload = nullptr;
   std::map<std::string, void *> ipc_imports;
 };
@@ -92,6 +105,37 @@ static_assert(sizeof(TransferHeader) == CRUISE_RESIDENT_TRANSFER_HEADER_BYTES,
 
 std::mutex g_lifecycle_mutex;
 bool g_engine_active = false;
+
+bool IsLibAclRtSymbol(void *symbol) {
+  if (symbol == nullptr) return false;
+  Dl_info info{};
+  if (dladdr(symbol, &info) == 0 || info.dli_fname == nullptr) return false;
+  const char *filename = std::strrchr(info.dli_fname, '/');
+  filename = filename == nullptr ? info.dli_fname : filename + 1;
+  constexpr char kLibraryName[] = "libacl_rt.so";
+  return std::strncmp(filename, kLibraryName, sizeof(kLibraryName) - 1) == 0 &&
+         (filename[sizeof(kLibraryName) - 1] == '\0' ||
+          filename[sizeof(kLibraryName) - 1] == '.');
+}
+
+template <typename Function>
+bool ResolveAclSymbol(const char *name, Function *function) {
+  if (name == nullptr || function == nullptr) return false;
+  void *symbol = dlsym(RTLD_DEFAULT, name);
+  if (!IsLibAclRtSymbol(symbol)) return false;
+  *function = reinterpret_cast<Function>(symbol);
+  return true;
+}
+
+bool ResolveAclRuntime(AclRuntimeApi &api) {
+  return ResolveAclSymbol("aclrtGetDevice", &api.get_device) &&
+         ResolveAclSymbol("aclrtIpcMemImportByKey", &api.ipc_import) &&
+         ResolveAclSymbol("aclrtIpcMemClose", &api.ipc_close) &&
+         ResolveAclSymbol("aclrtMalloc", &api.malloc) &&
+         ResolveAclSymbol("aclrtFree", &api.free) &&
+         ResolveAclSymbol("aclrtMemset", &api.memset) &&
+         ResolveAclSymbol("aclrtMemcpy", &api.memcpy);
+}
 
 bool ReadTiling(const char *path, std::array<uint8_t, 72> &tiling) {
   if (path == nullptr) return false;
@@ -270,7 +314,7 @@ void *ImportIpcMemory(ResidentEpochEngine *engine, const char *key) {
   std::array<char, CRUISE_RESIDENT_IPC_KEY_BYTES + 1> terminated_key{};
   std::memcpy(terminated_key.data(), key, key_length);
   void *device_ptr = nullptr;
-  const auto status = aclrtIpcMemImportByKey(
+  const auto status = engine->acl.ipc_import(
       &device_ptr, terminated_key.data(), ACL_RT_IPC_MEM_IMPORT_FLAG_DEFAULT);
   if (status != ACL_SUCCESS || device_ptr == nullptr) return nullptr;
   engine->ipc_imports.emplace(key_string, device_ptr);
@@ -284,19 +328,20 @@ bool PrepareDeviceIpcPayload(ResidentEpochEngine *engine,
     return false;
   }
   int32_t current_device = -1;
-  if (aclrtGetDevice(&current_device) != ACL_SUCCESS || current_device != 0) {
+  if (engine->acl.get_device(&current_device) != ACL_SUCCESS ||
+      current_device != 0) {
     return false;
   }
   if (engine->device_import_payload == nullptr) {
-    if (aclrtMalloc(&engine->device_import_payload,
-                    CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES,
-                    ACL_MEM_MALLOC_HUGE_FIRST) != ACL_SUCCESS) {
+    if (engine->acl.malloc(&engine->device_import_payload,
+                           CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES,
+                           ACL_MEM_MALLOC_HUGE_FIRST) != ACL_SUCCESS) {
       return false;
     }
   }
-  if (aclrtMemset(engine->device_import_payload,
-                  CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES, 0,
-                  CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES) != ACL_SUCCESS) {
+  if (engine->acl.memset(engine->device_import_payload,
+                         CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES, 0,
+                         CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES) != ACL_SUCCESS) {
     return false;
   }
   auto *destination = static_cast<uint8_t *>(engine->device_import_payload);
@@ -308,7 +353,7 @@ bool PrepareDeviceIpcPayload(ResidentEpochEngine *engine,
         static_cast<size_t>(segment.destination_offset);
     const size_t source_offset = static_cast<size_t>(segment.source_offset);
     const size_t copy_bytes = static_cast<size_t>(segment.copy_bytes);
-    if (aclrtMemcpy(
+    if (engine->acl.memcpy(
             destination + destination_offset,
             CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES - destination_offset,
             static_cast<uint8_t *>(source) + source_offset, copy_bytes,
@@ -433,6 +478,11 @@ extern "C" void *resident_epoch_create(
   auto ret = ge::GEInitialize(options);
   if (ret != ge::SUCCESS) {
     *status = 3;
+    return nullptr;
+  }
+  if (!ResolveAclRuntime(engine->acl)) {
+    ge::GEFinalize();
+    *status = 6;
     return nullptr;
   }
   engine->session = std::make_shared<ge::Session>(
@@ -691,11 +741,11 @@ extern "C" void resident_epoch_destroy(void *opaque) {
   {
     std::lock_guard<std::mutex> execute_lock(engine->execute_mutex);
     for (const auto &entry : engine->ipc_imports) {
-      aclrtIpcMemClose(entry.first.c_str());
+      engine->acl.ipc_close(entry.first.c_str());
     }
     engine->ipc_imports.clear();
     if (engine->device_import_payload != nullptr) {
-      aclrtFree(engine->device_import_payload);
+      engine->acl.free(engine->device_import_payload);
       engine->device_import_payload = nullptr;
     }
     engine->session.reset();
