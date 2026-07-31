@@ -17,6 +17,7 @@ TRANSFER_HEADER_BYTES = 80
 IPC_METADATA_MAGIC = 0x4352554953454950  # "CRUISEIP"
 IPC_METADATA_VERSION = 1
 IPC_KEY_BYTES = 64
+IPC_EXPORT_BUFFER_BYTES = 128
 LAYERS = 28
 GRAPH_BATCH_SIZE = 4
 BLOCK_SIZE = 128
@@ -208,7 +209,7 @@ def _get_device_kv_exports(worker: Any, kv_caches: list[Any]) -> _DeviceKVExport
     keys: list[str] = []
     for pointer, size in signature:
         key, status = acl.rt.ipc_mem_get_export_key(
-            pointer, size, IPC_KEY_BYTES, 1
+            pointer, size, IPC_EXPORT_BUFFER_BYTES, 1
         )
         if status != 0 or not isinstance(key, str) or not key:
             for exported in keys:

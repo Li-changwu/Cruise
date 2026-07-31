@@ -1,4 +1,5 @@
 import struct
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -15,12 +16,14 @@ from vllm_ascend_resident_epoch.kv_transfer import (
     ELEMENT_BYTES,
     GRAPH_BATCH_SIZE,
     HEADER,
+    IPC_EXPORT_BUFFER_BYTES,
     IPC_KEY_BYTES,
     IPC_KEY_COUNT,
     IPC_METADATA_BYTES,
     PAYLOAD_BYTES,
     TRANSFER_HEADER_BYTES,
     DeviceKVTransfer,
+    capture_kv_device_transfer,
     capture_kv_snapshot,
     kv_payload_checksum,
 )
@@ -41,6 +44,69 @@ def test_device_kv_transfer_wire_contract_contains_only_metadata():
     assert len(wire) == IPC_METADATA_BYTES
     assert IPC_METADATA_BYTES < PAYLOAD_BYTES // 1000
     assert wire[-IPC_KEY_BYTES:] == f"{IPC_KEY_COUNT - 1:064x}".encode()
+
+
+def test_device_kv_export_uses_a_null_terminated_api_buffer(monkeypatch):
+    calls = []
+
+    class FakeTensor:
+        dtype = "torch.bfloat16"
+
+        def __init__(self, pointer):
+            self.pointer = pointer
+
+        def is_contiguous(self):
+            return True
+
+        def data_ptr(self):
+            return self.pointer
+
+        def numel(self):
+            return 8 * BLOCK_ELEMENTS
+
+        def element_size(self):
+            return ELEMENT_BYTES
+
+    class FakeRuntime:
+        def ipc_mem_get_export_key(self, pointer, size, buffer_bytes, flag):
+            calls.append((pointer, size, buffer_bytes, flag))
+            return f"{pointer:064x}", 0
+
+    monkeypatch.setitem(sys.modules, "acl", SimpleNamespace(rt=FakeRuntime()))
+    kv_caches = []
+    for layer in range(28):
+        kv_caches.append(
+            (FakeTensor(0x1000 + layer * 2), FakeTensor(0x1001 + layer * 2))
+        )
+    worker = SimpleNamespace(model_runner=SimpleNamespace(kv_caches=kv_caches))
+    plan = ResidentEpochPlan(
+        version=CONTRACT_VERSION,
+        graph_batch_size=4,
+        max_steps=2,
+        logical_capacity=8,
+        requests=(
+            ResidentEpochRequest(
+                req_id="prefilled",
+                row=0,
+                generation=7,
+                token_id=42,
+                position=3,
+                sequence_length=4,
+                eos_token_id=151645,
+                scheduler_block_ids=(0,),
+                device_block_ids=(0, 1),
+                state_owner="host",
+                kv_import_required=True,
+            ),
+        ),
+        active_mask=(1, 0, 0, 0),
+    )
+
+    transfer = capture_kv_device_transfer(worker, plan)
+
+    assert len(calls) == IPC_KEY_COUNT
+    assert all(call[2:] == (IPC_EXPORT_BUFFER_BYTES, 1) for call in calls)
+    assert all(len(key) == IPC_KEY_BYTES for key in transfer.keys)
 
 
 def test_capture_stock_paged_kv_uses_scheduler_block_and_resident_row():

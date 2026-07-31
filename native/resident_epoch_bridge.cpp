@@ -176,22 +176,29 @@ bool ValidateIpcMetadata(const ResidentEpochIpcMetadata *metadata,
     }
   }
   for (int32_t index = 0; index < CRUISE_RESIDENT_IPC_KEY_COUNT; ++index) {
-    if (std::memchr(metadata->keys[index], '\0',
-                    CRUISE_RESIDENT_IPC_KEY_BYTES) == nullptr) {
-      return false;
-    }
+    const char *key = metadata->keys[index];
+    const size_t key_length = strnlen(key, CRUISE_RESIDENT_IPC_KEY_BYTES);
+    if (key_length == 0) return false;
+    if (key_length < CRUISE_RESIDENT_IPC_KEY_BYTES &&
+        std::any_of(key + key_length + 1,
+                    key + CRUISE_RESIDENT_IPC_KEY_BYTES,
+                    [](char value) { return value != '\0'; })) return false;
   }
   return true;
 }
 
 void *ImportIpcMemory(ResidentEpochEngine *engine, const char *key) {
   if (engine == nullptr || key == nullptr || *key == '\0') return nullptr;
-  const std::string key_string(key);
+  const size_t key_length = strnlen(key, CRUISE_RESIDENT_IPC_KEY_BYTES);
+  if (key_length == 0) return nullptr;
+  const std::string key_string(key, key_length);
   const auto existing = engine->ipc_imports.find(key_string);
   if (existing != engine->ipc_imports.end()) return existing->second;
+  std::array<char, CRUISE_RESIDENT_IPC_KEY_BYTES + 1> terminated_key{};
+  std::memcpy(terminated_key.data(), key, key_length);
   void *device_ptr = nullptr;
   const auto status = aclrtIpcMemImportByKey(
-      &device_ptr, key, ACL_RT_IPC_MEM_IMPORT_FLAG_DEFAULT);
+      &device_ptr, terminated_key.data(), ACL_RT_IPC_MEM_IMPORT_FLAG_DEFAULT);
   if (status != ACL_SUCCESS || device_ptr == nullptr) return nullptr;
   engine->ipc_imports.emplace(key_string, device_ptr);
   return device_ptr;
