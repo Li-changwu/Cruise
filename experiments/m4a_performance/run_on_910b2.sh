@@ -306,7 +306,7 @@ run_profile_route() {
   fi
 
   timeout --signal=TERM --kill-after=30s 7200s python3 "${runner}" \
-    --mode "${mode}" --run-label "profile-${mode}" --model "${model}" \
+    --mode "${mode}" --run-label "${mode}-profile" --model "${model}" \
     --workload "${workload}" --runtime-dir "${runtime}" \
     --only-scenario decode-stream-c4 \
     --profile-ready-file "${ready}" --profile-start-file "${start}" \
