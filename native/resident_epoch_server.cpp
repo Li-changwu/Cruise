@@ -19,6 +19,7 @@ constexpr uint16_t kExecute = 1;
 constexpr uint16_t kWarmUp = 2;
 constexpr uint16_t kShutdown = 3;
 constexpr uint16_t kImportExecute = 4;
+constexpr uint16_t kDeviceIpcExecute = 5;
 constexpr int32_t kBatchSize = 4;
 constexpr int32_t kMaxEpochSteps = 8;
 
@@ -60,6 +61,9 @@ static_assert(sizeof(Request) == CRUISE_SIDECAR_REQUEST_BYTES,
               "resident epoch request ABI changed");
 static_assert(sizeof(Response) == CRUISE_SIDECAR_RESPONSE_BYTES,
               "resident epoch response ABI changed");
+static_assert(sizeof(ResidentEpochIpcMetadata) ==
+                  CRUISE_RESIDENT_IPC_METADATA_BYTES,
+              "resident Device IPC metadata ABI changed");
 
 bool ReadAll(int fd, void *buffer, size_t bytes) {
   auto *cursor = static_cast<uint8_t *>(buffer);
@@ -164,6 +168,8 @@ int main(int argc, char **argv) {
       break;
     }
     Response response = EmptyResponse(0);
+    ResidentEpochIpcMetadata ipc_metadata{};
+    const bool direct_device_import = request.operation == kDeviceIpcExecute;
     if (request.magic != kRequestMagic ||
         request.version != kProtocolVersion) {
       response.transport_status = 69;
@@ -172,20 +178,27 @@ int main(int argc, char **argv) {
       break;
     } else if (request.operation != kExecute &&
                request.operation != kWarmUp &&
-               request.operation != kImportExecute) {
+               request.operation != kImportExecute &&
+               request.operation != kDeviceIpcExecute) {
       response.transport_status = 71;
     } else {
+      if (direct_device_import &&
+          !ReadAll(client, &ipc_metadata, sizeof(ipc_metadata))) {
+        exit_status = 73;
+        break;
+      }
       response.transport_status = resident_epoch_execute(
           engine, request.request_count, request.max_steps, request.token_ids,
           request.positions, request.sequence_lengths, request.eos_token_ids,
           request.row_generations, response.token_ids, response.executed,
           response.row_generations, &response.model_calls,
            &response.device_status, &response.feed_calls,
-           &response.fetch_calls, &response.commit_state, &response.reserved,
-           &response.wall_us, &response.native_cpu_us,
-           &response.declared_input_bytes, &response.declared_output_bytes,
-           request.operation == kImportExecute ? transfer_path.c_str() : nullptr,
-           request.transfer_id);
+            &response.fetch_calls, &response.commit_state, &response.reserved,
+            &response.wall_us, &response.native_cpu_us,
+            &response.declared_input_bytes, &response.declared_output_bytes,
+            request.operation == kImportExecute ? transfer_path.c_str() : nullptr,
+            request.transfer_id,
+            direct_device_import ? &ipc_metadata : nullptr);
       if (request.operation == kImportExecute) unlink(transfer_path.c_str());
     }
     if (!WriteAll(client, &response, sizeof(response))) {

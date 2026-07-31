@@ -1,6 +1,6 @@
 from .backend import NativeEpochOutput, NativeWarmupOutput
 from .contract import ResidentEpochPlan
-from .kv_transfer import ResidentKVSnapshot
+from .kv_transfer import DeviceKVTransfer, ResidentKVSnapshot
 
 
 class DeterministicTestEngine:
@@ -56,6 +56,20 @@ class DeterministicTestEngine:
                 "kv_imported": True,
                 "kv_import_checksum": snapshot.checksum,
                 "declared_input_bytes": len(snapshot.payload) + 212,
+            }
+        )
+
+    def execute_with_device_transfer(
+        self, plan: ResidentEpochPlan, transfer: DeviceKVTransfer
+    ) -> NativeEpochOutput:
+        transfer.validate()
+        output = self.execute(plan)
+        return NativeEpochOutput(
+            **{
+                **output.__dict__,
+                "kv_imported": True,
+                "kv_import_checksum": 1,
+                "kv_transfer_mode": "device_ipc",
             }
         )
 

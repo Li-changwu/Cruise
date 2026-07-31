@@ -465,7 +465,7 @@ def test_two_simultaneous_prefills_are_isolated_from_device_owned_request():
     ]
 
 
-def test_delta_output_kind_limits_epoch_to_one_visible_token():
+def test_delta_output_kind_allows_bounded_multi_token_epoch():
     scheduler = make_scheduler(2)
     scheduler._resident_epoch_config = ResidentEpochConfig(max_steps=4)
     requests = add_greedy_requests(scheduler, 2, max_tokens=6)
@@ -475,4 +475,16 @@ def test_delta_output_kind_limits_epoch_to_one_visible_token():
     plan = get_plan(scheduler_output)
 
     assert plan is not None
-    assert plan.max_steps == 1
+    assert plan.max_steps == 4
+
+
+def test_running_prefill_is_isolated_from_device_owned_requests():
+    scheduler = make_scheduler(2)
+    device_request = add_greedy_requests(scheduler, 1, max_tokens=6)[0]
+    prefill_request = make_prefill_request("prefill", [9707, 11, 358], 4)
+    prefill_request.num_computed_tokens = 1
+    scheduler.running = [device_request, prefill_request]
+
+    reason = scheduler._host_isolation_reason((device_request,))
+
+    assert reason == "host-prefill-admission"

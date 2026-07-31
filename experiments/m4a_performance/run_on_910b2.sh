@@ -337,9 +337,11 @@ run_profile_route() {
     printf 'profile-%s-target\t124\n' "${mode}" >>"${status}"
     return 124
   fi
-  printf '%s\n' "${target_pid}" >"${evidence}/profile-${mode}-target-pid.txt"
+  printf '%s\n' "${api_pid}" >"${evidence}/profile-${mode}-target-pid.txt"
+  printf '%s\n' "${target_pid}" \
+    >"${evidence}/profile-${mode}-device-process-pid.txt"
   timeout --signal=TERM --kill-after=30s 180s msprof \
-    --output="${profile_root}/${mode}" --dynamic=on --pid="${target_pid}" \
+    --output="${profile_root}/${mode}" --dynamic=on --pid="${api_pid}" \
     --duration=30 --runtime-api=on --ge-api=l0 --task-time=l1 \
     --ai-core=on --aic-metrics=PipeUtilization --storage-limit=256MB \
     >"${msprof_stdout}" 2>&1 &

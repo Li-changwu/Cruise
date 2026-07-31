@@ -16,6 +16,7 @@ set(CANN_LIBRARIES
   "${ASCEND_HOME_PATH}/lib64/libflow_graph.so"
   "${ASCEND_HOME_PATH}/lib64/libge_runner.so"
   "${ASCEND_HOME_PATH}/lib64/libdflow_runner.so"
+  "${ASCEND_HOME_PATH}/lib64/libascendcl.so"
   "${ASCEND_HOME_PATH}/lib64/libfmk_parser.so"
   "${ASCEND_HOME_PATH}/lib64/libfmk_onnx_parser.so")
 

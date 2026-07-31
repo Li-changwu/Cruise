@@ -223,10 +223,13 @@ extern "C" int32_t resident_epoch_execute(
     int64_t *output_wall_us, int64_t *output_native_cpu_us,
     int64_t *output_declared_input_bytes,
     int64_t *output_declared_output_bytes,
-    const char *transfer_path, uint64_t transfer_id) {
+    const char *transfer_path, uint64_t transfer_id,
+    const ResidentEpochIpcMetadata *ipc_metadata) {
   if (output_commit_state == nullptr) return 10;
   *output_commit_state = CRUISE_EPOCH_PREPARED;
-  if (transfer_path != nullptr || transfer_id != 0) return 14;
+  if (transfer_path != nullptr || transfer_id != 0 || ipc_metadata != nullptr) {
+    return 14;
+  }
   if (opaque == nullptr || request_count < 1 || request_count > kBatchSize ||
       max_steps < 1 || max_steps > kMaxEpochSteps ||
       input_token_ids == nullptr || input_positions == nullptr ||

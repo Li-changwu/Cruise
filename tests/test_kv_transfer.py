@@ -15,11 +15,32 @@ from vllm_ascend_resident_epoch.kv_transfer import (
     ELEMENT_BYTES,
     GRAPH_BATCH_SIZE,
     HEADER,
+    IPC_KEY_BYTES,
+    IPC_KEY_COUNT,
+    IPC_METADATA_BYTES,
     PAYLOAD_BYTES,
     TRANSFER_HEADER_BYTES,
+    DeviceKVTransfer,
     capture_kv_snapshot,
     kv_payload_checksum,
 )
+
+
+def test_device_kv_transfer_wire_contract_contains_only_metadata():
+    transfer = DeviceKVTransfer(
+        transfer_id=7,
+        import_mask=0b0101,
+        row_generations=(11, 0, 13, 0),
+        block_ids=(2, 0, 5, 0),
+        source_bytes=8 * BLOCK_ELEMENTS * ELEMENT_BYTES,
+        keys=tuple(f"{index:064x}" for index in range(IPC_KEY_COUNT)),
+    )
+
+    wire = transfer.wire_bytes()
+
+    assert len(wire) == IPC_METADATA_BYTES
+    assert IPC_METADATA_BYTES < PAYLOAD_BYTES // 1000
+    assert wire[-IPC_KEY_BYTES:] == f"{IPC_KEY_COUNT - 1:064x}".encode()
 
 
 def test_capture_stock_paged_kv_uses_scheduler_block_and_resident_row():

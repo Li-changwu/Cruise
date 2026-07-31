@@ -1,6 +1,5 @@
 from typing import Any
 
-from vllm.sampling_params import RequestOutputKind
 from vllm.v1.core.sched.scheduler import Scheduler
 from vllm.v1.outputs import ModelRunnerOutput
 
@@ -111,6 +110,11 @@ class ResidentEpochScheduler(Scheduler):
             for request in host_running
         ):
             return "unsupported-host-isolation"
+        if any(
+            request.num_computed_tokens < request.num_prompt_tokens
+            for request in host_running
+        ):
+            return "host-prefill-admission"
         waiting = tuple(self.waiting) + tuple(self.skipped_waiting)
         if (
             any(
@@ -238,12 +242,6 @@ class ResidentEpochScheduler(Scheduler):
             remaining_steps.append(remaining)
 
         epoch_budget = min(config.max_steps, min(remaining_steps))
-        if any(
-            request.sampling_params is not None
-            and request.sampling_params.output_kind == RequestOutputKind.DELTA
-            for request in requests
-        ):
-            epoch_budget = 1
         epoch_steps = max(
             step for step in (1, 2, 4, 8) if step <= epoch_budget
         )

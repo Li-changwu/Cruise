@@ -1,6 +1,7 @@
 import ctypes
 import os
 from pathlib import Path
+from typing import Any
 
 from .backend import NativeEpochOutput
 from .contract import (
@@ -8,7 +9,7 @@ from .contract import (
     ResidentEpochExecutionError,
     ResidentEpochPlan,
 )
-from .kv_transfer import ResidentKVSnapshot, write_kv_snapshot
+from .kv_transfer import DeviceKVTransfer, ResidentKVSnapshot, write_kv_snapshot
 
 
 MAX_EPOCH_STEPS = 8
@@ -73,6 +74,7 @@ class CtypesDataFlowEngine:
             ctypes.POINTER(ctypes.c_int64),  # output_declared_output_bytes
             ctypes.c_char_p,  # transfer_path
             ctypes.c_uint64,  # transfer_id
+            ctypes.c_void_p,  # device IPC metadata
         ]
         self.library.resident_epoch_execute.restype = ctypes.c_int32
         self.library.resident_epoch_destroy.argtypes = [ctypes.c_void_p]
@@ -93,7 +95,9 @@ class CtypesDataFlowEngine:
             )
 
     def execute(self, plan: ResidentEpochPlan) -> NativeEpochOutput:
-        return self._execute(plan, transfer_path=None, transfer_id=0)
+        return self._execute(
+            plan, transfer_path=None, transfer_id=0, ipc_metadata=None
+        )
 
     def execute_with_import(
         self, plan: ResidentEpochPlan, snapshot: ResidentKVSnapshot
@@ -107,9 +111,22 @@ class CtypesDataFlowEngine:
                 plan,
                 transfer_path=path,
                 transfer_id=snapshot.transfer_id,
+                ipc_metadata=None,
             )
         finally:
             path.unlink(missing_ok=True)
+
+    def execute_with_device_transfer(
+        self, plan: ResidentEpochPlan, transfer: DeviceKVTransfer
+    ) -> NativeEpochOutput:
+        transfer.validate()
+        metadata = ctypes.create_string_buffer(transfer.wire_bytes())
+        return self._execute(
+            plan,
+            transfer_path=None,
+            transfer_id=transfer.transfer_id,
+            ipc_metadata=metadata,
+        )
 
     def _execute(
         self,
@@ -117,6 +134,7 @@ class CtypesDataFlowEngine:
         *,
         transfer_path: Path | None,
         transfer_id: int,
+        ipc_metadata: Any | None,
     ) -> NativeEpochOutput:
         if plan.graph_batch_size != 4:
             raise ValueError("the ctypes backend owns only the static B=4 graph")
@@ -173,6 +191,9 @@ class CtypesDataFlowEngine:
             ctypes.byref(declared_output_bytes),
             str(transfer_path).encode() if transfer_path is not None else None,
             transfer_id,
+            ctypes.cast(ipc_metadata, ctypes.c_void_p)
+            if ipc_metadata is not None
+            else None,
         )
         try:
             commit_state = EpochCommitState(commit_state_value.value)
@@ -213,7 +234,7 @@ class CtypesDataFlowEngine:
             native_cpu_us=native_cpu_us.value,
             declared_input_bytes=declared_input_bytes.value,
             declared_output_bytes=declared_output_bytes.value,
-            kv_imported=transfer_path is not None,
+            kv_imported=transfer_path is not None or ipc_metadata is not None,
             kv_import_checksum=kv_import_checksum.value & 0xFFFFFFFF,
         )
 

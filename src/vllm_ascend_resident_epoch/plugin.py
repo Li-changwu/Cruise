@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from .backend import load_backend_from_env
@@ -11,7 +12,11 @@ from .contract import (
     attach_result,
     get_plan,
 )
-from .kv_transfer import capture_kv_snapshot
+from .kv_transfer import (
+    capture_kv_device_transfer,
+    capture_kv_snapshot,
+    release_kv_device_exports,
+)
 from .triton_compat import ensure_triton_ascend_runtime
 
 
@@ -35,14 +40,16 @@ def _execute_model_with_fallback(
             return attach_host_fallback_result(output, plan.req_ids)
         worker._resident_epoch_backend = backend
     try:
-        snapshot = (
-            capture_kv_snapshot(worker, plan)
-            if any(request.kv_import_required for request in plan.requests)
-            else None
-        )
-        if snapshot is None:
+        if not any(request.kv_import_required for request in plan.requests):
             return backend.execute(plan)
-        return backend.execute(plan, snapshot=snapshot)
+        try:
+            device_transfer = capture_kv_device_transfer(worker, plan)
+        except Exception:
+            if os.getenv("VLLM_ASCEND_RESIDENT_EPOCH_ALLOW_HOST_KV_SNAPSHOT", "0") != "1":
+                raise
+            snapshot = capture_kv_snapshot(worker, plan)
+            return backend.execute(plan, snapshot=snapshot)
+        return backend.execute(plan, device_transfer=device_transfer)
     except ResidentEpochExecutionError as exc:
         if not exc.input_preserving or not plan.host_replay_safe:
             raise
@@ -71,6 +78,7 @@ def register() -> None:
             if backend is not None:
                 backend.close()
         finally:
+            release_kv_device_exports(self)
             self._resident_epoch_backend = None
             original_shutdown(self)
 

@@ -133,6 +133,7 @@ class ResidentEpochResult:
     kv_imported: bool = False
     kv_import_checksum: int = 0
     kv_snapshot_checksum: int = 0
+    kv_transfer_mode: Literal["none", "host_snapshot", "device_ipc"] = "none"
 
     def validate_against(
         self,
@@ -162,12 +163,26 @@ class ResidentEpochResult:
             request.kv_import_required for request in plan.requests
         ) and not self.kv_imported:
             raise ValueError("device result did not commit the requested KV import")
+        transfer_mode = (
+            "host_snapshot"
+            if self.kv_imported and self.kv_transfer_mode == "none"
+            else self.kv_transfer_mode
+        )
         if self.kv_imported and (
             self.kv_import_checksum == 0
-            or self.kv_snapshot_checksum == 0
+            or transfer_mode not in ("host_snapshot", "device_ipc")
+        ):
+            raise ValueError("device result did not prove an imported KV transfer")
+        if self.kv_imported and transfer_mode == "host_snapshot" and (
+            self.kv_snapshot_checksum == 0
             or self.kv_import_checksum != self.kv_snapshot_checksum
         ):
-            raise ValueError("device result did not prove equivalent imported KV")
+            raise ValueError(
+                "device result did not prove equivalent imported KV "
+                "from the Host snapshot"
+            )
+        if not self.kv_imported and transfer_mode != "none":
+            raise ValueError("KV transfer mode is set without an import")
         if self.route == "host_fallback" and not self.fallback_safe:
             raise ValueError("host fallback must be declared input-preserving")
         if (

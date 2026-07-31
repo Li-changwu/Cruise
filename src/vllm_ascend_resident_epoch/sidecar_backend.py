@@ -12,7 +12,12 @@ from .contract import (
     ResidentEpochPlan,
 )
 from .version import SIDECAR_PROTOCOL_VERSION
-from .kv_transfer import ResidentKVSnapshot, write_kv_snapshot
+from .kv_transfer import (
+    IPC_METADATA_BYTES,
+    DeviceKVTransfer,
+    ResidentKVSnapshot,
+    write_kv_snapshot,
+)
 
 
 REQUEST_MAGIC = 0x71317131
@@ -22,6 +27,7 @@ EXECUTE = 1
 WARM_UP = 2
 SHUTDOWN = 3
 IMPORT_EXECUTE = 4
+DEVICE_IPC_EXECUTE = 5
 GRAPH_BATCH_SIZE = 4
 MAX_EPOCH_STEPS = 8
 WARMUP_GENERATION = 2**31 - 1
@@ -295,12 +301,37 @@ class SidecarDataFlowEngine:
         finally:
             self.transfer_path.unlink(missing_ok=True)
 
+    def execute_with_device_transfer(
+        self, plan: ResidentEpochPlan, transfer: DeviceKVTransfer
+    ) -> NativeEpochOutput:
+        transfer.validate()
+        expected_mask = sum(
+            1 << request.row
+            for request in plan.requests
+            if request.kv_import_required
+        )
+        if transfer.import_mask != expected_mask:
+            raise ValueError("device KV transfer mask does not match the resident plan")
+        expected_generations = [0] * GRAPH_BATCH_SIZE
+        for request in plan.requests:
+            if request.kv_import_required:
+                expected_generations[request.row] = request.generation
+        if transfer.row_generations != tuple(expected_generations):
+            raise ValueError("device KV transfer generations do not match the resident plan")
+        return self._execute(
+            plan,
+            operation=DEVICE_IPC_EXECUTE,
+            transfer_id=transfer.transfer_id,
+            ipc_metadata=transfer.wire_bytes(),
+        )
+
     def _execute(
         self,
         plan: ResidentEpochPlan,
         *,
         operation: int,
         transfer_id: int,
+        ipc_metadata: bytes | None = None,
     ) -> NativeEpochOutput:
         if self.socket is None:
             raise ResidentEpochExecutionError(
@@ -323,6 +354,10 @@ class SidecarDataFlowEngine:
             *_by_row(plan, "eos_token_id", 151645),
             *plan.row_generations,
         )
+        if operation == DEVICE_IPC_EXECUTE:
+            if ipc_metadata is None or len(ipc_metadata) != IPC_METADATA_BYTES:
+                raise ValueError("direct Device KV operation has invalid metadata")
+            payload += ipc_metadata
         try:
             self.socket.sendall(payload)
             values = self._receive_response()
@@ -374,7 +409,7 @@ class SidecarDataFlowEngine:
             native_cpu_us=native_cpu_us,
             declared_input_bytes=declared_input_bytes,
             declared_output_bytes=declared_output_bytes,
-            kv_imported=operation == IMPORT_EXECUTE,
+            kv_imported=operation in (IMPORT_EXECUTE, DEVICE_IPC_EXECUTE),
             kv_import_checksum=values[7] & 0xFFFFFFFF,
         )
 

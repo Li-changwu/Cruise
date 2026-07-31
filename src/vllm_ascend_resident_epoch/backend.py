@@ -13,7 +13,7 @@ from .contract import (
     ResidentEpochExecutionError,
     attach_result,
 )
-from .kv_transfer import ResidentKVSnapshot
+from .kv_transfer import DeviceKVTransfer, ResidentKVSnapshot
 
 
 @dataclass(frozen=True)
@@ -33,6 +33,7 @@ class NativeEpochOutput:
     socket_receive_calls: int = 1
     kv_imported: bool = False
     kv_import_checksum: int = 0
+    kv_transfer_mode: str = "none"
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,10 @@ class NativeEpochEngine(Protocol):
 
     def execute_with_import(
         self, plan: ResidentEpochPlan, snapshot: ResidentKVSnapshot
+    ) -> NativeEpochOutput: ...
+
+    def execute_with_device_transfer(
+        self, plan: ResidentEpochPlan, transfer: DeviceKVTransfer
     ) -> NativeEpochOutput: ...
 
 
@@ -86,7 +91,10 @@ class ResidentEpochBackend:
         self,
         plan: ResidentEpochPlan,
         snapshot: ResidentKVSnapshot | None = None,
+        device_transfer: DeviceKVTransfer | None = None,
     ) -> ModelRunnerOutput:
+        if snapshot is not None and device_transfer is not None:
+            raise ValueError("resident epoch cannot use two KV transfer modes")
         try:
             plan.validate()
         except Exception as exc:
@@ -95,7 +103,17 @@ class ResidentEpochBackend:
                 commit_state=EpochCommitState.PREPARED,
             ) from exc
         try:
-            if snapshot is None:
+            if device_transfer is not None:
+                execute_with_device_transfer = getattr(
+                    self.engine, "execute_with_device_transfer", None
+                )
+                if not callable(execute_with_device_transfer):
+                    raise ResidentEpochExecutionError(
+                        "resident backend does not support direct Device KV transfer",
+                        commit_state=EpochCommitState.PREPARED,
+                    )
+                native_output = execute_with_device_transfer(plan, device_transfer)
+            elif snapshot is None:
                 native_output = self.engine.execute(plan)
             else:
                 execute_with_import = getattr(self.engine, "execute_with_import", None)
@@ -132,6 +150,11 @@ class ResidentEpochBackend:
                 "resident KV import checksum disagrees with the Host snapshot",
                 commit_state=EpochCommitState.COMMITTED,
             )
+        if device_transfer is not None and native_output.kv_import_checksum == 0:
+            raise ResidentEpochExecutionError(
+                "direct Device KV transfer did not return an import checksum",
+                commit_state=EpochCommitState.COMMITTED,
+            )
         if set(native_output.token_ids) != set(plan.req_ids):
             raise ResidentEpochExecutionError(
                 "native resident epoch returned the wrong request set",
@@ -161,6 +184,10 @@ class ResidentEpochBackend:
             kv_imported=native_output.kv_imported,
             kv_import_checksum=native_output.kv_import_checksum,
             kv_snapshot_checksum=snapshot.checksum if snapshot is not None else 0,
+            kv_transfer_mode=(
+                "device_ipc" if device_transfer is not None
+                else ("host_snapshot" if snapshot is not None else "none")
+            ),
         )
         try:
             result.validate_against(
