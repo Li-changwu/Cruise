@@ -287,8 +287,10 @@ find_profile_target() {
 }
 
 run_profile_route() {
-  local mode=$1 runtime=${runs}/profile-${mode}
-  local ready=${runtime}/profile-ready.json start=${runtime}/profile-start
+  local mode=$1
+  local runtime=${runs}/profile-${mode}
+  local ready=${runtime}/profile-ready.json
+  local start=${runtime}/profile-start
   local result=${evidence}/profile-${mode}.json
   local benchmark_stdout=${scratch}/profile-${mode}-benchmark.stdout
   local msprof_stdout=${scratch}/profile-${mode}-msprof.stdout
