@@ -1,4 +1,5 @@
 import json
+import signal
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -6,6 +7,7 @@ from experiments.m4a_performance.run_benchmark import (
     BLOCKED_ORDER,
     _completion_request_body,
     _scenario_metrics,
+    _stop_server,
     compare_results,
     load_manifest,
     percentile,
@@ -105,6 +107,28 @@ def test_m4a_requests_explicitly_freeze_supported_greedy_sampling():
         "ignore_eos": False,
         "return_token_ids": True,
     }
+
+
+def test_m4a_graceful_stop_does_not_signal_the_engine_process_group(monkeypatch):
+    signals = []
+
+    class Process:
+        pid = 123
+        returncode = None
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout):
+            assert timeout == 180
+            self.returncode = 0
+
+    monkeypatch.setattr(
+        "experiments.m4a_performance.run_benchmark.os.kill",
+        lambda pid, sig: signals.append((pid, sig)),
+    )
+    assert _stop_server(Process()) == 0
+    assert signals == [(123, signal.SIGTERM)]
 
 
 def test_benchmark_metrics_are_disabled_by_default_and_flush_once(tmp_path):

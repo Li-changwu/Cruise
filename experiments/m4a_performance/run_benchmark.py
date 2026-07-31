@@ -313,7 +313,7 @@ def _bounded_logger_command(output: Path) -> tuple[list[str], Path]:
 
 def _stop_server(process: subprocess.Popen[Any]) -> int:
     if process.poll() is None:
-        os.killpg(process.pid, signal.SIGTERM)
+        os.kill(process.pid, signal.SIGTERM)
         try:
             process.wait(timeout=180)
         except subprocess.TimeoutExpired:
