@@ -285,6 +285,7 @@ run_step cmake 600s cmake -S "${src}/native" -B "${build}" || exit $?
 run_step build 1800s cmake --build "${build}" --parallel 2 || exit $?
 sha256sum "${build}/libresident_epoch_bridge.so" \
   "${build}/libresident_epoch_bridge_old.so" \
+  "${build}/libresident_device_transfer.so" \
   "${build}/resident_epoch_server" \
   "${build}/resident_epoch_server_old" \
   "${build}/libresident_epoch_memcpy_trace.so" \

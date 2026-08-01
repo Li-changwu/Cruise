@@ -9,6 +9,10 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#ifdef CRUISE_RESIDENT_DEVICE_TRANSFER_PLUGIN
+#include <dlfcn.h>
+#endif
+
 #include "resident_epoch_bridge.h"
 #include "resident_epoch_protocol.h"
 
@@ -129,6 +133,46 @@ int CreateListener(const char *path) {
   }
   return fd;
 }
+
+#ifdef CRUISE_RESIDENT_DEVICE_TRANSFER_PLUGIN
+struct DeviceTransferPlugin {
+  void *handle = nullptr;
+  ResidentDeviceTransferPrepare prepare = nullptr;
+  ResidentDeviceTransferDestroy destroy = nullptr;
+};
+
+bool LoadDeviceTransferPlugin(const char *server_path,
+                              DeviceTransferPlugin *plugin) {
+  if (server_path == nullptr || plugin == nullptr) return false;
+  const std::string executable(server_path);
+  const auto separator = executable.find_last_of('/');
+  if (separator == std::string::npos) return false;
+  const std::string library_path =
+      executable.substr(0, separator + 1) + "libresident_device_transfer.so";
+  void *handle = dlopen(library_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+  if (handle == nullptr) return false;
+  auto prepare = reinterpret_cast<ResidentDeviceTransferPrepare>(
+      dlsym(handle, "resident_device_transfer_prepare"));
+  auto destroy = reinterpret_cast<ResidentDeviceTransferDestroy>(
+      dlsym(handle, "resident_device_transfer_destroy"));
+  if (prepare == nullptr || destroy == nullptr) {
+    dlclose(handle);
+    return false;
+  }
+  plugin->handle = handle;
+  plugin->prepare = prepare;
+  plugin->destroy = destroy;
+  return true;
+}
+
+void CloseDeviceTransferPlugin(DeviceTransferPlugin *plugin) {
+  if (plugin == nullptr || plugin->handle == nullptr) return;
+  dlclose(plugin->handle);
+  plugin->handle = nullptr;
+  plugin->prepare = nullptr;
+  plugin->destroy = nullptr;
+}
+#endif
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -152,9 +196,29 @@ int main(int argc, char **argv) {
   int32_t create_status = -1;
   void *engine = resident_epoch_create(argv[2], argv[3], argv[4], argv[5],
                                        argv[6], &create_status);
+#ifdef CRUISE_RESIDENT_DEVICE_TRANSFER_PLUGIN
+  DeviceTransferPlugin transfer_plugin;
+  if (engine != nullptr &&
+      !LoadDeviceTransferPlugin(argv[0], &transfer_plugin)) {
+    resident_epoch_destroy(engine);
+    engine = nullptr;
+    create_status = 8;
+  }
+  if (engine != nullptr && resident_epoch_install_device_transfer(
+                             transfer_plugin.prepare,
+                             transfer_plugin.destroy) != 0) {
+    resident_epoch_destroy(engine);
+    CloseDeviceTransferPlugin(&transfer_plugin);
+    engine = nullptr;
+    create_status = 9;
+  }
+#endif
   Response startup = EmptyResponse(engine == nullptr ? 100 + create_status : 0);
   if (!WriteAll(client, &startup, sizeof(startup)) || engine == nullptr) {
     if (engine != nullptr) resident_epoch_destroy(engine);
+#ifdef CRUISE_RESIDENT_DEVICE_TRANSFER_PLUGIN
+    CloseDeviceTransferPlugin(&transfer_plugin);
+#endif
     close(client);
     close(listener);
     unlink(socket_path);
@@ -191,17 +255,19 @@ int main(int argc, char **argv) {
         }
       }
       response.transport_status = resident_epoch_execute(
-          engine, request.request_count, request.max_steps, request.token_ids,
-          request.positions, request.sequence_lengths, request.eos_token_ids,
-          request.row_generations, response.token_ids, response.executed,
-          response.row_generations, &response.model_calls,
-           &response.device_status, &response.feed_calls,
-            &response.fetch_calls, &response.commit_state, &response.reserved,
-            &response.wall_us, &response.native_cpu_us,
-            &response.declared_input_bytes, &response.declared_output_bytes,
-            request.operation == kImportExecute ? transfer_path.c_str() : nullptr,
-            request.transfer_id,
-            direct_device_import ? ipc_metadata.get() : nullptr);
+          engine, request.request_count, request.max_steps,
+          request.token_ids, request.positions, request.sequence_lengths,
+          request.eos_token_ids, request.row_generations,
+          response.token_ids, response.executed, response.row_generations,
+          &response.model_calls, &response.device_status,
+          &response.feed_calls, &response.fetch_calls,
+          &response.commit_state, &response.reserved, &response.wall_us,
+          &response.native_cpu_us, &response.declared_input_bytes,
+          &response.declared_output_bytes,
+          request.operation == kImportExecute ? transfer_path.c_str()
+                                              : nullptr,
+          request.transfer_id,
+          direct_device_import ? ipc_metadata.get() : nullptr);
       if (request.operation == kImportExecute) unlink(transfer_path.c_str());
     }
     if (!WriteAll(client, &response, sizeof(response))) {
@@ -210,7 +276,13 @@ int main(int argc, char **argv) {
     }
   }
 
+#ifdef CRUISE_RESIDENT_DEVICE_TRANSFER_PLUGIN
   resident_epoch_destroy(engine);
+  engine = nullptr;
+  CloseDeviceTransferPlugin(&transfer_plugin);
+#else
+  resident_epoch_destroy(engine);
+#endif
   close(client);
   close(listener);
   unlink(socket_path);

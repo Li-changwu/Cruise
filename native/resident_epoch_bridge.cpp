@@ -15,8 +15,8 @@
 #include "all_ops.h"
 #include "flow_graph/data_flow.h"
 #include "ge/ge_api.h"
+#include "ge/ge_data_flow_api.h"
 #include "graph/graph.h"
-#include "resident_device_transfer.h"
 #include "resident_epoch_bridge.h"
 #include "resident_epoch_protocol.h"
 
@@ -42,23 +42,6 @@ constexpr int64_t kDeviceIpcDeclaredInputBytes =
     CRUISE_SIDECAR_REQUEST_BYTES + CRUISE_RESIDENT_IPC_METADATA_BYTES;
 constexpr int32_t kFeedTimeoutMs = 600000;
 constexpr int32_t kFetchTimeoutMs = 3600000;
-
-struct InputSpec {
-  std::vector<int64_t> shape;
-  ge::DataType dtype;
-  size_t bytes;
-};
-
-const std::array<InputSpec, 7> kInputSpecs = {{
-    {{4, 1}, ge::DT_INT64, kBatchSize * sizeof(int64_t)},
-    {{4}, ge::DT_INT64, kBatchSize * sizeof(int64_t)},
-    {{4, 1}, ge::DT_INT32, kBatchSize * sizeof(int32_t)},
-    {{4}, ge::DT_INT32, kBatchSize * sizeof(int32_t)},
-    {{4}, ge::DT_INT32, kBatchSize * sizeof(int32_t)},
-    {{4, 2}, ge::DT_INT32,
-     kBatchSize * kBlocksPerRequest * sizeof(int32_t)},
-    {{72}, ge::DT_UINT8, 72},
-}};
 
 struct ResidentEpochEngine {
   std::shared_ptr<ge::Session> session;
@@ -90,6 +73,8 @@ static_assert(sizeof(TransferHeader) == CRUISE_RESIDENT_TRANSFER_HEADER_BYTES,
 
 std::mutex g_lifecycle_mutex;
 bool g_engine_active = false;
+ResidentDeviceTransferPrepare g_device_transfer_prepare = nullptr;
+ResidentDeviceTransferDestroy g_device_transfer_destroy = nullptr;
 
 bool ReadTiling(const char *path, std::array<uint8_t, 72> &tiling) {
   if (path == nullptr) return false;
@@ -181,10 +166,11 @@ bool ValidateIpcMetadata(const ResidentEpochIpcMetadata *metadata,
   const uint64_t cache_bytes = payload_bytes / 2;
   const uint64_t block_bytes = CRUISE_RESIDENT_KV_BLOCK_BYTES;
   uint64_t total_bytes = 0;
-  std::vector<std::pair<uint64_t, uint64_t>> coverage;
-  std::map<uint64_t, std::vector<std::pair<uint64_t, uint64_t>>>
-      block_coverage;
-  coverage.reserve(metadata->segment_count);
+  struct Interval {
+    uint64_t start;
+    uint64_t end;
+  };
+  std::array<Interval, CRUISE_RESIDENT_IPC_MAX_SEGMENTS> coverage{};
   for (uint32_t index = 0; index < metadata->segment_count; ++index) {
     const auto &segment = metadata->segments[index];
     if (segment.source_allocation_bytes == 0 || segment.copy_bytes == 0 ||
@@ -205,21 +191,14 @@ bool ValidateIpcMetadata(const ResidentEpochIpcMetadata *metadata,
     }
     if (total_bytes > payload_bytes - segment.copy_bytes) return false;
     total_bytes += segment.copy_bytes;
-    coverage.emplace_back(segment.destination_offset,
-                          segment.destination_offset + segment.copy_bytes);
-    const uint64_t block_start = segment.destination_offset - block_offset;
-    auto &block_spans = block_coverage[block_start];
-    if (block_spans.size() >= CRUISE_RESIDENT_IPC_MAX_SEGMENTS_PER_BLOCK) {
-      return false;
-    }
-    block_spans.emplace_back(segment.destination_offset,
-                             segment.destination_offset + segment.copy_bytes);
-    const char *key = segment.key;
-    const size_t key_length = strnlen(key, CRUISE_RESIDENT_IPC_KEY_BYTES);
+    coverage[index] = {segment.destination_offset,
+                       segment.destination_offset + segment.copy_bytes};
+    const size_t key_length =
+        strnlen(segment.key, CRUISE_RESIDENT_IPC_KEY_BYTES);
     if (key_length == 0) return false;
     if (key_length < CRUISE_RESIDENT_IPC_KEY_BYTES &&
-        std::any_of(key + key_length + 1,
-                    key + CRUISE_RESIDENT_IPC_KEY_BYTES,
+        std::any_of(segment.key + key_length + 1,
+                    segment.key + CRUISE_RESIDENT_IPC_KEY_BYTES,
                     [](char value) { return value != '\0'; })) return false;
   }
   for (uint32_t index = metadata->segment_count;
@@ -233,28 +212,37 @@ bool ValidateIpcMetadata(const ResidentEpochIpcMetadata *metadata,
       return false;
     }
   }
-  std::sort(coverage.begin(), coverage.end());
-  for (size_t index = 1; index < coverage.size(); ++index) {
-    if (coverage[index].first < coverage[index - 1].second) return false;
-  }
-  if (block_coverage.size() !=
-      selected_rows * CRUISE_RESIDENT_IPC_KEY_COUNT) {
-    return false;
-  }
-  for (auto &block_entry : block_coverage) {
-    const uint64_t block_start = block_entry.first;
-    auto &spans = block_entry.second;
-    std::sort(spans.begin(), spans.end());
-    uint64_t cursor = block_start;
-    for (const auto &span : spans) {
-      const uint64_t start = span.first;
-      const uint64_t end = span.second;
-      if (start != cursor) return false;
-      cursor = end;
+  std::sort(coverage.begin(), coverage.begin() + metadata->segment_count,
+            [](const Interval &left, const Interval &right) {
+              return left.start < right.start;
+            });
+  uint32_t interval_index = 0;
+  for (uint32_t cache_index = 0; cache_index < 2; ++cache_index) {
+    const uint64_t cache_base = cache_index * cache_bytes;
+    for (uint32_t layer = 0; layer < 28; ++layer) {
+      for (uint32_t row = 0; row < kBatchSize; ++row) {
+        if ((metadata->import_mask & (1U << row)) == 0) continue;
+        const uint64_t block_start =
+            cache_base + (layer * kBatchSize + row) * block_bytes;
+        const uint64_t block_end = block_start + block_bytes;
+        uint64_t cursor = block_start;
+        uint32_t block_segments = 0;
+        while (interval_index < metadata->segment_count &&
+               coverage[interval_index].start < block_end) {
+          const auto &span = coverage[interval_index];
+          if (span.start != cursor || span.end > block_end ||
+              ++block_segments > CRUISE_RESIDENT_IPC_MAX_SEGMENTS_PER_BLOCK) {
+            return false;
+          }
+          cursor = span.end;
+          ++interval_index;
+        }
+        if (cursor != block_end) return false;
+      }
     }
-    if (cursor != block_start + block_bytes) return false;
   }
-  return total_bytes == selected_rows * CRUISE_RESIDENT_IPC_KEY_COUNT *
+  return interval_index == metadata->segment_count &&
+         total_bytes == selected_rows * CRUISE_RESIDENT_IPC_KEY_COUNT *
                             CRUISE_RESIDENT_KV_BLOCK_BYTES;
 }
 
@@ -267,21 +255,28 @@ ge::Tensor MakeTensor(std::vector<uint8_t> &data,
   return tensor;
 }
 
-ge::Tensor MakeDeviceTensor(void *data, size_t bytes,
-                            const std::vector<int64_t> &shape,
-                            ge::DataType dtype) {
-  ge::TensorDesc desc(ge::Shape(shape), ge::FORMAT_ND, dtype);
-  desc.SetPlacement(ge::kPlacementDevice);
-  ge::Tensor tensor(desc);
-  tensor.SetData(static_cast<uint8_t *>(data), bytes,
-                 [](uint8_t *) {});
-  tensor.SetPlacement(ge::kPlacementDevice);
-  return tensor;
+ge::FlowMsgPtr MakeHostFlowMsg(std::vector<uint8_t> &data,
+                               const std::vector<int64_t> &shape,
+                               ge::DataType dtype) {
+  return ge::FlowBufferFactory::ToFlowMsg(MakeTensor(data, shape, dtype));
 }
 
-bool IsOutput(const ge::Tensor &tensor, size_t bytes, ge::DataType dtype) {
-  return tensor.GetData() != nullptr && tensor.GetSize() == bytes &&
-         tensor.GetTensorDesc().GetDataType() == dtype;
+bool AppendHostFlowMsg(std::vector<ge::FlowMsgPtr> &inputs,
+                       std::vector<uint8_t> &data,
+                       const std::vector<int64_t> &shape,
+                       ge::DataType dtype) {
+  auto message = MakeHostFlowMsg(data, shape, dtype);
+  if (message == nullptr || message->GetTensor() == nullptr) return false;
+  inputs.push_back(message);
+  return true;
+}
+
+bool IsOutput(const ge::FlowMsgPtr &message, size_t bytes,
+              ge::DataType dtype) {
+  const auto *tensor = message == nullptr ? nullptr : message->GetTensor();
+  return tensor != nullptr && tensor->GetData() != nullptr &&
+         tensor->GetSize() == bytes &&
+         tensor->GetDataType() == dtype;
 }
 
 int64_t ProcessCpuUs() {
@@ -342,6 +337,20 @@ int32_t ComputeSlot(int32_t row, int64_t position) {
   return physical_block * kBlockSize + static_cast<int32_t>(position);
 }
 }  // namespace
+
+extern "C" int32_t resident_epoch_install_device_transfer(
+    ResidentDeviceTransferPrepare prepare,
+    ResidentDeviceTransferDestroy destroy) {
+  if (prepare == nullptr || destroy == nullptr) return 1;
+  std::lock_guard<std::mutex> lifecycle_lock(g_lifecycle_mutex);
+  if (!g_engine_active || g_device_transfer_prepare != nullptr ||
+      g_device_transfer_destroy != nullptr) {
+    return 2;
+  }
+  g_device_transfer_prepare = prepare;
+  g_device_transfer_destroy = destroy;
+  return 0;
+}
 
 extern "C" void *resident_epoch_create(
     const char *air_path, const char *graph_config, const char *func_config,
@@ -442,11 +451,9 @@ extern "C" int32_t resident_epoch_execute(
                     transfer_payload, import_mask, expected_import_checksum)) {
     return 13;
   }
-  void *device_import_payload = nullptr;
   if (direct_device_import) {
     if (!ValidateIpcMetadata(ipc_metadata, input_row_generations) ||
-        !PrepareResidentDeviceIpcPayload(ipc_metadata,
-                                         &device_import_payload)) {
+        g_device_transfer_prepare == nullptr) {
       return 35;
     }
     import_mask = static_cast<int32_t>(ipc_metadata->import_mask);
@@ -470,31 +477,22 @@ extern "C" int32_t resident_epoch_execute(
   std::fill(output_row_generations,
             output_row_generations + kBatchSize, 0);
 
-  std::array<std::vector<uint8_t>, 7> buffers;
-  if (importing && !direct_device_import) {
-    buffers[0] = std::move(transfer_payload);
-    buffers[1].resize(kBatchSize * sizeof(int64_t), 0);
-    buffers[2].resize(kBatchSize * sizeof(int64_t), 0);
-    buffers[3].resize(kBatchSize * sizeof(int32_t), 0);
-    buffers[4].resize(kBatchSize * sizeof(int32_t), 0);
-    buffers[5].resize(kBatchSize * kBlocksPerRequest * sizeof(int32_t), 0);
-    buffers[6].resize(engine->tiling.size(), 0);
-  } else {
-    for (size_t index = 0; index < buffers.size(); ++index) {
-      buffers[index].resize(kInputSpecs[index].bytes, 0);
-    }
-  }
-  auto *tokens = reinterpret_cast<int64_t *>(
-      buffers[importing ? 1 : 0].data());
-  auto *positions = reinterpret_cast<int64_t *>(
-      buffers[importing ? 2 : 1].data());
-  auto *lengths = reinterpret_cast<int32_t *>(
-      buffers[importing ? 3 : 2].data());
+  std::vector<uint8_t> token_buffer(kBatchSize * sizeof(int64_t), 0);
+  std::vector<uint8_t> position_buffer(kBatchSize * sizeof(int64_t), 0);
+  std::vector<uint8_t> length_buffer(kBatchSize * sizeof(int32_t), 0);
+  std::vector<uint8_t> slot_buffer(kBatchSize * sizeof(int32_t), 0);
+  std::vector<uint8_t> active_buffer(kBatchSize * sizeof(int32_t), 0);
+  std::vector<uint8_t> block_buffer(
+      kBatchSize * kBlocksPerRequest * sizeof(int32_t), 0);
+  std::vector<uint8_t> tiling_buffer(engine->tiling.size(), 0);
+  auto *tokens = reinterpret_cast<int64_t *>(token_buffer.data());
+  auto *positions = reinterpret_cast<int64_t *>(position_buffer.data());
+  auto *lengths = reinterpret_cast<int32_t *>(length_buffer.data());
   auto *slots = importing
                     ? nullptr
-                    : reinterpret_cast<int32_t *>(buffers[3].data());
-  auto *active = reinterpret_cast<int32_t *>(buffers[4].data());
-  auto *blocks = reinterpret_cast<int32_t *>(buffers[5].data());
+                    : reinterpret_cast<int32_t *>(slot_buffer.data());
+  auto *active = reinterpret_cast<int32_t *>(active_buffer.data());
+  auto *blocks = reinterpret_cast<int32_t *>(block_buffer.data());
   for (int32_t row = 0; row < kBatchSize; ++row) {
     blocks[row * kBlocksPerRequest] = row * kBlocksPerRequest;
     blocks[row * kBlocksPerRequest + 1] = row * kBlocksPerRequest + 1;
@@ -524,7 +522,8 @@ extern "C" int32_t resident_epoch_execute(
     active[row] = 1;
   }
   if (active_count != request_count) return 12;
-  std::memcpy(buffers[6].data(), engine->tiling.data(), engine->tiling.size());
+  std::memcpy(tiling_buffer.data(), engine->tiling.data(),
+              engine->tiling.size());
 
   std::array<int32_t, kControlInputElements> control{};
   control[0] = max_steps;
@@ -542,41 +541,52 @@ extern "C" int32_t resident_epoch_execute(
   std::vector<uint8_t> control_bytes(sizeof(control));
   std::memcpy(control_bytes.data(), control.data(), control_bytes.size());
 
-  std::vector<ge::Tensor> inputs;
+  std::vector<ge::FlowMsgPtr> inputs;
   inputs.reserve(8);
   if (importing) {
     if (direct_device_import) {
-      inputs.push_back(MakeDeviceTensor(
-          device_import_payload, CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES,
-          {CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES}, ge::DT_UINT8));
-    } else {
-      inputs.push_back(MakeTensor(
-          buffers[0], {CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES}, ge::DT_UINT8));
-    }
-    inputs.push_back(MakeTensor(buffers[1], {4, 1}, ge::DT_INT64));
-    inputs.push_back(MakeTensor(buffers[2], {4}, ge::DT_INT64));
-    inputs.push_back(MakeTensor(buffers[3], {4, 1}, ge::DT_INT32));
-    inputs.push_back(MakeTensor(buffers[4], {4}, ge::DT_INT32));
-    inputs.push_back(MakeTensor(buffers[5], {4, 2}, ge::DT_INT32));
-    inputs.push_back(MakeTensor(buffers[6], {72}, ge::DT_UINT8));
-  } else {
-    for (size_t index = 0; index < buffers.size(); ++index) {
-      inputs.push_back(MakeTensor(buffers[index], kInputSpecs[index].shape,
-                                  kInputSpecs[index].dtype));
+      auto device_input = ge::FlowBufferFactory::AllocTensorMsg(
+          {CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES}, ge::DT_UINT8);
+      if (device_input == nullptr || device_input->GetTensor() == nullptr ||
+          device_input->GetTensor()->GetData() == nullptr ||
+          device_input->GetTensor()->GetSize() !=
+              CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES ||
+          g_device_transfer_prepare(
+              ipc_metadata, device_input->GetTensor()->GetData(),
+              device_input->GetTensor()->GetSize()) != 0) {
+        return 35;
+      }
+      inputs.push_back(device_input);
+    } else if (!AppendHostFlowMsg(
+                   inputs, transfer_payload,
+                   {CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES}, ge::DT_UINT8)) {
+      return 36;
     }
   }
-  inputs.push_back(
-      MakeTensor(control_bytes, {kControlInputElements}, ge::DT_INT32));
-  ge::DataFlowInfo flow_info;
+  if (!AppendHostFlowMsg(inputs, token_buffer, {4, 1}, ge::DT_INT64) ||
+      !AppendHostFlowMsg(inputs, position_buffer, {4}, ge::DT_INT64) ||
+      !AppendHostFlowMsg(inputs, length_buffer, {4, 1}, ge::DT_INT32)) {
+    return 36;
+  }
+  if (!importing) {
+    if (!AppendHostFlowMsg(inputs, slot_buffer, {4}, ge::DT_INT32)) {
+      return 36;
+    }
+  }
+  if (!AppendHostFlowMsg(inputs, active_buffer, {4}, ge::DT_INT32) ||
+      !AppendHostFlowMsg(inputs, block_buffer, {4, 2}, ge::DT_INT32) ||
+      !AppendHostFlowMsg(inputs, tiling_buffer, {72}, ge::DT_UINT8) ||
+      !AppendHostFlowMsg(inputs, control_bytes, {kControlInputElements},
+                         ge::DT_INT32)) {
+    return 36;
+  }
   const auto wall_start = std::chrono::steady_clock::now();
   *output_commit_state = CRUISE_EPOCH_EXECUTING;
-  auto ret = engine->session->FeedDataFlowGraph(
-      0, inputs, flow_info, kFeedTimeoutMs);
+  auto ret = engine->session->FeedDataFlowGraph(0, inputs, kFeedTimeoutMs);
   *output_feed_calls = 1;
   if (ret != ge::SUCCESS) return 30;
-  std::vector<ge::Tensor> outputs;
-  ret = engine->session->FetchDataFlowGraph(
-      0, outputs, flow_info, kFetchTimeoutMs);
+  std::vector<ge::FlowMsgPtr> outputs;
+  ret = engine->session->FetchDataFlowGraph(0, outputs, kFetchTimeoutMs);
   *output_fetch_calls = 1;
   const auto wall_end = std::chrono::steady_clock::now();
   *output_wall_us =
@@ -589,9 +599,9 @@ extern "C" int32_t resident_epoch_execute(
     return 32;
   }
   const auto *history =
-      reinterpret_cast<const int64_t *>(outputs[0].GetData());
+      reinterpret_cast<const int64_t *>(outputs[0]->GetTensor()->GetData());
   const auto *result_control =
-      reinterpret_cast<const int32_t *>(outputs[1].GetData());
+      reinterpret_cast<const int32_t *>(outputs[1]->GetTensor()->GetData());
   *output_device_status = result_control[3];
   *output_model_calls = result_control[4];
   *output_kv_import_checksum = result_control[5];
@@ -628,7 +638,11 @@ extern "C" void resident_epoch_destroy(void *opaque) {
   auto *engine = static_cast<ResidentEpochEngine *>(opaque);
   {
     std::lock_guard<std::mutex> execute_lock(engine->execute_mutex);
-    DestroyResidentDeviceIpcPayload();
+    if (g_device_transfer_destroy != nullptr) {
+      g_device_transfer_destroy();
+      g_device_transfer_prepare = nullptr;
+      g_device_transfer_destroy = nullptr;
+    }
     engine->session.reset();
     ge::GEFinalize();
   }

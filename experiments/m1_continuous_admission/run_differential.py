@@ -10,7 +10,6 @@ import traceback
 from typing import Any
 
 from experiments.m1_batched_prefill.run_differential import (
-    IMPORT_INPUT_BYTES,
     OUTPUT_BYTES,
     SCHEDULER_QUALNAME,
     STEADY_INPUT_BYTES,
@@ -21,6 +20,8 @@ from experiments.m1_batched_prefill.run_differential import (
     _request_state,
     _result_record,
     _tokens_by_request,
+    expected_import_input_bytes,
+    is_direct_device_import_result,
     write_result,
 )
 
@@ -80,7 +81,11 @@ def _terminal_records(records: list[dict[str, Any]], result: dict[str, Any]) -> 
 def _device_step_valid(step: dict[str, Any], importing: bool) -> bool:
     plan = step["plan"]
     result = step["result"]
-    expected_input = IMPORT_INPUT_BYTES if importing else STEADY_INPUT_BYTES
+    expected_input = (
+        expected_import_input_bytes(result.get("kv_transfer_mode"))
+        if importing and result
+        else STEADY_INPUT_BYTES
+    )
     return bool(
         plan
         and result
@@ -89,6 +94,7 @@ def _device_step_valid(step: dict[str, Any], importing: bool) -> bool:
         and result["commit_state"] == "COMMITTED"
         and result["feed_calls"] == 1
         and result["fetch_calls"] == 1
+        and expected_input is not None
         and result["declared_input_bytes"] == expected_input
         and result["declared_output_bytes"] == OUTPUT_BYTES
         and result["computed_steps"]
@@ -100,10 +106,7 @@ def _device_step_valid(step: dict[str, Any], importing: bool) -> bool:
         and (
             not importing
             or (
-                result["kv_imported"] is True
-                and result["host_kv_checksum"] != 0
-                and result["host_kv_checksum"]
-                == result["device_kv_checksum"]
+                is_direct_device_import_result(result)
             )
         )
     )

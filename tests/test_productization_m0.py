@@ -57,6 +57,7 @@ def _runtime_fixture(tmp_path: Path) -> Path:
     workspace.mkdir()
     server = _write(assets / "resident_epoch_server", b"server")
     server.chmod(0o755)
+    _write(assets / "libresident_device_transfer.so", b"device-transfer-plugin")
     air = _write(assets / "decoder.air", b"air")
     graph = _write(assets / "graph.json", "{}\n")
     function = _write(
@@ -467,6 +468,9 @@ def test_resident_sidecar_uses_ge_owned_acl_runtime():
     transfer = (ROOT / "native" / "resident_device_transfer.cpp").read_text(
         encoding="utf-8"
     )
+    server = (ROOT / "native" / "resident_epoch_server.cpp").read_text(
+        encoding="utf-8"
+    )
 
     assert "libacl_rt.so" not in cmake
     assert "libascendcl.so" not in cmake
@@ -482,8 +486,11 @@ def test_resident_sidecar_uses_ge_owned_acl_runtime():
         'ResolveAclSymbol("aclrtGetDevice"',
         'ResolveAclSymbol("aclrtIpcMemImportByKey"',
         'ResolveAclSymbol("aclrtMemcpy"',
+        'ResolveAclSymbol("aclrtMemset"',
     ):
         assert transfer_call in transfer
+    assert 'ResolveAclSymbol("aclrtMalloc"' not in transfer
+    assert 'ResolveAclSymbol("aclrtFree"' not in transfer
     assert '#include "acl/acl_rt.h"' not in bridge
     assert '#include <dlfcn.h>' not in bridge
     assert "dlsym(RTLD_DEFAULT, name)" in transfer
@@ -494,15 +501,47 @@ def test_resident_sidecar_uses_ge_owned_acl_runtime():
     )[1].split('extern "C" int32_t resident_epoch_execute', maxsplit=1)[0]
     assert "ResolveAclRuntime" not in create_path
     assert "ResolveAclRuntime(g_state->acl)" in transfer
-    assert "$<TARGET_OBJECTS:resident_device_transfer_object>" in cmake
-    for target in ("resident_epoch_bridge", "resident_epoch_server"):
-        link_block = re.search(
-            rf"target_link_libraries\({target} PRIVATE(.*?)\)",
-            cmake,
-            re.DOTALL,
-        )
-        assert link_block is not None
-        assert "${CMAKE_DL_LIBS}" in link_block.group(1)
+    assert "add_library(resident_device_transfer SHARED" in cmake
+    assert "$<TARGET_OBJECTS:resident_device_transfer_object>" not in cmake
+    assert "-fvisibility=hidden" in cmake
+    assert 'dlsym(handle, "resident_device_transfer_prepare")' in server
+    assert 'dlsym(handle, "resident_device_transfer_destroy")' in server
+    assert "resident_epoch_install_device_transfer(" in server
+    assert "transfer_plugin.prepare(ipc_metadata.get())" not in server
+    assert server.index("resident_epoch_create(") < server.index(
+        "LoadDeviceTransferPlugin(argv[0]"
+    )
+    assert "MakeDeviceTensor(" not in bridge
+    assert "FlowBufferFactory::AllocTensorMsg(" in bridge
+    assert "std::vector<ge::FlowMsgPtr> inputs;" in bridge
+    assert "FeedDataFlowGraph(0, inputs, kFeedTimeoutMs)" in bridge
+    assert "g_device_transfer_prepare(" in bridge
+    assert "g_device_transfer_destroy();" in bridge
+    server_sources = re.search(
+        r"add_executable\(resident_epoch_server(.*?)\)", cmake, re.DOTALL
+    )
+    assert server_sources is not None
+    assert "resident_device_transfer.cpp" not in server_sources.group(1)
+    bridge_link = re.search(
+        r"target_link_libraries\(resident_epoch_bridge PRIVATE(.*?)\)",
+        cmake,
+        re.DOTALL,
+    )
+    assert bridge_link is not None
+    assert "${CMAKE_DL_LIBS}" not in bridge_link.group(1)
+
+
+def test_direct_device_import_uses_unshifted_typed_host_buffers():
+    bridge = (ROOT / "native" / "resident_epoch_bridge.cpp").read_text(
+        encoding="utf-8"
+    )
+
+    assert (
+        "position_buffer(kBatchSize * sizeof(int64_t), 0)" in bridge
+    )
+    assert "buffers[importing ?" not in bridge
+    assert "AppendHostFlowMsg(inputs, position_buffer, {4}, ge::DT_INT64)" in bridge
+    assert "if (!importing) {\n    if (!AppendHostFlowMsg(inputs, slot_buffer" in bridge
 
 
 @pytest.mark.parametrize(
@@ -599,6 +638,28 @@ def test_runtime_doctor_reports_actionable_missing_asset(tmp_path, monkeypatch):
     assert check.observed == "missing or not a regular file"
     assert config.compatibility_profile in check.remediation
     assert "do not substitute" in check.remediation
+
+
+def test_runtime_doctor_requires_colocated_device_transfer_plugin(
+    tmp_path, monkeypatch
+):
+    config = _load_test_runtime_config(tmp_path, monkeypatch)
+    plugin = config.assets.server.with_name("libresident_device_transfer.so")
+    plugin.unlink()
+    monkeypatch.setattr(
+        doctor_module,
+        "run_npu_doctor",
+        lambda profile, device: doctor_module.DoctorReport(
+            mode="npu", profile=profile, checks=[]
+        ),
+    )
+
+    report = doctor_module.run_runtime_doctor(config, deep=True)
+
+    check = {item.name: item for item in report.checks}["runtime-assets"]
+    assert check.status == "fail"
+    assert check.code == "missing-runtime-asset"
+    assert str(plugin) in check.expected
 
 
 def test_runtime_environment_is_complete(tmp_path, monkeypatch):

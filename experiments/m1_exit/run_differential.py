@@ -21,6 +21,7 @@ from experiments.m1_batched_prefill.run_differential import (
     _request_state,
     _result_record,
     _tokens_by_request,
+    is_direct_device_import_result,
     write_result,
 )
 
@@ -300,11 +301,7 @@ def _run_cohort(
                     aggregate["invalid_device_results"] += 1
                 if result_record["kv_imported"]:
                     aggregate["kv_imports"] += 1
-                    if (
-                        result_record["host_kv_checksum"] == 0
-                        or result_record["host_kv_checksum"]
-                        != result_record["device_kv_checksum"]
-                    ):
+                    if not is_direct_device_import_result(result_record):
                         aggregate["kv_checksum_mismatches"] += 1
                 if any(
                     specs[request_id].kind == "eos_second_token"

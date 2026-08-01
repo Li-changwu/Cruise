@@ -183,9 +183,13 @@ class CruiseRuntimeConfig:
     integrity: AssetIntegrity
 
     def validate_paths(self, *, deep: bool = False) -> None:
+        device_transfer_plugin = self.assets.server.with_name(
+            "libresident_device_transfer.so"
+        )
         required_files = {
             "cann_set_env": self.cann_set_env,
             "server": self.assets.server,
+            "device_transfer_plugin": device_transfer_plugin,
             "air": self.assets.air,
             "graph_config": self.assets.graph_config,
             "function_config": self.assets.function_config,

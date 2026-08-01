@@ -1,8 +1,13 @@
 #pragma once
 
+#include <cstdint>
+
 #include "resident_epoch_bridge.h"
 
-bool PrepareResidentDeviceIpcPayload(
-    const ResidentEpochIpcMetadata *metadata, void **payload_out);
+extern "C" __attribute__((visibility("default"))) int32_t
+resident_device_transfer_prepare(const ResidentEpochIpcMetadata *metadata,
+                                 void *destination,
+                                 size_t destination_bytes);
 
-void DestroyResidentDeviceIpcPayload();
+extern "C" __attribute__((visibility("default"))) void
+resident_device_transfer_destroy();

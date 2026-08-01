@@ -82,8 +82,20 @@ def validate_source(source: Path, baseline_source: Path | None) -> dict[str, Any
         and "constexpr size_t kOutputCount = 2;" in controller,
         "new_bridge_8_in_2_out": 'FlowNode("g4c_b4_resident_epoch_node", 8, 2)'
         in bridge
-        and "std::array<InputSpec, 7>" in bridge
+        and "inputs.reserve(8);" in bridge
+        and "std::vector<ge::FlowMsgPtr> inputs;" in bridge
+        and "std::vector<ge::FlowMsgPtr> outputs;" in bridge
+        and "if (importing) {" in bridge
+        and "if (!importing) {\n    if (!AppendHostFlowMsg(inputs, slot_buffer"
+        in bridge
         and "outputs.size() != 2" in bridge,
+        "new_bridge_direct_device_flowmsg": "MakeDeviceTensor(" not in bridge
+        and "FlowBufferFactory::AllocTensorMsg(" in bridge
+        and "g_device_transfer_prepare(" in bridge
+        and "device_input->GetTensor()->GetData()" in bridge
+        and "CRUISE_SIDECAR_REQUEST_BYTES + CRUISE_RESIDENT_IPC_METADATA_BYTES"
+        in bridge
+        and "FeedDataFlowGraph(0, inputs, kFeedTimeoutMs)" in bridge,
         "old_bridge_10_in_10_out": 'FlowNode("g4c_b4_resident_epoch_node", 10, 10)'
         in old_bridge
         and "std::array<InputSpec, 9>" in old_bridge

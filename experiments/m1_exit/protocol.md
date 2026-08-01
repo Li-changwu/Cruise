@@ -19,7 +19,8 @@ stop reason, and final scheduler accounting. Cruise additionally requires:
 - at least one cancellation after Device ownership;
 - generation-checked row reuse without lease aliasing;
 - one Feed and one Fetch per Device epoch;
-- matching Host/Device checksums for every Paged-KV import.
+- direct Device IPC metadata for every Paged-KV import, proven by a zero Host
+  snapshot checksum and a nonzero Device checksum.
 
 Models, builds, external weights, caches, sockets, and logs remain in
 marker-owned `/dev/shm` scratch. Only bounded JSON results and hashes persist.

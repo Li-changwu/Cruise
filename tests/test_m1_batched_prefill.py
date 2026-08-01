@@ -4,11 +4,14 @@ from pathlib import Path
 import pytest
 
 from experiments.m1_batched_prefill.run_differential import (
+    DEVICE_IPC_IMPORT_INPUT_BYTES,
     IMPORT_INPUT_BYTES,
     OUTPUT_BYTES,
     STEADY_INPUT_BYTES,
     _case_checks,
     compare_results,
+    is_direct_device_import_result,
+    is_valid_kv_import_result,
     load_case_manifest,
 )
 
@@ -79,12 +82,13 @@ def test_case_checks_accept_mixed_batch_import_then_device_owned_shrink():
             "feed_calls": 1,
             "fetch_calls": 1,
             "declared_input_bytes": (
-                IMPORT_INPUT_BYTES if importing else STEADY_INPUT_BYTES
+                DEVICE_IPC_IMPORT_INPUT_BYTES if importing else STEADY_INPUT_BYTES
             ),
             "declared_output_bytes": OUTPUT_BYTES,
             "kv_imported": importing,
-            "host_kv_checksum": 123 if importing else 0,
+            "host_kv_checksum": 0,
             "device_kv_checksum": 123 if importing else 0,
+            "kv_transfer_mode": "device_ipc" if importing else "none",
         }
 
     case = {
@@ -137,6 +141,40 @@ def test_case_checks_accept_mixed_batch_import_then_device_owned_shrink():
 
     assert checks
     assert all(checks.values())
+
+
+def test_kv_import_verifier_distinguishes_legacy_and_direct_contracts():
+    legacy = {
+        "kv_imported": True,
+        "kv_transfer_mode": "host_snapshot",
+        "declared_input_bytes": IMPORT_INPUT_BYTES,
+        "host_kv_checksum": 123,
+        "device_kv_checksum": 123,
+    }
+    direct = {
+        "kv_imported": True,
+        "kv_transfer_mode": "device_ipc",
+        "declared_input_bytes": DEVICE_IPC_IMPORT_INPUT_BYTES,
+        "host_kv_checksum": 0,
+        "device_kv_checksum": 456,
+    }
+
+    assert is_valid_kv_import_result(legacy)
+    assert not is_direct_device_import_result(legacy)
+    assert is_valid_kv_import_result(direct)
+    assert is_direct_device_import_result(direct)
+
+
+def test_direct_kv_import_rejects_host_snapshot_evidence():
+    direct_with_snapshot = {
+        "kv_imported": True,
+        "kv_transfer_mode": "device_ipc",
+        "declared_input_bytes": DEVICE_IPC_IMPORT_INPUT_BYTES,
+        "host_kv_checksum": 123,
+        "device_kv_checksum": 456,
+    }
+
+    assert not is_valid_kv_import_result(direct_with_snapshot)
 
 
 def test_compare_requires_exact_per_request_outputs(tmp_path):

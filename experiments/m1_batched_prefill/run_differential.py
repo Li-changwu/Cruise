@@ -19,7 +19,12 @@ WORKER_QUALNAME = "vllm_ascend.worker.worker.NPUWorker"
 STOCK_SCHEDULER_QUALNAME = "vllm.v1.core.sched.scheduler.Scheduler"
 GRAPH_BATCH_SIZE = 4
 VOCAB_SIZE = 152064
-IMPORT_INPUT_BYTES = 29_360_372
+# Host snapshots are retained only for an explicitly requested diagnostic
+# fallback. M4b serving gates must use the Device IPC contract below.
+HOST_SNAPSHOT_IMPORT_INPUT_BYTES = 29_360_372
+DEVICE_IPC_IMPORT_INPUT_BYTES = 43_200
+# Preserve the public M1 constant for callers that inspect legacy evidence.
+IMPORT_INPUT_BYTES = HOST_SNAPSHOT_IMPORT_INPUT_BYTES
 STEADY_INPUT_BYTES = 260
 OUTPUT_BYTES = 368
 DEFAULT_KV_CACHE_BYTES = 512 * 1024 * 1024
@@ -188,6 +193,7 @@ def _result_record(result: Any) -> dict[str, Any] | None:
         "kv_imported": result.kv_imported,
         "host_kv_checksum": result.kv_snapshot_checksum,
         "device_kv_checksum": result.kv_import_checksum,
+        "kv_transfer_mode": result.kv_transfer_mode,
     }
 
 
@@ -204,6 +210,41 @@ def _tokens_by_request(records: list[dict[str, Any]]) -> dict[str, list[int]]:
     for record in records:
         tokens.setdefault(record["request_id"], []).extend(record["tokens"])
     return tokens
+
+
+def expected_import_input_bytes(transfer_mode: str | None) -> int | None:
+    """Return the wire size required for a proven KV import mode."""
+    return {
+        "host_snapshot": HOST_SNAPSHOT_IMPORT_INPUT_BYTES,
+        "device_ipc": DEVICE_IPC_IMPORT_INPUT_BYTES,
+    }.get(transfer_mode)
+
+
+def is_valid_kv_import_result(result: dict[str, Any]) -> bool:
+    """Validate the evidence contract for either supported KV transfer mode."""
+    transfer_mode = result.get("kv_transfer_mode")
+    expected_bytes = expected_import_input_bytes(transfer_mode)
+    if (
+        result.get("kv_imported") is not True
+        or expected_bytes is None
+        or result.get("declared_input_bytes") != expected_bytes
+        or result.get("device_kv_checksum") == 0
+    ):
+        return False
+    if transfer_mode == "host_snapshot":
+        return (
+            result.get("host_kv_checksum") != 0
+            and result["host_kv_checksum"] == result["device_kv_checksum"]
+        )
+    return result.get("host_kv_checksum") == 0
+
+
+def is_direct_device_import_result(result: dict[str, Any]) -> bool:
+    """M4b acceptance: import metadata only, with no Host KV snapshot."""
+    return (
+        result.get("kv_transfer_mode") == "device_ipc"
+        and is_valid_kv_import_result(result)
+    )
 
 
 def _case_checks(
@@ -269,10 +310,20 @@ def _case_checks(
                 (request["row"], request["generation"])
             )
 
-    def valid_result(step: dict[str, Any], expected_input_bytes: int) -> bool:
+    def valid_result(step: dict[str, Any]) -> bool:
         plan = step["plan"]
         result = step["result"]
         step_tokens = step["new_tokens_by_request"]
+        importing = any(
+            request["kv_import_required"] for request in plan["requests"]
+        )
+        expected_input_bytes = (
+            expected_import_input_bytes(
+                result.get("kv_transfer_mode") if result else None
+            )
+            if importing
+            else STEADY_INPUT_BYTES
+        )
         return bool(
             result
             and result["route"] == "device"
@@ -280,6 +331,7 @@ def _case_checks(
             and result["commit_state"] == "COMMITTED"
             and result["feed_calls"] == 1
             and result["fetch_calls"] == 1
+            and expected_input_bytes is not None
             and result["declared_input_bytes"] == expected_input_bytes
             and result["declared_output_bytes"] == OUTPUT_BYTES
             and set(result["computed_steps"])
@@ -287,6 +339,14 @@ def _case_checks(
             and result["computed_steps"]
             == {req_id: len(tokens) for req_id, tokens in step_tokens.items()}
             and result["row_generations"] == plan["row_generations"]
+            and (
+                is_valid_kv_import_result(result)
+                if importing
+                else (
+                    result["kv_imported"] is False
+                    and result["kv_transfer_mode"] == "none"
+                )
+            )
         )
 
     import_valid = bool(
@@ -301,11 +361,8 @@ def _case_checks(
             for request in import_step["plan"]["requests"]
         )
         and import_step["result"]
-        and import_step["result"]["kv_imported"] is True
-        and import_step["result"]["host_kv_checksum"] != 0
-        and import_step["result"]["host_kv_checksum"]
-        == import_step["result"]["device_kv_checksum"]
-        and valid_result(import_step, IMPORT_INPUT_BYTES)
+        and is_direct_device_import_result(import_step["result"])
+        and valid_result(import_step)
     )
     checks.update(
         {
@@ -326,10 +383,7 @@ def _case_checks(
             ),
             "one_feed_fetch_per_device_epoch": bool(device_steps)
             and all(
-                valid_result(
-                    step,
-                    IMPORT_INPUT_BYTES if step is import_step else STEADY_INPUT_BYTES,
-                )
+                valid_result(step)
                 for step in device_steps
             ),
             "stable_row_generation": set(stable_rows) == expected_ids

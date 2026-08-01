@@ -67,6 +67,12 @@ def _by_row(plan: ResidentEpochPlan, field: str, fill: int) -> list[int]:
 class SidecarDataFlowEngine:
     def __init__(self) -> None:
         server = _required_path("VLLM_ASCEND_RESIDENT_EPOCH_SERVER")
+        transfer_plugin = server.with_name("libresident_device_transfer.so")
+        if not transfer_plugin.is_file():
+            raise RuntimeError(
+                "resident Device transfer plugin must be colocated with the sidecar: "
+                f"{transfer_plugin}"
+            )
         air = _required_path("VLLM_ASCEND_RESIDENT_EPOCH_AIR")
         graph_config = _required_path("VLLM_ASCEND_RESIDENT_EPOCH_GRAPH_CONFIG")
         func_config = _required_path("VLLM_ASCEND_RESIDENT_EPOCH_FUNC_CONFIG")

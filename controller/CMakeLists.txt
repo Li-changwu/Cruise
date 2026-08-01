@@ -23,6 +23,7 @@ if ("x${RESOURCE_TYPE}" STREQUAL "xAscend")
   target_link_libraries(${UDF_TARGET_LIB} PRIVATE
     -Wl,--whole-archive
     ${ASCEND_HOME_PATH}/devlib/device/libflow_func.so
+    ${ASCEND_HOME_PATH}/devlib/device/libmmpa.so
     -Wl,--no-whole-archive)
 elseif ("x${RESOURCE_TYPE}" STREQUAL "xAarch")
   target_link_libraries(${UDF_TARGET_LIB} PRIVATE

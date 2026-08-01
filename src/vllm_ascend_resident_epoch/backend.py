@@ -131,9 +131,18 @@ class ResidentEpochBackend:
                 commit_state=EpochCommitState.EXECUTING,
             ) from exc
         if native_output.status != 0:
+            diagnostic = ""
+            if (
+                native_output.status in (213, 214)
+                and native_output.kv_import_checksum != 0
+            ):
+                diagnostic = (
+                    " (Device IPC diagnostic="
+                    f"0x{native_output.kv_import_checksum:08x})"
+                )
             raise ResidentEpochExecutionError(
                 "native resident epoch returned status "
-                f"{native_output.status}",
+                f"{native_output.status}{diagnostic}",
                 commit_state=native_output.commit_state,
                 status=native_output.status,
             )

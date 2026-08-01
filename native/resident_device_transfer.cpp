@@ -1,5 +1,6 @@
 #include "resident_device_transfer.h"
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <map>
@@ -15,15 +16,12 @@ struct AclRuntimeApi {
   decltype(&aclrtGetDevice) get_device = nullptr;
   decltype(&aclrtIpcMemImportByKey) ipc_import = nullptr;
   decltype(&aclrtIpcMemClose) ipc_close = nullptr;
-  decltype(&aclrtMalloc) malloc = nullptr;
-  decltype(&aclrtFree) free = nullptr;
   decltype(&aclrtMemset) memset = nullptr;
   decltype(&aclrtMemcpy) memcpy = nullptr;
 };
 
 struct DeviceTransferState {
   AclRuntimeApi acl;
-  void *payload = nullptr;
   std::map<std::string, void *> ipc_imports;
 };
 
@@ -54,10 +52,18 @@ bool ResolveAclRuntime(AclRuntimeApi &api) {
   return ResolveAclSymbol("aclrtGetDevice", &api.get_device) &&
          ResolveAclSymbol("aclrtIpcMemImportByKey", &api.ipc_import) &&
          ResolveAclSymbol("aclrtIpcMemClose", &api.ipc_close) &&
-         ResolveAclSymbol("aclrtMalloc", &api.malloc) &&
-         ResolveAclSymbol("aclrtFree", &api.free) &&
          ResolveAclSymbol("aclrtMemset", &api.memset) &&
          ResolveAclSymbol("aclrtMemcpy", &api.memcpy);
+}
+
+bool IsIpcKey(const char *key) {
+  if (key == nullptr) return false;
+  const size_t key_length = strnlen(key, CRUISE_RESIDENT_IPC_KEY_BYTES);
+  return key_length != 0 &&
+         (key_length == CRUISE_RESIDENT_IPC_KEY_BYTES ||
+          std::all_of(key + key_length + 1,
+                      key + CRUISE_RESIDENT_IPC_KEY_BYTES,
+                      [](char value) { return value == '\0'; }));
 }
 
 void *ImportIpcMemory(DeviceTransferState *state, const char *key) {
@@ -78,32 +84,44 @@ void *ImportIpcMemory(DeviceTransferState *state, const char *key) {
 }
 }  // namespace
 
-bool PrepareResidentDeviceIpcPayload(
-    const ResidentEpochIpcMetadata *metadata, void **payload_out) {
-  if (metadata == nullptr || payload_out == nullptr) return false;
+extern "C" int32_t resident_device_transfer_prepare(
+    const ResidentEpochIpcMetadata *metadata, void *destination_payload,
+    size_t destination_bytes) {
+  if (metadata == nullptr || destination_payload == nullptr ||
+      destination_bytes != CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES ||
+      metadata->magic != CRUISE_RESIDENT_IPC_METADATA_MAGIC ||
+      metadata->version != CRUISE_RESIDENT_IPC_METADATA_VERSION ||
+      metadata->segment_count == 0 ||
+      metadata->segment_count > CRUISE_RESIDENT_IPC_MAX_SEGMENTS) {
+    return 1;
+  }
   if (g_state == nullptr) g_state = new DeviceTransferState();
-  if (!ResolveAclRuntime(g_state->acl)) return false;
+  if (!ResolveAclRuntime(g_state->acl)) return 2;
   int32_t current_device = -1;
   if (g_state->acl.get_device(&current_device) != ACL_SUCCESS ||
       current_device != 0) {
-    return false;
+    return 3;
   }
-  if (g_state->payload == nullptr &&
-      g_state->acl.malloc(&g_state->payload,
-                          CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES,
-                          ACL_MEM_MALLOC_HUGE_FIRST) != ACL_SUCCESS) {
-    return false;
-  }
-  if (g_state->acl.memset(g_state->payload,
+  if (g_state->acl.memset(destination_payload,
                           CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES, 0,
                           CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES) != ACL_SUCCESS) {
-    return false;
+    return 4;
   }
-  auto *destination = static_cast<uint8_t *>(g_state->payload);
+  auto *destination = static_cast<uint8_t *>(destination_payload);
   for (uint32_t index = 0; index < metadata->segment_count; ++index) {
     const auto &segment = metadata->segments[index];
+    if (!IsIpcKey(segment.key) || segment.source_allocation_bytes == 0 ||
+        segment.copy_bytes == 0 ||
+        segment.source_offset > segment.source_allocation_bytes ||
+        segment.copy_bytes >
+            segment.source_allocation_bytes - segment.source_offset ||
+        segment.destination_offset > CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES ||
+        segment.copy_bytes > CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES -
+                                 segment.destination_offset) {
+      return 5;
+    }
     void *source = ImportIpcMemory(g_state, segment.key);
-    if (source == nullptr) return false;
+    if (source == nullptr) return 6;
     const size_t destination_offset =
         static_cast<size_t>(segment.destination_offset);
     const size_t source_offset = static_cast<size_t>(segment.source_offset);
@@ -113,19 +131,17 @@ bool PrepareResidentDeviceIpcPayload(
             CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES - destination_offset,
             static_cast<uint8_t *>(source) + source_offset, copy_bytes,
             ACL_MEMCPY_DEVICE_TO_DEVICE) != ACL_SUCCESS) {
-      return false;
+      return 7;
     }
   }
-  *payload_out = g_state->payload;
-  return true;
+  return 0;
 }
 
-void DestroyResidentDeviceIpcPayload() {
+extern "C" void resident_device_transfer_destroy() {
   if (g_state == nullptr) return;
   for (const auto &entry : g_state->ipc_imports) {
     g_state->acl.ipc_close(entry.first.c_str());
   }
-  if (g_state->payload != nullptr) g_state->acl.free(g_state->payload);
   delete g_state;
   g_state = nullptr;
 }

@@ -29,13 +29,12 @@ target_include_directories(resident_epoch_bridge_object PRIVATE
 target_compile_options(resident_epoch_bridge_object PRIVATE
   -O2 -std=c++11 -ftrapv -fstack-protector-all -fPIC)
 
-add_library(resident_device_transfer_object OBJECT resident_device_transfer.cpp)
-set_target_properties(resident_device_transfer_object PROPERTIES
-  POSITION_INDEPENDENT_CODE ON)
-target_include_directories(resident_device_transfer_object PRIVATE
+add_library(resident_device_transfer SHARED resident_device_transfer.cpp)
+target_include_directories(resident_device_transfer PRIVATE
   "${ASCEND_HOME_PATH}/include")
-target_compile_options(resident_device_transfer_object PRIVATE
-  -O2 -std=c++11 -ftrapv -fstack-protector-all -fPIC)
+target_compile_options(resident_device_transfer PRIVATE
+  -O2 -std=c++11 -ftrapv -fstack-protector-all -fPIC -fvisibility=hidden)
+target_link_libraries(resident_device_transfer PRIVATE ${CMAKE_DL_LIBS})
 
 add_library(resident_epoch_bridge_old_object OBJECT resident_epoch_bridge_old.cpp)
 set_target_properties(resident_epoch_bridge_old_object PROPERTIES
@@ -48,13 +47,11 @@ target_compile_options(resident_epoch_bridge_old_object PRIVATE
   -O2 -std=c++11 -ftrapv -fstack-protector-all -fPIC)
 
 add_library(resident_epoch_bridge SHARED
-  $<TARGET_OBJECTS:resident_epoch_bridge_object>
-  $<TARGET_OBJECTS:resident_device_transfer_object>)
+  $<TARGET_OBJECTS:resident_epoch_bridge_object>)
 target_link_libraries(resident_epoch_bridge PRIVATE
   -Wl,--whole-archive
   ${CANN_LIBRARIES}
-  -Wl,--no-whole-archive
-  ${CMAKE_DL_LIBS})
+  -Wl,--no-whole-archive)
 
 add_library(resident_epoch_bridge_old SHARED
   $<TARGET_OBJECTS:resident_epoch_bridge_old_object>)
@@ -74,10 +71,11 @@ target_link_libraries(resident_epoch_memcpy_trace PRIVATE
 
 add_executable(resident_epoch_server
   resident_epoch_server.cpp
-  $<TARGET_OBJECTS:resident_epoch_bridge_object>
-  $<TARGET_OBJECTS:resident_device_transfer_object>)
+  $<TARGET_OBJECTS:resident_epoch_bridge_object>)
 target_include_directories(resident_epoch_server PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_definitions(resident_epoch_server PRIVATE
+  CRUISE_RESIDENT_DEVICE_TRANSFER_PLUGIN=1)
 target_compile_options(resident_epoch_server PRIVATE
   -O2 -std=c++11 -ftrapv -fstack-protector-all -fPIC)
 target_link_libraries(resident_epoch_server PRIVATE

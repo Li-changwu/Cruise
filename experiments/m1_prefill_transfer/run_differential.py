@@ -9,6 +9,10 @@ from pathlib import Path
 import traceback
 from typing import Any
 
+from experiments.m1_batched_prefill.run_differential import (
+    is_direct_device_import_result,
+)
+
 SCHEDULER_QUALNAME = (
     "vllm_ascend_resident_epoch.scheduler.ResidentEpochScheduler"
 )
@@ -59,6 +63,7 @@ def _result_record(result: Any) -> dict[str, Any] | None:
         "kv_imported": result.kv_imported,
         "host_kv_checksum": result.kv_snapshot_checksum,
         "device_kv_checksum": result.kv_import_checksum,
+        "kv_transfer_mode": result.kv_transfer_mode,
     }
 
 
@@ -200,12 +205,10 @@ def run_engine(
                 for step in device_steps
                 if step["plan"]["requests"][0]["state_owner"] == "device"
             ]
-            checksum_equal = bool(
+            direct_import_valid = bool(
                 len(import_steps) == 1
                 and import_steps[0]["result"] is not None
-                and import_steps[0]["result"]["host_kv_checksum"] != 0
-                and import_steps[0]["result"]["host_kv_checksum"]
-                == import_steps[0]["result"]["device_kv_checksum"]
+                and is_direct_device_import_result(import_steps[0]["result"])
             )
             result["checks"].update(
                 {
@@ -218,7 +221,7 @@ def run_engine(
                     "import_epoch_k2": bool(
                         import_steps and import_steps[0]["plan"]["max_steps"] == 2
                     ),
-                    "host_device_kv_checksum_equal": checksum_equal,
+                    "direct_device_kv_import_verified": direct_import_valid,
                     "ownership_transferred": bool(steady_steps),
                     "steady_epoch_k1": bool(
                         steady_steps and steady_steps[0]["plan"]["max_steps"] == 1

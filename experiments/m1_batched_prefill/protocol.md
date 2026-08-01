@@ -12,7 +12,10 @@ only device-owned resident epochs afterward. Per-request token IDs, terminal
 finish reasons, stop reasons, and final scheduler accounting must match the
 stock baseline exactly.
 
-The gate additionally requires one Feed/Fetch per resident epoch, matching
-Host and device Adler-32 import checksums, a 29,360,372-byte import input, and
-the 260-byte/368-byte steady epoch ABI. Heavy artifacts and build products are
-allowed only in marker-owned `/dev/shm` scratch space.
+The M4b gate additionally requires one Feed/Fetch per resident epoch and a
+direct Device IPC KV import: the Host snapshot checksum must be zero, the
+Device checksum must be nonzero, and the import input must be the 43,200-byte
+sidecar request plus IPC metadata. The 260-byte/368-byte steady epoch ABI is
+unchanged. A 29,360,372-byte Host snapshot is accepted only by diagnostic
+legacy validation and cannot pass this M4b gate. Heavy artifacts and build
+products are allowed only in marker-owned `/dev/shm` scratch space.

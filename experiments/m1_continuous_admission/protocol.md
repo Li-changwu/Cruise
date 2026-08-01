@@ -12,8 +12,9 @@ This gate exercises a real nontrivial-prefill trace across epoch boundaries:
 
 The stock and Cruise routes must match per-request tokens, terminal reasons,
 stop reasons, and final scheduler accounting. The two isolated admission steps
-must never schedule A on the Host. The B and C import checksums must match on
-Host and Device, and C must reuse B's row with a strictly newer generation.
+must never schedule A on the Host. The B and C imports must use direct Device
+IPC metadata, with zero Host snapshot checksum and a nonzero Device checksum;
+C must reuse B's row with a strictly newer generation.
 
 All generated models, weights, builds, caches, sockets, and logs remain in
 marker-owned `/dev/shm` scratch and are deleted after bounded evidence is

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include "resident_epoch_protocol.h"
@@ -31,6 +32,15 @@ static_assert(sizeof(ResidentEpochIpcSegment) ==
 static_assert(sizeof(ResidentEpochIpcMetadata) ==
                   CRUISE_RESIDENT_IPC_METADATA_BYTES,
               "resident Device IPC metadata ABI changed");
+
+using ResidentDeviceTransferPrepare = int32_t (*)(
+    const ResidentEpochIpcMetadata *metadata, void *destination,
+    size_t destination_bytes);
+using ResidentDeviceTransferDestroy = void (*)();
+
+extern "C" int32_t resident_epoch_install_device_transfer(
+    ResidentDeviceTransferPrepare prepare,
+    ResidentDeviceTransferDestroy destroy);
 
 extern "C" void *resident_epoch_create(
     const char *air_path, const char *graph_config, const char *func_config,

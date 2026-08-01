@@ -23,6 +23,7 @@ from vllm_ascend_resident_epoch.kv_transfer import (
     IPC_MAX_SEGMENTS,
     IPC_METADATA_BYTES,
     IPC_METADATA_HEADER,
+    IPC_METADATA_VERSION,
     IPC_SEGMENT,
     PAYLOAD_BYTES,
     TRANSFER_HEADER_BYTES,
@@ -67,6 +68,7 @@ def test_device_kv_transfer_wire_contract_contains_only_metadata():
     assert IPC_METADATA_BYTES < PAYLOAD_BYTES // 100
     assert len(segments) < IPC_MAX_SEGMENTS
     header = IPC_METADATA_HEADER.unpack_from(wire)
+    assert header[1] == IPC_METADATA_VERSION
     assert header[3] == len(segments)
     assert header[4] == 0
     first_segment = IPC_SEGMENT.unpack_from(wire, IPC_METADATA_HEADER.size)

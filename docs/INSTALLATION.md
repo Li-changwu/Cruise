@@ -55,6 +55,11 @@ cmake -S native -B /dev/shm/cruise-native-build \
 cmake --build /dev/shm/cruise-native-build --parallel
 ```
 
+Deploy `resident_epoch_server` together with the colocated
+`libresident_device_transfer.so`; runtime validation rejects a server whose
+Device transfer plugin is missing. The plugin is loaded only after GE finishes
+building the resident graph.
+
 Provision the immutable 342-file AIR runtime-weight bundle once on a dedicated
 data volume. The destination is fixed by the qualified manifest digest; a
 second invocation deep-checks and reuses the same bundle instead of creating
