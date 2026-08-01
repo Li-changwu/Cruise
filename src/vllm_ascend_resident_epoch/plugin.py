@@ -18,6 +18,7 @@ from .kv_transfer import (
     release_kv_device_exports,
 )
 from .triton_compat import ensure_triton_ascend_runtime
+from .streaming import install_strict_delta_collector
 
 
 def _execute_model_with_fallback(
@@ -59,6 +60,7 @@ def _execute_model_with_fallback(
 
 def register() -> None:
     ensure_triton_ascend_runtime()
+    install_strict_delta_collector()
     from vllm_ascend.worker.worker import NPUWorker
 
     if hasattr(NPUWorker, "_resident_epoch_original_execute_model"):

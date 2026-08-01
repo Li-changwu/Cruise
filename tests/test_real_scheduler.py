@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ from vllm_ascend_resident_epoch.contract import (
     get_plan,
 )
 from vllm_ascend_resident_epoch.scheduler import ResidentEpochScheduler
+from vllm_ascend_resident_epoch.streaming import install_strict_delta_collector
 from vllm_ascend_resident_epoch.worker import ResidentEpochWorker
 
 
@@ -519,6 +521,62 @@ def test_delta_output_kind_allows_bounded_multi_token_epoch():
 
     assert plan is not None
     assert plan.max_steps == 4
+
+
+def test_delta_device_epoch_egresses_each_token_incrementally():
+    scheduler = make_scheduler(1)
+    scheduler._resident_epoch_config = ResidentEpochConfig(max_steps=4)
+    request = add_greedy_requests(scheduler, 1, max_tokens=4)[0]
+    request.sampling_params.output_kind = RequestOutputKind.DELTA
+
+    scheduler_output = scheduler.schedule()
+    plan = get_plan(scheduler_output)
+    assert plan is not None
+    assert plan.max_steps == 4
+
+    output = ModelRunnerOutput(
+        req_ids=[request.request_id],
+        req_id_to_index={request.request_id: 0},
+        sampled_token_ids=[[101, 102, 103, 104]],
+    )
+    attach_result(
+        output,
+        ResidentEpochResult(
+            version=CONTRACT_VERSION,
+            route="device",
+            status=0,
+            model_calls=4,
+            computed_steps={request.request_id: 4},
+            row_generations=plan.row_generations,
+        ),
+    )
+
+    engine_outputs = scheduler.update_from_output(scheduler_output, output)
+    emitted = engine_outputs[request.client_index].outputs
+    assert [item.new_token_ids for item in emitted] == [[101], [102], [103], [104]]
+    assert [item.finish_reason for item in emitted[:-1]] == [None, None, None]
+    assert emitted[-1].finish_reason is not None
+    assert request.status == RequestStatus.FINISHED_LENGTH_CAPPED
+
+
+def test_cruise_delta_collector_keeps_device_epoch_tokens_separate():
+    install_strict_delta_collector()
+    from vllm.v1.engine.output_processor import RequestOutputCollector
+
+    collector = RequestOutputCollector(RequestOutputKind.DELTA, "stream-0")
+    outputs = [object(), object()]
+    for output in outputs:
+        collector.put(output)
+
+    assert asyncio.run(collector.get()) is outputs[0]
+    assert collector.ready.is_set()
+    assert asyncio.run(collector.get()) is outputs[1]
+    assert not collector.ready.is_set()
+
+    failure = RuntimeError("stream failed")
+    collector.put(failure)
+    with pytest.raises(RuntimeError, match="stream failed"):
+        asyncio.run(collector.get())
 
 
 def test_running_prefill_is_isolated_from_device_owned_requests():

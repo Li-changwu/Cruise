@@ -412,6 +412,7 @@ async def _request(
     body = _completion_request_body(model_name, scenario)
     started = time.perf_counter_ns()
     token_times_ns: list[int] = []
+    stream_chunk_token_counts: list[int] = []
     tokens: list[int] = []
     finish_reason = None
     stop_reason = None
@@ -442,6 +443,8 @@ async def _request(
                         timestamp = time.perf_counter_ns()
                         tokens.extend(new_tokens)
                         token_times_ns.extend(timestamp for _ in new_tokens)
+                        if new_tokens:
+                            stream_chunk_token_counts.append(len(new_tokens))
                         if choice.get("finish_reason") is not None:
                             finish_reason = choice["finish_reason"]
                             stop_reason = choice.get("stop_reason")
@@ -500,6 +503,7 @@ async def _request(
         "ttft_ms": ttft_ms,
         "tpot_ms": tpot_ms,
         "inter_token_ms": inter_token_ms,
+        "stream_chunk_token_counts": stream_chunk_token_counts,
         "checks": checks,
         "pass": all(checks.values()),
     }

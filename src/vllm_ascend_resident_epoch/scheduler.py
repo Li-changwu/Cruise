@@ -1,6 +1,8 @@
 from typing import Any
 
+from vllm.sampling_params import RequestOutputKind
 from vllm.v1.core.sched.scheduler import Scheduler
+from vllm.v1.engine import EngineCoreOutput
 from vllm.v1.outputs import ModelRunnerOutput
 
 from .benchmark_metrics import ResidentEpochBenchmarkMetrics
@@ -345,10 +347,70 @@ class ResidentEpochScheduler(Scheduler):
             raise RuntimeError("resident epoch plan did not receive execution metadata")
         self._resident_epoch_last_result = result
         self._resident_epoch_benchmark_metrics.record_result(result)
+        delta_request_ids = {
+            request.req_id
+            for request in plan.requests
+            if self.requests[request.req_id].sampling_params is not None
+            and self.requests[request.req_id].sampling_params.output_kind
+            == RequestOutputKind.DELTA
+        }
         self._apply_resident_epoch_accounting(
             scheduler_output, model_runner_output, plan, result
         )
-        return super().update_from_output(scheduler_output, model_runner_output)
+        outputs = super().update_from_output(scheduler_output, model_runner_output)
+        return self._split_device_delta_outputs(outputs, delta_request_ids)
+
+    def _split_device_delta_outputs(
+        self, outputs: dict[int, Any], delta_request_ids: set[str]
+    ) -> dict[int, Any]:
+        """Emit each committed Device token as its own DELTA output event."""
+        if not delta_request_ids:
+            return outputs
+
+        for client_outputs in outputs.values():
+            expanded: list[EngineCoreOutput] = []
+            for output in client_outputs.outputs:
+                token_ids = output.new_token_ids
+                if (
+                    output.request_id not in delta_request_ids
+                    or len(token_ids) < 2
+                ):
+                    expanded.append(output)
+                    continue
+                if output.new_logprobs is not None or output.pooling_output is not None:
+                    raise RuntimeError(
+                        "resident incremental streaming cannot split unsupported output"
+                    )
+                for index, token_id in enumerate(token_ids):
+                    is_first = index == 0
+                    is_last = index == len(token_ids) - 1
+                    expanded.append(
+                        EngineCoreOutput(
+                            request_id=output.request_id,
+                            new_token_ids=[token_id],
+                            new_prompt_logprobs_tensors=(
+                                output.new_prompt_logprobs_tensors
+                                if is_first
+                                else None
+                            ),
+                            finish_reason=(
+                                output.finish_reason if is_last else None
+                            ),
+                            stop_reason=output.stop_reason if is_last else None,
+                            events=output.events if is_first else None,
+                            kv_transfer_params=(
+                                output.kv_transfer_params if is_last else None
+                            ),
+                            trace_headers=output.trace_headers,
+                            prefill_stats=output.prefill_stats if is_first else None,
+                            routed_experts=(
+                                output.routed_experts if is_last else None
+                            ),
+                            num_nans_in_logits=output.num_nans_in_logits,
+                        )
+                    )
+            client_outputs.outputs[:] = expanded
+        return outputs
 
     def _apply_resident_epoch_accounting(
         self,
