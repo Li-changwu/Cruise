@@ -257,7 +257,9 @@ def server_command(
     if mode not in MODES:
         raise ValueError(f"unknown M4a route: {mode}")
     command = [
-        str(Path(sys.executable).with_name("vllm")),
+        sys.executable,
+        "-m",
+        "vllm_ascend_resident_epoch.server_launcher",
         "serve",
         str(model),
         "--tokenizer",

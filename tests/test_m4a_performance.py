@@ -1,6 +1,7 @@
 import asyncio
 import json
 import signal
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -191,6 +192,12 @@ def test_m4a_commands_separate_eager_graph_and_cruise(tmp_path):
         for mode in ("eager", "graph", "cruise")
     }
 
+    for command in commands.values():
+        assert command[:3] == [
+            sys.executable,
+            "-m",
+            "vllm_ascend_resident_epoch.server_launcher",
+        ]
     assert "--enforce-eager" in commands["eager"]
     assert "--enforce-eager" not in commands["graph"]
     assert "--scheduler-cls" not in commands["graph"]
