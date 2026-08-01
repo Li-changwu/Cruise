@@ -127,19 +127,42 @@ class ResidentEpochScheduler(Scheduler):
             return "host-prefill-admission"
         return None
 
-    def _schedule_with_host_isolation(
-        self,
-    ) -> tuple[Any, tuple[str, ...], str | None]:
-        device_running = tuple(
+    def _is_pending_device_import(self, request: Any) -> bool:
+        """Return whether a Host-owned decode can enter the next Device epoch."""
+        config = self._ensure_test_config()
+        if request.request_id in self._resident_epoch_device_owned:
+            return False
+        if request_rejection_reason(request) is not None:
+            return False
+        if (
+            request.num_output_tokens < 1
+            or request.num_computed_tokens + 1 != request.num_tokens
+            or request.num_prompt_tokens > config.logical_capacity
+            or request.max_tokens - request.num_output_tokens < 1
+        ):
+            return False
+        return len(
+            self.kv_cache_manager.get_blocks(request.request_id).get_block_ids()
+        ) == 1
+
+    def _protected_host_lane_requests(self) -> tuple[Any, ...]:
+        """Keep Device state and ready-to-import decodes out of Host prefill."""
+        return tuple(
             request
             for request in self.running
             if request.request_id in self._resident_epoch_device_owned
+            or self._is_pending_device_import(request)
         )
-        isolation_reason = self._host_isolation_reason(device_running)
+
+    def _schedule_with_host_isolation(
+        self,
+    ) -> tuple[Any, tuple[str, ...], str | None]:
+        protected_running = self._protected_host_lane_requests()
+        isolation_reason = self._host_isolation_reason(protected_running)
         if isolation_reason is None:
             return super().schedule(), (), None
 
-        paused = device_running
+        paused = protected_running
         paused_ids = tuple(request.request_id for request in paused)
         original_max_running = self.max_num_running_reqs
         self.running[:] = [

@@ -358,6 +358,49 @@ def test_nontrivial_continuous_admission_isolates_host_prefill_and_reuses_row():
     assert request_a.status == RequestStatus.FINISHED_LENGTH_CAPPED
 
 
+def test_host_prefill_does_not_advance_pending_device_import():
+    scheduler = make_scheduler(2)
+    scheduler._resident_epoch_config = ResidentEpochConfig(max_steps=2)
+    request_a = make_prefill_request("A", [9707, 11], max_tokens=7)
+    scheduler.add_request(request_a)
+
+    prefill_a = scheduler.schedule()
+    scheduler.update_from_output(
+        prefill_a,
+        ModelRunnerOutput(
+            req_ids=["A"],
+            req_id_to_index={"A": 0},
+            sampled_token_ids=[[101]],
+        ),
+    )
+    assert request_a.request_id not in scheduler._resident_epoch_device_owned
+    computed_before_b_prefill = request_a.num_computed_tokens
+
+    request_b = make_prefill_request("B", [9707, 11, 358], max_tokens=3)
+    scheduler.add_request(request_b)
+    prefill_b = scheduler.schedule()
+
+    assert get_plan(prefill_b) is None
+    assert prefill_b.num_scheduled_tokens == {"B": 3}
+    assert scheduler._resident_epoch_last_rejection == "host-prefill-admission"
+    assert request_a.num_computed_tokens == computed_before_b_prefill
+    scheduler.update_from_output(
+        prefill_b,
+        ModelRunnerOutput(
+            req_ids=["B"],
+            req_id_to_index={"B": 0},
+            sampled_token_ids=[[201]],
+        ),
+    )
+
+    import_ab = scheduler.schedule()
+    plan_ab = get_plan(import_ab)
+    assert plan_ab is not None
+    assert plan_ab.req_ids == ("A", "B")
+    assert [request.state_owner for request in plan_ab.requests] == ["host", "host"]
+    assert [request.kv_import_required for request in plan_ab.requests] == [True, True]
+
+
 def test_ineligible_admission_uses_host_lane_without_advancing_device_request():
     scheduler = make_scheduler(2)
     scheduler._resident_epoch_config = ResidentEpochConfig(max_steps=2)
