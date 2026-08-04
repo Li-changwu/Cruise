@@ -11,6 +11,7 @@ import json
 import math
 from pathlib import Path
 import re
+import sqlite3
 from typing import Any
 
 
@@ -110,10 +111,41 @@ def _analyze_route(root: Path, route: str, evidence: Path) -> dict[str, Any]:
         for path in files
     ]
     task_files = [path for path in files if path.name.startswith("task_time_")]
+    task_databases = [path for path in files if path.name == "ascend_task.db"]
     task_types: Counter[str] = Counter()
     intervals: list[tuple[float, float]] = []
     timeline_rows: list[dict[str, Any]] = []
     schemas: list[dict[str, Any]] = []
+
+    def record_task(
+        task_type: str,
+        start_value: str | int | float | None,
+        duration_value: str | int | float | None,
+        name: str,
+        *,
+        time_scale: float = 1.0,
+    ) -> None:
+        task_types[task_type] += 1
+        if not _is_ai_core_task(task_type):
+            return
+        start = _number(str(start_value)) if start_value is not None else None
+        duration = (
+            _number(str(duration_value)) if duration_value is not None else None
+        )
+        if start is None or duration is None or duration < 0:
+            return
+        start *= time_scale
+        duration *= time_scale
+        intervals.append((start, start + duration))
+        if len(timeline_rows) < MAX_TIMELINE_ROWS:
+            timeline_rows.append(
+                {
+                    "start_us": start,
+                    "duration_us": duration,
+                    "task_type": task_type,
+                    "name": name,
+                }
+            )
 
     for path in task_files:
         with path.open(newline="", encoding="utf-8-sig", errors="replace") as stream:
@@ -158,23 +190,57 @@ def _analyze_route(root: Path, route: str, evidence: Path) -> dict[str, Any]:
                 continue
             for row in reader:
                 task_type = row.get(type_column, "")
-                task_types[task_type] += 1
-                if not _is_ai_core_task(task_type):
+                record_task(
+                    task_type,
+                    row.get(start_column),
+                    row.get(duration_column),
+                    row.get(name_column, "") if name_column else "",
+                )
+
+    for path in task_databases:
+        try:
+            with sqlite3.connect(path) as database:
+                columns = [
+                    row[1]
+                    for row in database.execute("PRAGMA table_info(AscendTask)")
+                ]
+                required = {
+                    "device_task_type",
+                    "start_time",
+                    "duration",
+                    "host_task_type",
+                }
+                schemas.append(
+                    {
+                        "path": str(path.relative_to(root)),
+                        "format": "sqlite",
+                        "table": "AscendTask",
+                        "columns": columns,
+                    }
+                )
+                if not required.issubset(columns):
                     continue
-                start = _number(row.get(start_column))
-                duration = _number(row.get(duration_column))
-                if start is None or duration is None or duration < 0:
-                    continue
-                intervals.append((start, start + duration))
-                if len(timeline_rows) < MAX_TIMELINE_ROWS:
-                    timeline_rows.append(
-                        {
-                            "start_us": start,
-                            "duration_us": duration,
-                            "task_type": task_type,
-                            "name": row.get(name_column, "") if name_column else "",
-                        }
+                rows = database.execute(
+                    "SELECT device_task_type, start_time, duration, host_task_type "
+                    "FROM AscendTask"
+                )
+                for task_type, start, duration, name in rows:
+                    record_task(
+                        task_type or "",
+                        start,
+                        duration,
+                        name or "",
+                        time_scale=0.001,
                     )
+        except sqlite3.Error as error:
+            schemas.append(
+                {
+                    "path": str(path.relative_to(root)),
+                    "format": "sqlite",
+                    "table": "AscendTask",
+                    "error": str(error),
+                }
+            )
 
     timeline_path = evidence / f"profile-{route}-ai-core-timeline.csv"
     if timeline_rows:
@@ -211,12 +277,15 @@ def main() -> int:
     parser.add_argument("--evidence-dir", required=True, type=Path)
     parser.add_argument("--status", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--routes", nargs="+", choices=ROUTES, default=ROUTES)
     args = parser.parse_args()
 
     profile_root = args.profile_root.resolve(strict=True)
     evidence = args.evidence_dir.resolve(strict=True)
+    required_routes = tuple(args.routes)
     routes = {
-        route: _analyze_route(profile_root, route, evidence) for route in ROUTES
+        route: _analyze_route(profile_root, route, evidence)
+        for route in required_routes
     }
     with args.status.open(newline="", encoding="utf-8") as stream:
         runner_status = {
@@ -227,6 +296,7 @@ def main() -> int:
     result = {
         "schema_version": 1,
         "gate": "M4a representative dynamic msprof attribution",
+        "required_routes": list(required_routes),
         "routes": routes,
         "runner_status": runner_status,
         "comparison_status": (
@@ -235,7 +305,7 @@ def main() -> int:
             else "not_observed_by_current_msprof_path"
         ),
         "claim_boundary": (
-            "Idle gaps are reported only when exported task_time CSVs contain "
+            "Idle gaps are reported only when exported CANN task records contain "
             "timestamped AI Core tasks. Host logical timing is never substituted."
         ),
     }
@@ -245,8 +315,15 @@ def main() -> int:
     print(json.dumps(result, indent=2, sort_keys=True))
     profile_statuses_ok = all(
         runner_status.get(f"profile-{route}-benchmark") == 0
+        and runner_status.get(f"profile-{route}-dynamic-env") == 0
+        and runner_status.get(f"profile-{route}-dynamic-socket") == 0
+        and runner_status.get(f"profile-{route}-workload") == 0
+        and runner_status.get(f"profile-{route}-start") == 0
+        and runner_status.get(f"profile-{route}-stop") == 0
+        and runner_status.get(f"profile-{route}-quit") == 0
         and runner_status.get(f"profile-{route}-msprof") == 0
-        for route in ROUTES
+        and runner_status.get(f"profile-{route}-export") == 0
+        for route in required_routes
     )
     return int(not (profile_statuses_ok and result["comparison_status"] == "observed_all_routes"))
 

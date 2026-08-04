@@ -532,6 +532,22 @@ def test_resident_sidecar_uses_ge_owned_acl_runtime():
     assert "${CMAKE_DL_LIBS}" not in bridge_link.group(1)
 
 
+def test_resident_controller_reduces_greedy_tokens_on_device():
+    bridge = (ROOT / "native" / "resident_epoch_bridge.cpp").read_text(
+        encoding="utf-8"
+    )
+    controller = (ROOT / "controller" / "g4c_b4_resident_epoch.cpp").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ReplaceLogitsWithDeviceGreedyTokens" in bridge
+    assert "ge::op::ArgMaxWithValue token_ids" in bridge
+    assert "outputs.insert(outputs.begin(), {token_node, 0});" in bridge
+    assert "ArgmaxFinite" not in controller
+    assert "IsTensor(model_outputs[0], TensorDataType::DT_INT64, kBatchSize)" in controller
+    assert "generated_tokens[request]" in controller
+
+
 def test_direct_device_import_uses_unshifted_typed_host_buffers():
     bridge = (ROOT / "native" / "resident_epoch_bridge.cpp").read_text(
         encoding="utf-8"

@@ -290,9 +290,13 @@ def server_command(
         WORKER_QUALNAME,
         "--no-async-scheduling",
     ]
-    if mode == "eager":
+    profile_cruise_host_eager = (
+        mode == "cruise"
+        and os.getenv("CRUISE_M4A_PROFILE_CRUISE_HOST_EAGER") == "1"
+    )
+    if mode == "eager" or profile_cruise_host_eager:
         command.append("--enforce-eager")
-    elif mode == "cruise":
+    if mode == "cruise":
         command.extend(("--scheduler-cls", SCHEDULER_QUALNAME))
     return command
 
@@ -629,6 +633,8 @@ async def _run_load(
     *,
     profile_ready_file: Path | None = None,
     profile_start_file: Path | None = None,
+    profile_workload_done_file: Path | None = None,
+    profile_release_file: Path | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     import httpx
 
@@ -649,6 +655,8 @@ async def _run_load(
             )
         if profile_ready_file is not None:
             assert profile_start_file is not None
+            assert profile_workload_done_file is not None
+            assert profile_release_file is not None
             profile_ready_file.parent.mkdir(parents=True, exist_ok=True)
             profile_ready_file.write_text(
                 json.dumps(
@@ -701,6 +709,28 @@ async def _run_load(
                     and all(record["pass"] for record in records),
                 }
             )
+        if profile_workload_done_file is not None:
+            assert profile_release_file is not None
+            profile_workload_done_file.write_text(
+                json.dumps(
+                    {
+                        "runner_pid": os.getpid(),
+                        "api_server_pid": process.pid,
+                    },
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            deadline = time.monotonic() + 600
+            while not profile_release_file.is_file():
+                if process.poll() is not None:
+                    raise RuntimeError(
+                        "API server exited while waiting for profiler release"
+                    )
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("profiler release barrier timed out")
+                await asyncio.sleep(0.1)
     return warmup_results, scenario_results
 
 
@@ -718,6 +748,10 @@ def _mode_identity(mode: str, server_log: str, route_metrics: Any) -> dict[str, 
     }
     if mode == "graph":
         return graph_checks
+    if os.getenv("CRUISE_M4A_PROFILE_CRUISE_HOST_EAGER") == "1":
+        graph_checks = {
+            "profiler_host_eager_true": "enforce_eager=True" in server_log,
+        }
     counters = route_metrics.get("counters", {}) if isinstance(route_metrics, dict) else {}
     return {
         **graph_checks,
@@ -739,17 +773,26 @@ def run_service(
     runtime_dir: Path,
     profile_ready_file: Path | None = None,
     profile_start_file: Path | None = None,
+    profile_workload_done_file: Path | None = None,
+    profile_release_file: Path | None = None,
 ) -> dict[str, Any]:
     if not manifest.tokenizer.is_dir():
         raise FileNotFoundError(f"tokenizer directory not found: {manifest.tokenizer}")
     if profile_ready_file is not None:
         assert profile_start_file is not None
+        assert profile_workload_done_file is not None
+        assert profile_release_file is not None
         resolved_runtime = runtime_dir.resolve(strict=False)
         resolved_barriers = tuple(
             path.resolve(strict=False)
-            for path in (profile_ready_file, profile_start_file)
+            for path in (
+                profile_ready_file,
+                profile_start_file,
+                profile_workload_done_file,
+                profile_release_file,
+            )
         )
-        if resolved_barriers[0] == resolved_barriers[1]:
+        if len(set(resolved_barriers)) != len(resolved_barriers):
             raise ValueError("profiler barrier files must be distinct")
         if any(
             resolved_runtime not in path.parents for path in resolved_barriers
@@ -804,6 +847,14 @@ def run_service(
         "profile_start_file": (
             str(profile_start_file) if profile_start_file is not None else None
         ),
+        "profile_workload_done_file": (
+            str(profile_workload_done_file)
+            if profile_workload_done_file is not None
+            else None
+        ),
+        "profile_release_file": (
+            str(profile_release_file) if profile_release_file is not None else None
+        ),
         "warmups": [],
         "scenarios": [],
         "pass": False,
@@ -834,6 +885,8 @@ def run_service(
                 process,
                 profile_ready_file=profile_ready_file,
                 profile_start_file=profile_start_file,
+                profile_workload_done_file=profile_workload_done_file,
+                profile_release_file=profile_release_file,
             )
         )
     except Exception as exc:
@@ -1129,14 +1182,24 @@ def main() -> int:
     parser.add_argument("--only-scenario", choices=sorted(REQUIRED_SCENARIOS))
     parser.add_argument("--profile-ready-file", type=Path)
     parser.add_argument("--profile-start-file", type=Path)
+    parser.add_argument("--profile-workload-done-file", type=Path)
+    parser.add_argument("--profile-release-file", type=Path)
     parser.add_argument("--result", action="append", type=Path, default=[])
     args = parser.parse_args()
 
     manifest = with_tokenizer_override(
         load_manifest(args.workload.resolve(strict=True))
     )
-    if (args.profile_ready_file is None) != (args.profile_start_file is None):
-        parser.error("both profiler barrier files must be supplied together")
+    profiler_barriers = (
+        args.profile_ready_file,
+        args.profile_start_file,
+        args.profile_workload_done_file,
+        args.profile_release_file,
+    )
+    if any(path is None for path in profiler_barriers) and any(
+        path is not None for path in profiler_barriers
+    ):
+        parser.error("all four profiler barrier files must be supplied together")
     if args.mode == "compare" and (
         args.only_scenario is not None or args.profile_ready_file is not None
     ):
@@ -1170,6 +1233,8 @@ def main() -> int:
             runtime_dir=args.runtime_dir,
             profile_ready_file=args.profile_ready_file,
             profile_start_file=args.profile_start_file,
+            profile_workload_done_file=args.profile_workload_done_file,
+            profile_release_file=args.profile_release_file,
         )
     write_result(args.output, result)
     return 0 if result["pass"] else 1

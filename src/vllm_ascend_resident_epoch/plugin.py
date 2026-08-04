@@ -16,6 +16,7 @@ from .kv_transfer import capture_kv_device_transfer, release_kv_device_exports
 from .triton_compat import ensure_triton_ascend_runtime
 from .streaming import install_strict_delta_collector
 from .benchmark_metrics import append_benchmark_event
+from .dynamic_profiling import configure_dynamic_profiling
 
 
 def _execute_model_with_fallback(
@@ -63,6 +64,7 @@ def _execute_model_with_fallback(
 
 
 def register() -> None:
+    configure_dynamic_profiling()
     ensure_triton_ascend_runtime()
     install_strict_delta_collector()
     _install_engine_core_timing()

@@ -286,6 +286,48 @@ int64_t ProcessCpuUs() {
          static_cast<int64_t>(value.tv_nsec) / 1000LL;
 }
 
+bool ReplaceLogitsWithDeviceGreedyTokens(ge::Graph &graph) {
+  ge::GNodePtr net_output;
+  for (const auto &node : graph.GetAllNodes()) {
+    ge::AscendString type;
+    if (node.GetType(type) != ge::GRAPH_SUCCESS) return false;
+    const char *type_name = type.GetString();
+    if (type_name == nullptr || std::strcmp(type_name, "NetOutput") != 0) {
+      continue;
+    }
+    if (net_output != nullptr || node.GetInputsSize() != 4) return false;
+    net_output = std::make_shared<ge::GNode>(node);
+  }
+  if (net_output == nullptr) return false;
+
+  ge::GNodePtr logits;
+  int32_t logits_port = -1;
+  std::vector<std::pair<ge::GNode, int32_t>> outputs;
+  for (size_t index = 0; index < net_output->GetInputsSize(); ++index) {
+    const auto source = net_output->GetInDataNodesAndPortIndexs(index);
+    if (source.first == nullptr || source.second < 0) return false;
+    if (index == 0) {
+      logits = source.first;
+      logits_port = source.second;
+    } else {
+      outputs.emplace_back(*source.first, source.second);
+    }
+  }
+  if (logits == nullptr || logits_port < 0 || outputs.size() != 3) return false;
+
+  ge::op::ArgMaxWithValue token_ids("resident_epoch_device_greedy_tokens");
+  token_ids.set_attr_dimension(static_cast<int64_t>(-1));
+  token_ids.set_attr_indice_dtype(ge::DT_INT64);
+  ge::GNode token_node = graph.AddNodeByOp(token_ids);
+  if (token_node.GetInputsSize() != 1 || token_node.GetOutputsSize() != 2 ||
+      graph.AddDataEdge(*logits, logits_port, token_node, 0) !=
+          ge::GRAPH_SUCCESS) {
+    return false;
+  }
+  outputs.insert(outputs.begin(), {token_node, 0});
+  return graph.SetOutputs(outputs) == ge::GRAPH_SUCCESS && graph.IsValid();
+}
+
 ge::dflow::FlowGraph BuildDeviceFlow(const std::string &air_path,
                                      const std::string &graph_config,
                                      const std::string &func_config) {
@@ -303,6 +345,13 @@ ge::dflow::FlowGraph BuildDeviceFlow(const std::string &air_path,
         const auto status = graph.LoadFromFile(air_path.c_str());
         std::cout << "ATTEMPT71_AIR_LOAD status=" << status
                   << " valid=" << graph.IsValid() << std::endl;
+        if (status != ge::GRAPH_SUCCESS || !graph.IsValid() ||
+            !ReplaceLogitsWithDeviceGreedyTokens(graph)) {
+          std::cerr << "resident epoch failed to install Device greedy "
+                       "sampling output"
+                    << std::endl;
+          return ge::Graph("ResidentEpochInvalidDecoder");
+        }
         return graph;
       });
   graph_pp.SetCompileConfig(graph_config.c_str());

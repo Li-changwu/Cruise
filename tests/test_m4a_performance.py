@@ -1,6 +1,10 @@
 import asyncio
 import json
+import multiprocessing
+import os
 import signal
+import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,6 +12,7 @@ from types import SimpleNamespace
 from experiments.m4a_performance.run_benchmark import (
     BLOCKED_ORDER,
     _completion_request_body,
+    _mode_identity,
     _run_load,
     _scenario_metrics,
     _stop_server,
@@ -23,11 +28,25 @@ from vllm_ascend_resident_epoch.benchmark_metrics import (
     ResidentEpochBenchmarkMetrics,
     replay_event_journal,
 )
+from vllm_ascend_resident_epoch.dynamic_profiling import (
+    configure_dynamic_profiling,
+    install_engine_core_dynamic_profiling_rebind,
+)
 
 
 ROOT = Path(__file__).parents[1]
 WORKLOAD = ROOT / "experiments" / "m4a_performance" / "workload.json"
 RUNNER = ROOT / "experiments" / "m4a_performance" / "run_on_910b2.sh"
+
+
+def _spawned_dynamic_profile_environment(queue):
+    queue.put(
+        (
+            os.getpid(),
+            os.getenv("PROFILING_MODE"),
+            os.getenv("DYNAMIC_PROFILING_KEY_PID"),
+        )
+    )
 
 
 def test_m4a_manifest_freezes_primary_negative_regime_and_thresholds():
@@ -62,6 +81,12 @@ def test_m4a_hardware_runner_preserves_storage_and_milestone_contract():
     assert "formal_m2\\topen" in script
     assert "formal_m3\\topen" in script
     assert "formal_m4\\topen" in script
+    assert "profile_routes=${CRUISE_M4A_PROFILE_ROUTES:-eager,graph,cruise}" in script
+    assert "profile_cruise_host_eager=${CRUISE_M4A_PROFILE_CRUISE_HOST_EAGER:-0}" in script
+    assert "CRUISE_M4A_PROFILE_CRUISE_HOST_EAGER is profiling-only" in script
+    assert "STORAGE_GUARD_MAX_IDLE_HBM_PERCENT:-5" in script
+    assert "max_idle_hbm_percent\\t%s" in script
+    assert "env -u CRUISE_VLLM_KV_CACHE_BYTES" in script
     assert "if run_step compare" in script
     assert "if run_step verify" in script
     assert script.index("if run_step compare") < script.index("if run_step verify")
@@ -70,11 +95,188 @@ def test_m4a_hardware_runner_preserves_storage_and_milestone_contract():
     assert '--run-label "${mode}-profile"' in script
     assert 'local runtime=${scratch}/p/${route_code}' in script
     assert '--dynamic=on --pid="${target_pid}"' in script
-    assert "run_profile_route eager" in script
-    assert "[[ ${benchmark_status} -eq 0 && ${profiler_status} -eq 0 ]]" in script
+    assert "dynamic_profiling_key_pid\\t'\"${target_pid}\"" in script
+    assert 'profile-${mode}-runtime-binding.tsv' in script
+    assert "find_dynamic_profile_socket" in script
+    assert "/proc/net/unix" in script
+    assert 'dynamic_profiling_socket_${target_pid}' in script
+    assert 'profile-${mode}-dynamic-socket-path.txt' in script
+    assert 'cd "${dynamic_socket_dir}"' in script
+    assert "printf 'start\\n' >&9" in script
+    assert "printf 'stop\\n' >&9" in script
+    assert "printf 'quit\\n' >&9" in script
+    assert "start success" in script
+    assert "stop success" in script
+    assert "quit success" in script
+    assert '--export=on --type=db' in script
+    assert 'for mode in "${profile_route_list[@]}"; do' in script
+    assert "${environment_status} -eq 0" in script
+    assert "${socket_status} -eq 0" in script
+    assert "VLLM_ASCEND_RESIDENT_EPOCH_DYNAMIC_PROFILING=1" in script
     assert "huggingface-cli" not in script
     assert "wget " not in script
     assert "curl " not in script
+
+
+def test_dynamic_profiling_binds_the_current_engine_process(monkeypatch, tmp_path):
+    monkeypatch.setenv("VLLM_ASCEND_RESIDENT_EPOCH_DYNAMIC_PROFILING", "1")
+    monkeypatch.setenv("PROFILING_MODE", "stale")
+    monkeypatch.setenv("DYNAMIC_PROFILING_KEY_PID", "1")
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.setattr(
+        "vllm_ascend_resident_epoch.dynamic_profiling.os.getpid", lambda: 4242
+    )
+
+    configure_dynamic_profiling()
+
+    assert os.environ["PROFILING_MODE"] == "dynamic"
+    assert os.environ["DYNAMIC_PROFILING_KEY_PID"] == "4242"
+    assert (tmp_path / "dynamic-profiling-binding-4242.tsv").read_text(
+        encoding="ascii"
+    ) == (
+        "key\tvalue\n"
+        "profiling_mode\tdynamic\n"
+        "dynamic_profiling_key_pid\t4242\n"
+    )
+
+
+def test_dynamic_profiling_rebinds_from_standard_dynamic_mode(
+    monkeypatch, tmp_path
+):
+    monkeypatch.delenv("VLLM_ASCEND_RESIDENT_EPOCH_DYNAMIC_PROFILING", raising=False)
+    monkeypatch.setenv("PROFILING_MODE", "dynamic")
+    monkeypatch.setenv("DYNAMIC_PROFILING_KEY_PID", "1")
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.setattr(
+        "vllm_ascend_resident_epoch.dynamic_profiling.os.getpid", lambda: 4343
+    )
+
+    configure_dynamic_profiling()
+
+    assert os.environ["DYNAMIC_PROFILING_KEY_PID"] == "4343"
+    assert (tmp_path / "dynamic-profiling-binding-4343.tsv").is_file()
+
+
+def test_source_runner_bootstrap_binds_dynamic_profile_key_per_process(tmp_path):
+    environment = os.environ | {
+        "VLLM_ASCEND_RESIDENT_EPOCH_DYNAMIC_PROFILING": "1",
+        "PYTHONPATH": f"{ROOT}:{ROOT / 'src'}",
+    }
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import os; print(os.environ['PROFILING_MODE']); "
+            "print(os.environ['DYNAMIC_PROFILING_KEY_PID']); "
+            "print(os.getpid())",
+        ],
+        cwd=tmp_path,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    mode, dynamic_pid, process_pid = result.stdout.splitlines()
+    assert mode == "dynamic"
+    assert dynamic_pid == process_pid
+
+
+def test_source_runner_bootstrap_rebinds_dynamic_profile_key_after_spawn(
+    monkeypatch,
+):
+    monkeypatch.setenv("VLLM_ASCEND_RESIDENT_EPOCH_DYNAMIC_PROFILING", "1")
+    monkeypatch.setenv("DYNAMIC_PROFILING_KEY_PID", str(os.getpid()))
+    monkeypatch.setenv("PROFILING_MODE", "dynamic")
+    context = multiprocessing.get_context("spawn")
+    queue = context.Queue()
+    process = context.Process(target=_spawned_dynamic_profile_environment, args=(queue,))
+
+    process.start()
+    process.join(timeout=30)
+
+    assert process.exitcode == 0
+    child_pid, mode, dynamic_pid = queue.get(timeout=5)
+    assert mode == "dynamic"
+    assert dynamic_pid == str(child_pid)
+    assert dynamic_pid != str(os.getpid())
+
+
+def test_engine_core_entrypoint_rebinds_dynamic_profile_key_after_fork(
+    monkeypatch,
+):
+    from vllm.v1.engine.core import EngineCoreProc
+
+    monkeypatch.setenv("VLLM_ASCEND_RESIDENT_EPOCH_DYNAMIC_PROFILING", "1")
+    queue = multiprocessing.get_context("fork").Queue()
+    original_entrypoint = EngineCoreProc.__dict__["run_engine_core"]
+    original_delegate = getattr(
+        EngineCoreProc,
+        "_resident_epoch_original_dynamic_profiling_engine_core_entrypoint",
+        None,
+    )
+    was_installed = getattr(
+        EngineCoreProc,
+        "_resident_epoch_dynamic_profiling_rebind_installed",
+        False,
+    )
+
+    def fake_engine_core_entrypoint():
+        queue.put(
+            (
+                os.getpid(),
+                os.getenv("PROFILING_MODE"),
+                os.getenv("DYNAMIC_PROFILING_KEY_PID"),
+            )
+        )
+
+    try:
+        EngineCoreProc.run_engine_core = staticmethod(fake_engine_core_entrypoint)
+        if original_delegate is not None:
+            delattr(
+                EngineCoreProc,
+                "_resident_epoch_original_dynamic_profiling_engine_core_entrypoint",
+            )
+        if was_installed:
+            delattr(
+                EngineCoreProc,
+                "_resident_epoch_dynamic_profiling_rebind_installed",
+            )
+        install_engine_core_dynamic_profiling_rebind()
+        process = multiprocessing.get_context("fork").Process(
+            target=EngineCoreProc.run_engine_core
+        )
+        process.start()
+        process.join(timeout=30)
+
+        assert process.exitcode == 0
+        child_pid, mode, dynamic_pid = queue.get(timeout=5)
+        assert mode == "dynamic"
+        assert dynamic_pid == str(child_pid)
+    finally:
+        EngineCoreProc.run_engine_core = original_entrypoint
+        if original_delegate is None:
+            delattr(
+                EngineCoreProc,
+                "_resident_epoch_original_dynamic_profiling_engine_core_entrypoint",
+            )
+        else:
+            setattr(
+                EngineCoreProc,
+                "_resident_epoch_original_dynamic_profiling_engine_core_entrypoint",
+                original_delegate,
+            )
+        if was_installed:
+            setattr(
+                EngineCoreProc,
+                "_resident_epoch_dynamic_profiling_rebind_installed",
+                True,
+            )
+        else:
+            delattr(
+                EngineCoreProc,
+                "_resident_epoch_dynamic_profiling_rebind_installed",
+            )
 
 
 def test_profile_barrier_is_released_after_warmups(tmp_path, monkeypatch):
@@ -86,7 +288,10 @@ def test_profile_barrier_is_released_after_warmups(tmp_path, monkeypatch):
     )
     ready = tmp_path / "ready.json"
     start = tmp_path / "start"
+    workload_done = tmp_path / "workload-done.json"
+    release = tmp_path / "release"
     start.write_text("start\n", encoding="utf-8")
+    release.write_text("release\n", encoding="utf-8")
     process = SimpleNamespace(pid=123, poll=lambda: None)
 
     class Client:
@@ -110,6 +315,8 @@ def test_profile_barrier_is_released_after_warmups(tmp_path, monkeypatch):
             process,
             profile_ready_file=ready,
             profile_start_file=start,
+            profile_workload_done_file=workload_done,
+            profile_release_file=release,
         )
     )
 
@@ -119,6 +326,9 @@ def test_profile_barrier_is_released_after_warmups(tmp_path, monkeypatch):
     ready_data = json.loads(ready.read_text(encoding="utf-8"))
     assert ready_data["api_server_pid"] == 123
     assert ready_data["runner_pid"] > 0
+    workload_data = json.loads(workload_done.read_text(encoding="utf-8"))
+    assert workload_data["api_server_pid"] == 123
+    assert workload_data["runner_pid"] > 0
 
 
 def test_wait_ready_bypasses_environment_proxy(monkeypatch):
@@ -184,6 +394,35 @@ def test_profile_analyzer_reports_only_observed_ai_core_idle_gaps(tmp_path):
     }
 
 
+def test_profile_analyzer_reads_cann_sqlite_task_records(tmp_path):
+    profile_root = tmp_path / "profiles"
+    evidence = tmp_path / "evidence"
+    database_path = profile_root / "cruise" / "device_0" / "sqlite" / "ascend_task.db"
+    database_path.parent.mkdir(parents=True)
+    evidence.mkdir()
+    with sqlite3.connect(database_path) as database:
+        database.execute(
+            "CREATE TABLE AscendTask ("
+            "start_time INTEGER, duration INTEGER, host_task_type TEXT, "
+            "device_task_type TEXT)"
+        )
+        database.executemany(
+            "INSERT INTO AscendTask VALUES (?, ?, ?, ?)",
+            [
+                (10_000, 5_000, "first", "AI_CORE"),
+                (30_000, 4_000, "second", "AI_CORE"),
+                (50_000, 2_000, "cpu", "AI_CPU"),
+            ],
+        )
+
+    result = _analyze_route(profile_root, "cruise", evidence)
+
+    assert result["ai_core_tasks_observed"]
+    assert result["ai_core_task_count"] == 2
+    assert result["task_types"] == {"AI_CORE": 2, "AI_CPU": 1}
+    assert result["ai_core_idle_gap_us"]["count"] == 1
+
+
 def test_production_decode_has_no_host_kv_snapshot_route():
     plugin = (ROOT / "src/vllm_ascend_resident_epoch/plugin.py").read_text(
         encoding="utf-8"
@@ -247,6 +486,32 @@ def test_m4a_commands_separate_eager_graph_and_cruise(tmp_path):
     assert budgets == {str(512 * 1024 * 1024)}
 
 
+def test_m4a_profiler_can_release_cruise_host_graph_memory(tmp_path, monkeypatch):
+    manifest = load_manifest(WORKLOAD)
+    monkeypatch.setenv("CRUISE_M4A_PROFILE_CRUISE_HOST_EAGER", "1")
+
+    command = server_command(
+        mode="cruise",
+        model=tmp_path / "model",
+        manifest=manifest,
+        port=8000,
+    )
+
+    assert "--enforce-eager" in command
+    assert "--scheduler-cls" in command
+    identity = _mode_identity(
+        "cruise",
+        "enforce_eager=True",
+        {"counters": {"device_epochs": 2, "feed_calls": 2, "fetch_calls": 2}},
+    )
+    assert identity == {
+        "profiler_host_eager_true": True,
+        "device_epochs_observed": True,
+        "one_feed_per_device_epoch": True,
+        "one_fetch_per_device_epoch": True,
+    }
+
+
 def test_m4a_source_runner_explicitly_enables_the_cruise_plugin():
     runner = (ROOT / "experiments/m4a_performance/run_benchmark.py").read_text(
         encoding="utf-8"
@@ -259,6 +524,17 @@ def test_m4a_source_runner_explicitly_enables_the_cruise_plugin():
     assert 'server_env.pop("VLLM_ASCEND_RESIDENT_EPOCH_PLUGIN_ENABLE", None)' in runner
     assert 'os.getenv("VLLM_ASCEND_RESIDENT_EPOCH_PLUGIN_ENABLE") == "1"' in launcher
     assert "register_resident_epoch_plugin()" in launcher
+    assert "configure_dynamic_profiling()" in launcher
+    assert 'os.getenv("VLLM_ASCEND_RESIDENT_EPOCH_SERVICE_PROFILER_ENABLE") == "1"' in launcher
+    assert "registry._SUBPROCESS_COMMAND" in launcher
+    assert "vllm_ascend_resident_epoch.registry_launcher" in launcher
+
+    registry_launcher = (
+        ROOT / "src/vllm_ascend_resident_epoch/registry_launcher.py"
+    ).read_text(encoding="utf-8")
+    assert '"SERVICE_PROF_CONFIG_PATH"' in registry_launcher
+    assert '"PROFILING_SYMBOLS_PATH"' in registry_launcher
+    assert "from vllm.model_executor.models.registry import _run" in registry_launcher
 
 
 def test_m4a_requests_explicitly_freeze_supported_greedy_sampling():

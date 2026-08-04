@@ -96,28 +96,6 @@ int32_t ComputeSlot(const int32_t *block_table, int32_t request,
   return physical_block * kBlockSize + offset;
 }
 
-bool ArgmaxFinite(const std::shared_ptr<FlowMsg> &msg, int32_t request,
-                  int64_t &token) {
-  if (!IsTensor(msg, TensorDataType::DT_FLOAT,
-                static_cast<int64_t>(kBatchSize) * kVocabSize)) {
-    return false;
-  }
-  const auto *all_logits =
-      static_cast<const float *>(msg->GetTensor()->GetData());
-  const auto *logits = all_logits + static_cast<int64_t>(request) * kVocabSize;
-  if (!std::isfinite(logits[0])) return false;
-  float best = logits[0];
-  token = 0;
-  for (int64_t index = 1; index < kVocabSize; ++index) {
-    if (!std::isfinite(logits[index])) return false;
-    if (logits[index] > best) {
-      best = logits[index];
-      token = index;
-    }
-  }
-  return true;
-}
-
 int32_t CountActive(const int32_t *active) {
   int32_t count = 0;
   for (int32_t request = 0; request < kBatchSize; ++request) {
@@ -496,8 +474,7 @@ class G4cB4ResidentEpoch : public MetaFlowFunc {
       ++model_calls;
       if (ret != FLOW_FUNC_SUCCESS) return fallback(kStatusModelError);
       if (model_outputs.size() != kDecoderOutputCount ||
-          !IsTensor(model_outputs[0], TensorDataType::DT_FLOAT,
-                    static_cast<int64_t>(kBatchSize) * kVocabSize) ||
+          !IsTensor(model_outputs[0], TensorDataType::DT_INT64, kBatchSize) ||
           !IsTensor(model_outputs[1], TensorDataType::DT_BF16,
                     kCacheElements) ||
           !IsTensor(model_outputs[2], TensorDataType::DT_BF16,
@@ -541,6 +518,8 @@ class G4cB4ResidentEpoch : public MetaFlowFunc {
           static_cast<int32_t *>(next_slot->GetTensor()->GetData());
       auto *next_active_values =
           static_cast<int32_t *>(next_active->GetTensor()->GetData());
+      const auto *generated_tokens = static_cast<const int64_t *>(
+          model_outputs[0]->GetTensor()->GetData());
       const auto *next_position_values = static_cast<const int64_t *>(
           model_outputs[3]->GetTensor()->GetData());
       for (int32_t request = 0; request < kBatchSize; ++request) {
@@ -551,9 +530,9 @@ class G4cB4ResidentEpoch : public MetaFlowFunc {
           }
           continue;
         }
-        int64_t generated_token = -1;
-        if (!ArgmaxFinite(model_outputs[0], request, generated_token)) {
-          return fallback(kStatusNonFiniteLogits);
+        const int64_t generated_token = generated_tokens[request];
+        if (generated_token < 0 || generated_token >= kVocabSize) {
+          return fallback(kStatusInvalidModelOutput);
         }
         if (next_position_values[request] !=
             current_position_values[request] + 1) {
