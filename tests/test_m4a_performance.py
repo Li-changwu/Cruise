@@ -95,6 +95,9 @@ def test_m4a_hardware_runner_preserves_storage_and_milestone_contract():
     assert '--run-label "${mode}-profile"' in script
     assert 'local runtime=${scratch}/p/${route_code}' in script
     assert '--dynamic=on --pid="${target_pid}"' in script
+    assert "--task-time=l1" in script
+    assert "--ai-core=off" in script
+    assert "--aic-metrics" not in script
     assert "dynamic_profiling_key_pid\\t'\"${target_pid}\"" in script
     assert 'profile-${mode}-runtime-binding.tsv' in script
     assert "find_dynamic_profile_socket" in script

@@ -469,7 +469,7 @@ run_profile_route() {
     timeout --signal=TERM --kill-after=30s 600s msprof \
       --output="${profile_root}/${mode}" --dynamic=on --pid="${target_pid}" \
       --runtime-api=on --ge-api=l0 --task-time=l1 \
-      --ai-core=on --aic-metrics=PipeUtilization --storage-limit=256MB <&9
+      --ai-core=off --storage-limit=256MB <&9
   ) >"${msprof_stdout}" 2>&1 &
   profiler_pid=$!
   printf 'start\n' >&9
