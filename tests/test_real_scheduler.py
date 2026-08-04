@@ -199,6 +199,7 @@ def test_real_scheduler_to_dedicated_worker_control_path(monkeypatch):
 
 def test_host_prefill_transitions_to_device_owned_decode():
     scheduler = make_scheduler(1)
+    scheduler._resident_epoch_config = ResidentEpochConfig(max_steps=2)
     request = create_requests(
         num_requests=1,
         num_tokens=3,
@@ -521,6 +522,21 @@ def test_delta_output_kind_allows_bounded_multi_token_epoch():
 
     assert plan is not None
     assert plan.max_steps == 4
+
+
+def test_k6_epoch_preserves_the_exact_remaining_decode_budget():
+    scheduler = make_scheduler(1)
+    scheduler._resident_epoch_config = ResidentEpochConfig(max_steps=6)
+    request = add_greedy_requests(scheduler, 1, max_tokens=6)[0]
+    request.sampling_params.output_kind = RequestOutputKind.DELTA
+
+    scheduler_output = scheduler.schedule()
+    plan = get_plan(scheduler_output)
+
+    assert plan is not None
+    assert plan.max_steps == 6
+    commit_device_epoch(scheduler, scheduler_output, {request.request_id: list(range(6))})
+    assert request.status == RequestStatus.FINISHED_LENGTH_CAPPED
 
 
 def test_delta_device_epoch_egresses_each_token_incrementally():

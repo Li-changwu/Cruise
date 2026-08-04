@@ -17,6 +17,7 @@ vllm_ascend_root=${CRUISE_VLLM_ASCEND_ROOT:-${HOME}/vllm-ascend-hust}
 runtime_asset_root=${CRUISE_RUNTIME_ASSET_ROOT:-/workspace/cruise-assets}
 vllm_kv_cache_bytes=${CRUISE_VLLM_KV_CACHE_BYTES:-536870912}
 profile_attribution=${CRUISE_M4A_PROFILE_ATTRIBUTION:-0}
+epoch_steps=${CRUISE_M4A_EPOCH_STEPS:-6}
 
 model=${artifacts}/model-frozen
 export CRUISE_API_TOKENIZER=${CRUISE_API_TOKENIZER:-${model}}
@@ -80,6 +81,7 @@ done
 [[ -f "${conda_sh}" && -f "${cann_set_env}" ]] || exit 96
 [[ -d "${runtime_weights}" ]] || exit 96
 [[ "${profile_attribution}" == 0 || "${profile_attribution}" == 1 ]] || exit 96
+[[ "${epoch_steps}" =~ ^[1-8]$ ]] || exit 96
 if [[ "${profile_attribution}" == 1 ]]; then
   for command in jq msprof pgrep ps; do
     command -v "${command}" >/dev/null || {
@@ -189,7 +191,7 @@ export VLLM_ASCEND_RESIDENT_EPOCH_EXTERNAL_WEIGHTS=${external_weights}
 export VLLM_ASCEND_RESIDENT_EPOCH_RUNTIME_WEIGHTS=${runtime_weights}
 export VLLM_ASCEND_RESIDENT_EPOCH_SERVER=${build}/resident_epoch_server
 export VLLM_ASCEND_RESIDENT_EPOCH_STARTUP_TIMEOUT=3600
-export VLLM_ASCEND_RESIDENT_EPOCH_STEPS=2
+export VLLM_ASCEND_RESIDENT_EPOCH_STEPS=${epoch_steps}
 export VLLM_ASCEND_RESIDENT_EPOCH_CAPACITY=8
 export CRUISE_VLLM_KV_CACHE_BYTES=${vllm_kv_cache_bytes}
 
@@ -222,6 +224,7 @@ run_step prepare-resource-config 120s python3 \
   printf 'dataflow_deploy_root\t%s\n' "${deploy_root}"
   printf 'vllm_kv_cache_bytes\t%s\n' "${vllm_kv_cache_bytes}"
   printf 'execution_scope\t%s\n' "$([[ "${profile_attribution}" == 1 ]] && printf profiling || printf formal)"
+  printf 'resident_epoch_steps\t%s\n' "${epoch_steps}"
   printf 'formal_m2\topen\n'
   printf 'formal_m3\topen\n'
   printf 'formal_m4\topen\n'
@@ -341,7 +344,7 @@ run_profile_route() {
   printf '%s\n' "${target_pid}" \
     >"${evidence}/profile-${mode}-device-process-pid.txt"
   timeout --signal=TERM --kill-after=30s 180s msprof \
-    --output="${profile_root}/${mode}" --dynamic=on --pid="${api_pid}" \
+    --output="${profile_root}/${mode}" --dynamic=on --pid="${target_pid}" \
     --duration=30 --runtime-api=on --ge-api=l0 --task-time=l1 \
     --ai-core=on --aic-metrics=PipeUtilization --storage-limit=256MB \
     >"${msprof_stdout}" 2>&1 &
@@ -355,10 +358,11 @@ run_profile_route() {
   retain_bounded_log "${msprof_stdout}" "profile-${mode}-msprof"
   printf 'profile-%s-benchmark\t%s\n' "${mode}" "${benchmark_status}" >>"${status}"
   printf 'profile-%s-msprof\t%s\n' "${mode}" "${profiler_status}" >>"${status}"
-  [[ ${benchmark_status} -eq 0 ]]
+  [[ ${benchmark_status} -eq 0 && ${profiler_status} -eq 0 ]]
 }
 
 if [[ "${profile_attribution}" == 1 ]]; then
+  run_profile_route eager
   run_profile_route graph
   run_profile_route cruise
   run_step analyze-profiles 300s python3 "${profile_analyzer}" \

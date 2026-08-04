@@ -14,7 +14,7 @@ import re
 from typing import Any
 
 
-ROUTES = ("graph", "cruise")
+ROUTES = ("eager", "graph", "cruise")
 MAX_TIMELINE_ROWS = 250_000
 
 
@@ -230,7 +230,7 @@ def main() -> int:
         "routes": routes,
         "runner_status": runner_status,
         "comparison_status": (
-            "observed_both_routes"
+            "observed_all_routes"
             if all(record["ai_core_tasks_observed"] for record in routes.values())
             else "not_observed_by_current_msprof_path"
         ),
@@ -243,7 +243,12 @@ def main() -> int:
         json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     print(json.dumps(result, indent=2, sort_keys=True))
-    return 0
+    profile_statuses_ok = all(
+        runner_status.get(f"profile-{route}-benchmark") == 0
+        and runner_status.get(f"profile-{route}-msprof") == 0
+        for route in ROUTES
+    )
+    return int(not (profile_statuses_ok and result["comparison_status"] == "observed_all_routes"))
 
 
 if __name__ == "__main__":

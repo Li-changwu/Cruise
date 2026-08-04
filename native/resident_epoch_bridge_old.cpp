@@ -221,6 +221,8 @@ extern "C" int32_t resident_epoch_execute(
     int32_t *output_feed_calls, int32_t *output_fetch_calls,
     int32_t *output_commit_state, int32_t *output_kv_import_checksum,
     int64_t *output_wall_us, int64_t *output_native_cpu_us,
+    int64_t *output_device_kv_transfer_wall_us,
+    int64_t *output_device_kv_transfer_cpu_us,
     int64_t *output_declared_input_bytes,
     int64_t *output_declared_output_bytes,
     const char *transfer_path, uint64_t transfer_id,
@@ -241,6 +243,8 @@ extern "C" int32_t resident_epoch_execute(
       output_feed_calls == nullptr || output_fetch_calls == nullptr ||
       output_kv_import_checksum == nullptr ||
       output_wall_us == nullptr || output_native_cpu_us == nullptr ||
+      output_device_kv_transfer_wall_us == nullptr ||
+      output_device_kv_transfer_cpu_us == nullptr ||
       output_declared_input_bytes == nullptr ||
       output_declared_output_bytes == nullptr) {
     return 10;
@@ -254,6 +258,8 @@ extern "C" int32_t resident_epoch_execute(
   *output_kv_import_checksum = 0;
   *output_wall_us = 0;
   *output_native_cpu_us = 0;
+  *output_device_kv_transfer_wall_us = 0;
+  *output_device_kv_transfer_cpu_us = 0;
   *output_declared_input_bytes = kDeclaredInputBytes;
   *output_declared_output_bytes = kDeclaredOutputBytes;
   const int64_t cpu_start = ProcessCpuUs();

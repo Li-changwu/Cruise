@@ -15,9 +15,8 @@ from .version import SIDECAR_PROTOCOL_VERSION
 from .kv_transfer import (
     IPC_METADATA_BYTES,
     DeviceKVTransfer,
-    ResidentKVSnapshot,
-    write_kv_snapshot,
 )
+from .benchmark_metrics import append_benchmark_event
 
 
 REQUEST_MAGIC = 0x71317131
@@ -26,13 +25,12 @@ PROTOCOL_VERSION = SIDECAR_PROTOCOL_VERSION
 EXECUTE = 1
 WARM_UP = 2
 SHUTDOWN = 3
-IMPORT_EXECUTE = 4
 DEVICE_IPC_EXECUTE = 5
 GRAPH_BATCH_SIZE = 4
 MAX_EPOCH_STEPS = 8
 WARMUP_GENERATION = 2**31 - 1
 REQUEST = struct.Struct("<IHHiiQ4q4q4i4i4i")
-RESPONSE = struct.Struct("<Iiiiiiii4q4i4i32q")
+RESPONSE = struct.Struct("<Iiiiiiii6q4i4i32q")
 
 
 def _commit_state(value: int) -> EpochCommitState:
@@ -88,11 +86,6 @@ class SidecarDataFlowEngine:
             raise RuntimeError("resident epoch socket must be under /dev/shm")
         if not str(weights).startswith("/dev/shm/"):
             raise RuntimeError("resident epoch external weights must be in /dev/shm")
-        self.transfer_path = self.socket_path.with_name(
-            f"{self.socket_path.name}.kv-transfer"
-        )
-        if not str(self.transfer_path).startswith("/dev/shm/"):
-            raise RuntimeError("resident KV transfer file must be under /dev/shm")
 
         child_env = os.environ.copy()
         child_custom_opp = os.getenv(
@@ -149,7 +142,6 @@ class SidecarDataFlowEngine:
 
         try:
             self.socket_path.unlink(missing_ok=True)
-            self.transfer_path.unlink(missing_ok=True)
         except OSError as exc:
             raise RuntimeError(f"cannot reset sidecar socket: {exc}") from exc
 
@@ -261,9 +253,9 @@ class SidecarDataFlowEngine:
                 commit_state=commit_state,
                 status=values[1],
             )
-        if values[12:16] != (1, 0, 0, 0):
+        if values[14:18] != (1, 0, 0, 0):
             raise RuntimeError("resident epoch warmup did not execute exactly one row")
-        if values[16:20] != (WARMUP_GENERATION, 0, 0, 0):
+        if values[18:22] != (WARMUP_GENERATION, 0, 0, 0):
             raise RuntimeError("resident epoch warmup generation acknowledgement failed")
         return NativeWarmupOutput(
             status=values[2],
@@ -273,39 +265,12 @@ class SidecarDataFlowEngine:
             commit_state=commit_state,
             wall_us=values[8],
             native_cpu_us=values[9],
-            declared_input_bytes=values[10],
-            declared_output_bytes=values[11],
+            declared_input_bytes=values[12],
+            declared_output_bytes=values[13],
         )
 
     def execute(self, plan: ResidentEpochPlan) -> NativeEpochOutput:
         return self._execute(plan, operation=EXECUTE, transfer_id=0)
-
-    def execute_with_import(
-        self, plan: ResidentEpochPlan, snapshot: ResidentKVSnapshot
-    ) -> NativeEpochOutput:
-        snapshot.validate()
-        expected_mask = sum(
-            1 << request.row
-            for request in plan.requests
-            if request.kv_import_required
-        )
-        if snapshot.import_mask != expected_mask:
-            raise ValueError("KV snapshot mask does not match the resident plan")
-        expected_generations = [0] * GRAPH_BATCH_SIZE
-        for request in plan.requests:
-            if request.kv_import_required:
-                expected_generations[request.row] = request.generation
-        if snapshot.row_generations != tuple(expected_generations):
-            raise ValueError("KV snapshot generations do not match the resident plan")
-        write_kv_snapshot(self.transfer_path, snapshot)
-        try:
-            return self._execute(
-                plan,
-                operation=IMPORT_EXECUTE,
-                transfer_id=snapshot.transfer_id,
-            )
-        finally:
-            self.transfer_path.unlink(missing_ok=True)
 
     def execute_with_device_transfer(
         self, plan: ResidentEpochPlan, transfer: DeviceKVTransfer
@@ -364,6 +329,8 @@ class SidecarDataFlowEngine:
             if ipc_metadata is None or len(ipc_metadata) != IPC_METADATA_BYTES:
                 raise ValueError("direct Device KV operation has invalid metadata")
             payload += ipc_metadata
+        socket_wall_start_ns = time.perf_counter_ns()
+        socket_cpu_start_ns = time.process_time_ns()
         try:
             self.socket.sendall(payload)
             values = self._receive_response()
@@ -372,6 +339,15 @@ class SidecarDataFlowEngine:
                 f"resident epoch response is ambiguous: {exc}",
                 commit_state=EpochCommitState.EXECUTING,
             ) from exc
+        append_benchmark_event(
+            {
+                "kind": "timing",
+                "component": "sidecar_socket_round_trip",
+                "wall_us": (time.perf_counter_ns() - socket_wall_start_ns) // 1_000,
+                "cpu_us": (time.process_time_ns() - socket_cpu_start_ns) // 1_000,
+                "tokens": sum(executed for executed in values[14:18] if executed > 0),
+            }
+        )
         commit_state = _commit_state(values[6])
         transport_status = values[1]
         if transport_status != 0:
@@ -389,10 +365,11 @@ class SidecarDataFlowEngine:
             native_cpu_us,
             declared_input_bytes,
             declared_output_bytes,
-        ) = values[2:6] + values[8:12]
-        executed = values[12:16]
-        row_generations = tuple(values[16:20])
-        flat_tokens = values[20:]
+        ) = values[2:6] + values[8:10] + values[12:14]
+        device_kv_transfer_wall_us, device_kv_transfer_cpu_us = values[10:12]
+        executed = values[14:18]
+        row_generations = tuple(values[18:22])
+        flat_tokens = values[22:]
         token_ids: dict[str, list[int]] = {}
         for request in requests:
             count = executed[request.row]
@@ -415,8 +392,10 @@ class SidecarDataFlowEngine:
             native_cpu_us=native_cpu_us,
             declared_input_bytes=declared_input_bytes,
             declared_output_bytes=declared_output_bytes,
-            kv_imported=operation in (IMPORT_EXECUTE, DEVICE_IPC_EXECUTE),
+            kv_imported=operation == DEVICE_IPC_EXECUTE,
             kv_import_checksum=values[7] & 0xFFFFFFFF,
+            device_kv_transfer_wall_us=device_kv_transfer_wall_us,
+            device_kv_transfer_cpu_us=device_kv_transfer_cpu_us,
         )
 
     def _stop_process(self) -> None:
@@ -457,7 +436,6 @@ class SidecarDataFlowEngine:
                 self._stop_process()
         try:
             self.socket_path.unlink(missing_ok=True)
-            self.transfer_path.unlink(missing_ok=True)
         except OSError:
             pass
 

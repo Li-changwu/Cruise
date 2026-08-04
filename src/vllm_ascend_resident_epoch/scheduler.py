@@ -1,3 +1,4 @@
+import time
 from typing import Any
 
 from vllm.sampling_params import RequestOutputKind
@@ -186,6 +187,8 @@ class ResidentEpochScheduler(Scheduler):
         return scheduler_output, paused_ids, isolation_reason
 
     def schedule(self):
+        wall_start_ns = time.perf_counter_ns()
+        cpu_start_ns = time.process_time_ns()
         self._ensure_test_config()
         if self.num_lookahead_tokens != 0:
             raise RuntimeError("resident epoch lookahead conflicts with another feature")
@@ -212,6 +215,14 @@ class ResidentEpochScheduler(Scheduler):
         self._resident_epoch_last_plan = plan
         self._resident_epoch_last_result = None
         self._resident_epoch_benchmark_metrics.record_schedule(plan, rejection)
+        self._resident_epoch_benchmark_metrics.record_timing(
+            "python_scheduler",
+            wall_us=(time.perf_counter_ns() - wall_start_ns) // 1_000,
+            cpu_us=(time.process_time_ns() - cpu_start_ns) // 1_000,
+            tokens=(
+                sum(plan.max_steps for _ in plan.requests) if plan is not None else 0
+            ),
+        )
         if plan is not None:
             attach_plan(scheduler_output, plan)
         return scheduler_output
@@ -267,9 +278,10 @@ class ResidentEpochScheduler(Scheduler):
             remaining_steps.append(remaining)
 
         epoch_budget = min(config.max_steps, min(remaining_steps))
-        epoch_steps = max(
-            step for step in (1, 2, 4, 8) if step <= epoch_budget
-        )
+        # The controller and sidecar support every bounded value through eight.
+        # Preserving the exact remaining budget lets a six-token decode use one
+        # Device epoch instead of two Host-visible epochs (4 + 2).
+        epoch_steps = epoch_budget
         # One B=4 GraphPp instance serves all admitted batch sizes. Loading
         # B=1/B=2/B=4 together would duplicate the 15 GB external-weight model.
         graph_batch_size = 4

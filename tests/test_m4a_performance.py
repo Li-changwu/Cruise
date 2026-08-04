@@ -40,8 +40,9 @@ def test_m4a_manifest_freezes_primary_negative_regime_and_thresholds():
     assert scenarios["decode-nonstream-c4"].stream is False
     assert scenarios["decode-overload-c8"].concurrency == 8
     assert manifest.thresholds == {
-        "median_tpot_improvement_percent": 15.0,
-        "p95_tpot_improvement_percent": 15.0,
+        "median_tpot_improvement_percent": 10.0,
+        "p95_tpot_improvement_percent": -5.0,
+        "output_tokens_per_second_improvement_percent": 10.0,
         "host_cpu_per_token_reduction_percent": 30.0,
     }
 
@@ -68,6 +69,9 @@ def test_m4a_hardware_runner_preserves_storage_and_milestone_contract():
     assert "local mode=$1 runtime=" not in script
     assert '--run-label "${mode}-profile"' in script
     assert 'local runtime=${scratch}/p/${route_code}' in script
+    assert '--dynamic=on --pid="${target_pid}"' in script
+    assert "run_profile_route eager" in script
+    assert "[[ ${benchmark_status} -eq 0 && ${profiler_status} -eq 0 ]]" in script
     assert "huggingface-cli" not in script
     assert "wget " not in script
     assert "curl " not in script
@@ -180,6 +184,23 @@ def test_profile_analyzer_reports_only_observed_ai_core_idle_gaps(tmp_path):
     }
 
 
+def test_production_decode_has_no_host_kv_snapshot_route():
+    plugin = (ROOT / "src/vllm_ascend_resident_epoch/plugin.py").read_text(
+        encoding="utf-8"
+    )
+    backend = (ROOT / "src/vllm_ascend_resident_epoch/backend.py").read_text(
+        encoding="utf-8"
+    )
+    server = (ROOT / "native/resident_epoch_server.cpp").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ALLOW_HOST_KV_SNAPSHOT" not in plugin
+    assert "capture_kv_snapshot" not in plugin
+    assert "snapshot:" not in backend
+    assert "kImportExecute" not in server
+
+
 def test_m4a_commands_separate_eager_graph_and_cruise(tmp_path):
     manifest = load_manifest(WORKLOAD)
     commands = {
@@ -278,6 +299,7 @@ def test_benchmark_metrics_are_disabled_by_default_and_flush_once(tmp_path):
     metrics = ResidentEpochBenchmarkMetrics(output)
     metrics.record_schedule(SimpleNamespace(requests=(1, 2), max_steps=2), None)
     metrics.record_schedule(None, "host-prefill-in-progress")
+    metrics.record_timing("python_scheduler", wall_us=40, cpu_us=30, tokens=4)
     metrics.record_result(
         SimpleNamespace(
             route="device",
@@ -300,11 +322,24 @@ def test_benchmark_metrics_are_disabled_by_default_and_flush_once(tmp_path):
     assert payload["counters"]["host_schedule_calls"] == 1
     assert payload["epoch_steps"] == {"2": 1}
     assert payload["rejections"] == {"host-prefill-in-progress": 1}
+    assert payload["timing_us"]["python_scheduler"] == {
+        "calls": 1,
+        "cpu_us": 30,
+        "tokens": 4,
+        "wall_us": 40,
+    }
+    assert payload["timing_us"]["device_kv_transfer_native"] == {
+        "calls": 1,
+        "cpu_us": 0,
+        "tokens": 4,
+        "wall_us": 0,
+    }
 
     replayed = replay_event_journal(output.with_name("metrics.events.jsonl"))
     assert replayed["counters"] == payload["counters"]
     assert replayed["epoch_steps"] == payload["epoch_steps"]
     assert replayed["rejections"] == payload["rejections"]
+    assert replayed["timing_us"] == payload["timing_us"]
 
 
 def _result(mode, label, manifest, *, tpot_ms, cpu_ms_per_token):
@@ -331,7 +366,9 @@ def _result(mode, label, manifest, *, tpot_ms, cpu_ms_per_token):
                 "scenario": scenario.as_record(),
                 "records": [record],
                 "metrics": _scenario_metrics(
-                    [record], duration_ms=1000.0, cpu_seconds=cpu_seconds
+                    [record],
+                    duration_ms=tpot_ms * len(tokens),
+                    cpu_seconds=cpu_seconds,
                 ),
                 "process_tree_before": {"cpu_seconds": 1.0},
                 "process_tree_after": {"cpu_seconds": 1.0 + cpu_seconds},
@@ -346,8 +383,27 @@ def _result(mode, label, manifest, *, tpot_ms, cpu_ms_per_token):
         "resident_route_metrics": (
             {
                 "counters": {
-                    "device_request_tokens": manifest.expected_device_request_tokens()
-                }
+                    "device_request_tokens": manifest.expected_device_request_tokens(),
+                    "feed_calls": 8,
+                    "fetch_calls": 8,
+                    "schedule_calls": 8,
+                    "socket_send_calls": 8,
+                    "socket_receive_calls": 8,
+                    "kv_imports": 2,
+                    "device_kv_imports": 2,
+                },
+                "epoch_steps": {"6": 2},
+                "timing_us": {
+                    component: {"calls": 1, "wall_us": 1, "cpu_us": 1, "tokens": 1}
+                    for component in (
+                        "engine_core_step",
+                        "python_scheduler",
+                        "sidecar_native",
+                        "sidecar_socket_round_trip",
+                        "device_kv_transfer_metadata",
+                        "device_kv_transfer_native",
+                    )
+                },
             }
             if mode == "cruise"
             else None

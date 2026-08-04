@@ -134,6 +134,8 @@ class ResidentEpochResult:
     kv_import_checksum: int = 0
     kv_snapshot_checksum: int = 0
     kv_transfer_mode: Literal["none", "host_snapshot", "device_ipc"] = "none"
+    device_kv_transfer_wall_us: int = 0
+    device_kv_transfer_cpu_us: int = 0
 
     def validate_against(
         self,
@@ -173,6 +175,13 @@ class ResidentEpochResult:
             or transfer_mode not in ("host_snapshot", "device_ipc")
         ):
             raise ValueError("device result did not prove an imported KV transfer")
+        if self.device_kv_transfer_wall_us < 0 or self.device_kv_transfer_cpu_us < 0:
+            raise ValueError("device KV transfer timing must not be negative")
+        if not self.kv_imported and (
+            self.device_kv_transfer_wall_us != 0
+            or self.device_kv_transfer_cpu_us != 0
+        ):
+            raise ValueError("non-import result reported device KV transfer timing")
         if self.kv_imported and transfer_mode == "host_snapshot" and (
             self.kv_snapshot_checksum == 0
             or self.kv_import_checksum != self.kv_snapshot_checksum

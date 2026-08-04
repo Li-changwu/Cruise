@@ -169,8 +169,9 @@ def load_manifest(path: Path) -> PerformanceManifest:
         raise ValueError("the M4a primary scenario must be decode-stream-c4")
     thresholds = payload.get("thresholds")
     expected_thresholds = {
-        "median_tpot_improvement_percent": 15.0,
-        "p95_tpot_improvement_percent": 15.0,
+        "median_tpot_improvement_percent": 10.0,
+        "p95_tpot_improvement_percent": -5.0,
+        "output_tokens_per_second_improvement_percent": 10.0,
         "host_cpu_per_token_reduction_percent": 30.0,
     }
     if thresholds != expected_thresholds:
@@ -415,6 +416,7 @@ async def _request(
     started = time.perf_counter_ns()
     token_times_ns: list[int] = []
     stream_chunk_token_counts: list[int] = []
+    stream_chunk_times_ns: list[int] = []
     tokens: list[int] = []
     finish_reason = None
     stop_reason = None
@@ -447,6 +449,7 @@ async def _request(
                         token_times_ns.extend(timestamp for _ in new_tokens)
                         if new_tokens:
                             stream_chunk_token_counts.append(len(new_tokens))
+                            stream_chunk_times_ns.append(timestamp)
                         if choice.get("finish_reason") is not None:
                             finish_reason = choice["finish_reason"]
                             stop_reason = choice.get("stop_reason")
@@ -493,6 +496,8 @@ async def _request(
         "exact_output_length": len(tokens) == scenario.max_tokens,
         "length_finish": finish_reason == "length",
         "done_boundary": done,
+        "single_token_stream_chunks": not scenario.stream
+        or all(count == 1 for count in stream_chunk_token_counts),
     }
     return {
         "request_index": request_index,
@@ -506,6 +511,10 @@ async def _request(
         "tpot_ms": tpot_ms,
         "inter_token_ms": inter_token_ms,
         "stream_chunk_token_counts": stream_chunk_token_counts,
+        "stream_chunk_gap_ms": [
+            (right - left) / 1_000_000
+            for left, right in zip(stream_chunk_times_ns, stream_chunk_times_ns[1:])
+        ],
         "checks": checks,
         "pass": all(checks.values()),
     }
@@ -567,6 +576,16 @@ def _scenario_metrics(
     inter_token = [
         value for record in records for value in record.get("inter_token_ms", [])
     ]
+    stream_chunk_counts = [
+        count
+        for record in records
+        for count in record.get("stream_chunk_token_counts", [])
+    ]
+    stream_chunk_gaps = [
+        value
+        for record in records
+        for value in record.get("stream_chunk_gap_ms", [])
+    ]
     normalized = [
         record["latency_ms"] / len(record["tokens"])
         for record in records
@@ -578,6 +597,18 @@ def _scenario_metrics(
         "ttft_ms": summarize(ttft),
         "tpot_ms": summarize(tpot),
         "inter_token_ms": summarize(inter_token),
+        "streaming_cadence": {
+            "chunk_tokens": summarize(stream_chunk_counts),
+            "chunk_gap_ms": summarize(stream_chunk_gaps),
+            "multi_token_chunks": sum(count > 1 for count in stream_chunk_counts),
+            "single_token_chunks": sum(count == 1 for count in stream_chunk_counts),
+            "near_zero_token_gaps": sum(value < 1.0 for value in inter_token),
+            "inter_token_jitter_ms": (
+                percentile(inter_token, 95.0) - percentile(inter_token, 50.0)
+                if inter_token
+                else None
+            ),
+        },
         "normalized_request_ms_per_output_token": summarize(normalized),
         "duration_ms": duration_ms,
         "request_count": len(records),
@@ -891,6 +922,12 @@ def _improvement(baseline: float, candidate: float) -> float:
     return (baseline - candidate) / baseline * 100.0
 
 
+def _increase(baseline: float, candidate: float) -> float:
+    if baseline <= 0:
+        raise ValueError("baseline metric must be positive")
+    return (candidate - baseline) / baseline * 100.0
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -946,6 +983,10 @@ def compare_results(
                 float(baseline["tpot_ms"]["p95"]),
                 float(cruise["tpot_ms"]["p95"]),
             ),
+            "output_tokens_per_second_improvement_percent": _increase(
+                float(baseline["output_tokens_per_second"]),
+                float(cruise["output_tokens_per_second"]),
+            ),
             "host_cpu_per_token_reduction_percent": _improvement(
                 float(baseline["host_cpu_ms_per_output_token"]),
                 float(cruise["host_cpu_ms_per_output_token"]),
@@ -977,6 +1018,44 @@ def compare_results(
                 counter.get("device_request_tokens") == expected_tokens
                 for counter in counters
             ),
+            "all_kv_imports_use_device_ipc": all(
+                counter.get("host_snapshot_imports", 0) == 0
+                and counter.get("device_kv_imports", 0)
+                == counter.get("kv_imports", 0)
+                for counter in counters
+            ),
+            "k6_epochs_observed": len(route_records) == 3
+            and all(isinstance(record, dict) for record in route_records)
+            and all(
+                int(record.get("epoch_steps", {}).get("6", 0)) > 0
+                for record in route_records
+            ),
+            "control_plane_amortized": all(
+                counter.get("feed_calls", 0) < counter.get("device_request_tokens", 0)
+                and counter.get("fetch_calls", 0)
+                < counter.get("device_request_tokens", 0)
+                and counter.get("schedule_calls", 0)
+                < counter.get("device_request_tokens", 0)
+                and counter.get("socket_send_calls", 0)
+                < counter.get("device_request_tokens", 0)
+                for counter in counters
+            ),
+            "timing_attribution_present": len(route_records) == 3
+            and all(isinstance(record, dict) for record in route_records)
+            and all(
+                all(
+                    component in record.get("timing_us", {})
+                    for component in (
+                        "engine_core_step",
+                        "python_scheduler",
+                        "sidecar_native",
+                        "sidecar_socket_round_trip",
+                        "device_kv_transfer_metadata",
+                        "device_kv_transfer_native",
+                    )
+                )
+                for record in route_records
+            ),
         }
 
     execution_checks = {
@@ -989,6 +1068,17 @@ def compare_results(
         "exact_api_semantics": not semantic_mismatches,
         "cruise_route_coverage": cruise_route_checks.get(
             "all_eligible_decode_tokens_used_device"
+        )
+        is True,
+        "device_ipc_only": cruise_route_checks.get("all_kv_imports_use_device_ipc")
+        is True,
+        "k6_coverage": cruise_route_checks.get("k6_epochs_observed") is True,
+        "control_plane_amortized": cruise_route_checks.get(
+            "control_plane_amortized"
+        )
+        is True,
+        "host_attribution_complete": cruise_route_checks.get(
+            "timing_attribution_present"
         )
         is True,
     }

@@ -486,9 +486,10 @@ def test_resident_sidecar_uses_ge_owned_acl_runtime():
         'ResolveAclSymbol("aclrtGetDevice"',
         'ResolveAclSymbol("aclrtIpcMemImportByKey"',
         'ResolveAclSymbol("aclrtMemcpy"',
-        'ResolveAclSymbol("aclrtMemset"',
     ):
         assert transfer_call in transfer
+    assert 'ResolveAclSymbol("aclrtMemset"' not in transfer
+    assert "aclrtMemset" not in transfer
     assert 'ResolveAclSymbol("aclrtMalloc"' not in transfer
     assert 'ResolveAclSymbol("aclrtFree"' not in transfer
     assert '#include "acl/acl_rt.h"' not in bridge

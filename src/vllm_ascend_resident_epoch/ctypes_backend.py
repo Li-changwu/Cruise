@@ -1,5 +1,4 @@
 import ctypes
-import os
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +8,7 @@ from .contract import (
     ResidentEpochExecutionError,
     ResidentEpochPlan,
 )
-from .kv_transfer import DeviceKVTransfer, ResidentKVSnapshot, write_kv_snapshot
+from .kv_transfer import DeviceKVTransfer
 
 
 MAX_EPOCH_STEPS = 8
@@ -70,6 +69,8 @@ class CtypesDataFlowEngine:
             ctypes.POINTER(ctypes.c_int32),  # output_kv_import_checksum
             ctypes.POINTER(ctypes.c_int64),  # output_wall_us
             ctypes.POINTER(ctypes.c_int64),  # output_native_cpu_us
+            ctypes.POINTER(ctypes.c_int64),  # output_device_kv_transfer_wall_us
+            ctypes.POINTER(ctypes.c_int64),  # output_device_kv_transfer_cpu_us
             ctypes.POINTER(ctypes.c_int64),  # output_declared_input_bytes
             ctypes.POINTER(ctypes.c_int64),  # output_declared_output_bytes
             ctypes.c_char_p,  # transfer_path
@@ -95,26 +96,7 @@ class CtypesDataFlowEngine:
             )
 
     def execute(self, plan: ResidentEpochPlan) -> NativeEpochOutput:
-        return self._execute(
-            plan, transfer_path=None, transfer_id=0, ipc_metadata=None
-        )
-
-    def execute_with_import(
-        self, plan: ResidentEpochPlan, snapshot: ResidentKVSnapshot
-    ) -> NativeEpochOutput:
-        path = Path(
-            f"/dev/shm/cruise-kv-transfer-{os.getpid()}-{snapshot.transfer_id}"
-        )
-        write_kv_snapshot(path, snapshot)
-        try:
-            return self._execute(
-                plan,
-                transfer_path=path,
-                transfer_id=snapshot.transfer_id,
-                ipc_metadata=None,
-            )
-        finally:
-            path.unlink(missing_ok=True)
+        return self._execute(plan, transfer_id=0, ipc_metadata=None)
 
     def execute_with_device_transfer(
         self, plan: ResidentEpochPlan, transfer: DeviceKVTransfer
@@ -123,7 +105,6 @@ class CtypesDataFlowEngine:
         metadata = ctypes.create_string_buffer(transfer.wire_bytes())
         return self._execute(
             plan,
-            transfer_path=None,
             transfer_id=transfer.transfer_id,
             ipc_metadata=metadata,
         )
@@ -132,7 +113,6 @@ class CtypesDataFlowEngine:
         self,
         plan: ResidentEpochPlan,
         *,
-        transfer_path: Path | None,
         transfer_id: int,
         ipc_metadata: Any | None,
     ) -> NativeEpochOutput:
@@ -164,6 +144,8 @@ class CtypesDataFlowEngine:
         kv_import_checksum = ctypes.c_int32(0)
         wall_us = ctypes.c_int64(0)
         native_cpu_us = ctypes.c_int64(0)
+        device_kv_transfer_wall_us = ctypes.c_int64(0)
+        device_kv_transfer_cpu_us = ctypes.c_int64(0)
         declared_input_bytes = ctypes.c_int64(0)
         declared_output_bytes = ctypes.c_int64(0)
 
@@ -187,9 +169,11 @@ class CtypesDataFlowEngine:
             ctypes.byref(kv_import_checksum),
             ctypes.byref(wall_us),
             ctypes.byref(native_cpu_us),
+            ctypes.byref(device_kv_transfer_wall_us),
+            ctypes.byref(device_kv_transfer_cpu_us),
             ctypes.byref(declared_input_bytes),
             ctypes.byref(declared_output_bytes),
-            str(transfer_path).encode() if transfer_path is not None else None,
+            None,
             transfer_id,
             ctypes.cast(ipc_metadata, ctypes.c_void_p)
             if ipc_metadata is not None
@@ -232,9 +216,11 @@ class CtypesDataFlowEngine:
             fetch_calls=fetch_calls.value,
             wall_us=wall_us.value,
             native_cpu_us=native_cpu_us.value,
+            device_kv_transfer_wall_us=device_kv_transfer_wall_us.value,
+            device_kv_transfer_cpu_us=device_kv_transfer_cpu_us.value,
             declared_input_bytes=declared_input_bytes.value,
             declared_output_bytes=declared_output_bytes.value,
-            kv_imported=transfer_path is not None or ipc_metadata is not None,
+            kv_imported=ipc_metadata is not None,
             kv_import_checksum=kv_import_checksum.value & 0xFFFFFFFF,
         )
 

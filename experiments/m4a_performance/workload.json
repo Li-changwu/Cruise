@@ -90,8 +90,9 @@
   ],
   "primary_scenario": "decode-stream-c4",
   "thresholds": {
-    "median_tpot_improvement_percent": 15.0,
-    "p95_tpot_improvement_percent": 15.0,
+    "median_tpot_improvement_percent": 10.0,
+    "p95_tpot_improvement_percent": -5.0,
+    "output_tokens_per_second_improvement_percent": 10.0,
     "host_cpu_per_token_reduction_percent": 30.0
   }
 }

@@ -34,8 +34,8 @@ class ResidentEpochConfig:
         return config
 
     def validate(self) -> None:
-        if self.max_steps not in (1, 2, 4, 8):
-            raise ValueError("resident epoch steps must be one of 1, 2, 4, 8")
+        if not 1 <= self.max_steps <= 8:
+            raise ValueError("resident epoch steps must be in [1, 8]")
         if self.logical_capacity < self.max_steps:
             raise ValueError("logical capacity must be at least max_steps")
         if self.max_batch_size != 4:

@@ -75,6 +75,7 @@ def _primary_metrics(results: list[dict[str, Any]], scenario_name: str) -> dict[
     tpot: list[float] = []
     cpu_seconds = 0.0
     output_tokens = 0
+    duration_ms = 0.0
     for result in results:
         scenario = _scenario(result, scenario_name)
         for record in scenario["records"]:
@@ -84,12 +85,14 @@ def _primary_metrics(results: list[dict[str, Any]], scenario_name: str) -> dict[
         before = float(scenario["process_tree_before"]["cpu_seconds"])
         after = float(scenario["process_tree_after"]["cpu_seconds"])
         cpu_seconds += max(0.0, after - before)
+        duration_ms += float(scenario["metrics"]["duration_ms"])
     if output_tokens == 0:
         raise ValueError("primary scenario produced no tokens")
     return {
         "tpot_p50": _percentile(tpot, 50.0),
         "tpot_p95": _percentile(tpot, 95.0),
         "host_cpu_ms_per_output_token": cpu_seconds * 1000.0 / output_tokens,
+        "output_tokens_per_second": output_tokens / (duration_ms / 1000.0),
     }
 
 
@@ -97,6 +100,12 @@ def _improvement(baseline: float, candidate: float) -> float:
     if baseline <= 0:
         raise ValueError("baseline metric must be positive")
     return (baseline - candidate) / baseline * 100.0
+
+
+def _increase(baseline: float, candidate: float) -> float:
+    if baseline <= 0:
+        raise ValueError("baseline metric must be positive")
+    return (candidate - baseline) / baseline * 100.0
 
 
 def verify(
@@ -141,6 +150,10 @@ def verify(
             "p95_tpot_improvement_percent": _improvement(
                 baseline["tpot_p95"], cruise["tpot_p95"]
             ),
+            "output_tokens_per_second_improvement_percent": _increase(
+                baseline["output_tokens_per_second"],
+                cruise["output_tokens_per_second"],
+            ),
             "host_cpu_per_token_reduction_percent": _improvement(
                 baseline["host_cpu_ms_per_output_token"],
                 cruise["host_cpu_ms_per_output_token"],
@@ -158,6 +171,42 @@ def verify(
         == expected_device_tokens
         for result in grouped["cruise"]
     )
+    route_records = [result.get("resident_route_metrics") for result in grouped["cruise"]]
+    route_counters = [
+        record.get("counters", {}) if isinstance(record, dict) else {}
+        for record in route_records
+    ]
+    direct_device_kv_only = len(route_records) == 3 and all(
+        counter.get("host_snapshot_imports", 0) == 0
+        and counter.get("device_kv_imports", 0) == counter.get("kv_imports", 0)
+        for counter in route_counters
+    )
+    k6_coverage = len(route_records) == 3 and all(
+        isinstance(record, dict)
+        and int(record.get("epoch_steps", {}).get("6", 0)) > 0
+        for record in route_records
+    )
+    control_plane_amortized = len(route_records) == 3 and all(
+        counter.get("feed_calls", 0) < counter.get("device_request_tokens", 0)
+        and counter.get("fetch_calls", 0) < counter.get("device_request_tokens", 0)
+        and counter.get("schedule_calls", 0) < counter.get("device_request_tokens", 0)
+        and counter.get("socket_send_calls", 0)
+        < counter.get("device_request_tokens", 0)
+        for counter in route_counters
+    )
+    required_timing_components = (
+        "engine_core_step",
+        "python_scheduler",
+        "sidecar_native",
+        "sidecar_socket_round_trip",
+        "device_kv_transfer_metadata",
+        "device_kv_transfer_native",
+    )
+    host_attribution_complete = len(route_records) == 3 and all(
+        isinstance(record, dict)
+        and all(component in record.get("timing_us", {}) for component in required_timing_components)
+        for record in route_records
+    )
     input_hashes_match = comparison.get("input_sha256") == {
         str(path): _sha256(path) for path in result_paths
     }
@@ -172,6 +221,7 @@ def verify(
         for key in (
             "median_tpot_improvement_percent",
             "p95_tpot_improvement_percent",
+            "output_tokens_per_second_improvement_percent",
             "host_cpu_per_token_reduction_percent",
         )
     )
@@ -182,6 +232,10 @@ def verify(
         and all(result.get("pass") is True for result in results),
         "exact_semantics_reconstructed": exact_semantics,
         "route_coverage_reconstructed": route_coverage,
+        "device_ipc_only_reconstructed": direct_device_kv_only,
+        "k6_coverage_reconstructed": k6_coverage,
+        "control_plane_amortized_reconstructed": control_plane_amortized,
+        "host_attribution_complete_reconstructed": host_attribution_complete,
     }
     execution_pass = all(execution_checks.values())
     thresholds = workload.get("thresholds", {})

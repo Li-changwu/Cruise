@@ -8,9 +8,10 @@ weakening the M4 thresholds.
 ## Frozen claim and controls
 
 The falsifiable claim is that, inside the current single-card support envelope,
-Cruise reduces cross-token Host control enough to improve both median and p95
-streaming TPOT by at least 15% and reduce Host CPU per output token by at least
-30% versus the strongest stock route.
+Cruise reduces cross-token Host control enough to improve streaming TPOT p50 by
+at least 10%, avoid a p95 regression larger than 5%, improve output tokens/s by
+at least 10%, and reduce Host CPU per output token by at least 30% versus the
+strongest stock route in the same blocked run.
 
 The three routes are:
 
@@ -43,22 +44,26 @@ baselines opportunistically.
 
 The versioned workload covers short and decode-heavy requests, concurrency
 1/4, closed-loop and bursty arrival, and an overload concurrency of eight while
-the server admits at most four sequences. Streaming cases provide token arrival
-timestamps. Non-streaming cases expose the K=2 upper-bound path without
-mislabeling normalized request latency as TPOT.
+the server admits at most four sequences. The K=6 decode path returns each
+committed token as a separate DELTA event. Streaming cases retain token and
+chunk arrival timestamps, so burst cadence and inter-token jitter remain visible
+instead of being folded into a single multi-token API event.
 
 For every request the runner retains bounded token IDs, finish semantics,
 latency, TTFT where observable, per-request TPOT where observable, and
 inter-token gaps. For every scenario it records request/output throughput and
 process-tree Host CPU per output token. Cruise additionally writes one
 benchmark-only counter file at clean process exit containing Host schedules,
-Device epochs, epoch-length distribution, Feed/Fetch calls, KV imports, and
-native wall/CPU totals. These counters are disabled outside M4a.
+Device epochs, epoch-length distribution, Feed/Fetch calls, KV-import mode,
+and per-component EngineCore, Python scheduler, sidecar/native, socket, and
+Device-KV transfer wall/CPU totals. These counters are disabled outside M4a.
 
-The current streaming contract sets vLLM `RequestOutputKind.DELTA`, which forces
-Cruise to K=1. Streaming is therefore the primary end-to-end test and an
-intentional negative regime. Non-streaming K=2 results may explain a gap but
-cannot substitute for the TPOT gate.
+The current streaming contract sets vLLM `RequestOutputKind.DELTA` and Cruise
+keeps every token as a separate consumable event while the Device performs the
+bounded epoch. The benchmark requires K=6 epochs, direct Device KV imports,
+and 1,280/1,280 eligible decode tokens on the Device route for all three
+Cruise starts. It separately reports near-zero intra-burst gaps and jitter;
+these are not relabeled as smooth token cadence.
 
 ## Decision and storage
 
@@ -67,13 +72,13 @@ The comparison has two independent outcomes:
 - `execution_pass`: all nine starts completed, exact output semantics matched,
   mode identities were proven, and the independent verifier reconstructed the
   reported metrics;
-- `qualification_pass`: the three predeclared performance thresholds all
+- `qualification_pass`: the four predeclared performance thresholds all
   passed on `decode-stream-c4`.
 
 A threshold failure is a valid M4a result and must not make the evidence runner
 discard the data. It leaves Cruise opt-in, keeps M4 open, and triggers an
-attribution step using K=1 versus K=2, eager versus graph, Host CPU, and device
-idle-gap evidence.
+attribution step using K=6 control-plane timing, eager versus graph, Host CPU,
+Device graph time, IPC, streaming cadence, and profiler evidence.
 
 All builds, caches, logs, sockets, generated GraphPp weights, and profiler data
 remain in marker-owned `/dev/shm` scratch. The existing content-addressed

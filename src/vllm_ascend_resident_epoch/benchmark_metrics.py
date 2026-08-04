@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import atexit
-from collections import Counter
+from collections import Counter, defaultdict
 import json
 import os
 from pathlib import Path
@@ -9,6 +9,29 @@ from typing import Any
 
 
 METRICS_ENV = "VLLM_ASCEND_RESIDENT_EPOCH_BENCHMARK_METRICS_PATH"
+
+
+def _event_path_from_env() -> Path | None:
+    raw = os.getenv(METRICS_ENV)
+    if not raw:
+        return None
+    path = _validated_metrics_path(raw)
+    return path.with_name(f"{path.stem}.events.jsonl")
+
+
+_PROCESS_EVENT_FD: int | None = None
+
+
+def append_benchmark_event(event: dict[str, Any]) -> None:
+    """Append one bounded cross-process event when M4a counters are enabled."""
+
+    global _PROCESS_EVENT_FD
+    path = _event_path_from_env()
+    if path is None:
+        return
+    if _PROCESS_EVENT_FD is None:
+        _PROCESS_EVENT_FD = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    os.write(_PROCESS_EVENT_FD, (json.dumps(event, sort_keys=True) + "\n").encode())
 
 
 def _validated_metrics_path(raw: str) -> Path:
@@ -42,6 +65,7 @@ class ResidentEpochBenchmarkMetrics:
         self.counters: Counter[str] = Counter()
         self.rejections: Counter[str] = Counter()
         self.epoch_steps: Counter[int] = Counter()
+        self.timings: dict[str, Counter[str]] = defaultdict(Counter)
         self._registered = False
 
     def _append_event(self, event: dict[str, Any]) -> None:
@@ -101,8 +125,27 @@ class ResidentEpochBenchmarkMetrics:
             self.counters["native_cpu_us"] += int(result.native_cpu_us)
             self.counters["socket_send_calls"] += int(result.socket_send_calls)
             self.counters["socket_receive_calls"] += int(result.socket_receive_calls)
+            tokens = sum(computed_steps.values())
+            self.record_timing(
+                "sidecar_native",
+                wall_us=int(result.wall_us),
+                cpu_us=int(result.native_cpu_us),
+                tokens=tokens,
+            )
+            if result.kv_imported:
+                self.record_timing(
+                    "device_kv_transfer_native",
+                    wall_us=int(getattr(result, "device_kv_transfer_wall_us", 0)),
+                    cpu_us=int(getattr(result, "device_kv_transfer_cpu_us", 0)),
+                    tokens=tokens,
+                )
             if result.kv_imported:
                 self.counters["kv_imports"] += 1
+                transfer_mode = getattr(result, "kv_transfer_mode", "none")
+                if transfer_mode == "device_ipc":
+                    self.counters["device_kv_imports"] += 1
+                elif transfer_mode == "host_snapshot":
+                    self.counters["host_snapshot_imports"] += 1
             self._append_event(
                 {
                     "kind": "result",
@@ -116,8 +159,37 @@ class ResidentEpochBenchmarkMetrics:
                     "socket_send_calls": int(result.socket_send_calls),
                     "socket_receive_calls": int(result.socket_receive_calls),
                     "kv_imported": bool(result.kv_imported),
+                    "kv_transfer_mode": getattr(result, "kv_transfer_mode", "none"),
+                    "device_kv_transfer_wall_us": int(
+                        getattr(result, "device_kv_transfer_wall_us", 0)
+                    ),
+                    "device_kv_transfer_cpu_us": int(
+                        getattr(result, "device_kv_transfer_cpu_us", 0)
+                    ),
                 }
             )
+
+    def record_timing(
+        self, component: str, *, wall_us: int, cpu_us: int, tokens: int = 0
+    ) -> None:
+        if self.path is None:
+            return
+        if wall_us < 0 or cpu_us < 0 or tokens < 0:
+            raise ValueError("benchmark timing values must be non-negative")
+        timing = self.timings[component]
+        timing["calls"] += 1
+        timing["wall_us"] += int(wall_us)
+        timing["cpu_us"] += int(cpu_us)
+        timing["tokens"] += int(tokens)
+        self._append_event(
+            {
+                "kind": "timing",
+                "component": component,
+                "wall_us": int(wall_us),
+                "cpu_us": int(cpu_us),
+                "tokens": int(tokens),
+            }
+        )
 
     def as_record(self) -> dict[str, Any]:
         return {
@@ -128,6 +200,10 @@ class ResidentEpochBenchmarkMetrics:
                 str(key): value for key, value in sorted(self.epoch_steps.items())
             },
             "rejections": dict(sorted(self.rejections.items())),
+            "timing_us": {
+                component: dict(sorted(values.items()))
+                for component, values in sorted(self.timings.items())
+            },
         }
 
     def flush(self) -> None:
@@ -187,4 +263,16 @@ def replay_event_journal(path: Path) -> dict[str, Any]:
                     metrics.counters[counter] += int(event[name])
                 if event.get("kv_imported"):
                     metrics.counters["kv_imports"] += 1
+                    if event.get("kv_transfer_mode") == "device_ipc":
+                        metrics.counters["device_kv_imports"] += 1
+                    elif event.get("kv_transfer_mode") == "host_snapshot":
+                        metrics.counters["host_snapshot_imports"] += 1
+            elif kind == "timing":
+                component = event.get("component")
+                if not isinstance(component, str) or not component:
+                    raise ValueError("benchmark timing event has no component")
+                timing = metrics.timings[component]
+                timing["calls"] += 1
+                for name in ("wall_us", "cpu_us", "tokens"):
+                    timing[name] += int(event.get(name, 0))
     return metrics.as_record()

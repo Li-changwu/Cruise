@@ -16,7 +16,6 @@ struct AclRuntimeApi {
   decltype(&aclrtGetDevice) get_device = nullptr;
   decltype(&aclrtIpcMemImportByKey) ipc_import = nullptr;
   decltype(&aclrtIpcMemClose) ipc_close = nullptr;
-  decltype(&aclrtMemset) memset = nullptr;
   decltype(&aclrtMemcpy) memcpy = nullptr;
 };
 
@@ -52,7 +51,6 @@ bool ResolveAclRuntime(AclRuntimeApi &api) {
   return ResolveAclSymbol("aclrtGetDevice", &api.get_device) &&
          ResolveAclSymbol("aclrtIpcMemImportByKey", &api.ipc_import) &&
          ResolveAclSymbol("aclrtIpcMemClose", &api.ipc_close) &&
-         ResolveAclSymbol("aclrtMemset", &api.memset) &&
          ResolveAclSymbol("aclrtMemcpy", &api.memcpy);
 }
 
@@ -102,11 +100,8 @@ extern "C" int32_t resident_device_transfer_prepare(
       current_device != 0) {
     return 3;
   }
-  if (g_state->acl.memset(destination_payload,
-                          CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES, 0,
-                          CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES) != ACL_SUCCESS) {
-    return 4;
-  }
+  // Metadata validation guarantees full coverage for every selected row;
+  // unselected rows are never read by the import controller.
   auto *destination = static_cast<uint8_t *>(destination_payload);
   for (uint32_t index = 0; index < metadata->segment_count; ++index) {
     const auto &segment = metadata->segments[index];
@@ -118,10 +113,10 @@ extern "C" int32_t resident_device_transfer_prepare(
         segment.destination_offset > CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES ||
         segment.copy_bytes > CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES -
                                  segment.destination_offset) {
-      return 5;
+      return 4;
     }
     void *source = ImportIpcMemory(g_state, segment.key);
-    if (source == nullptr) return 6;
+    if (source == nullptr) return 5;
     const size_t destination_offset =
         static_cast<size_t>(segment.destination_offset);
     const size_t source_offset = static_cast<size_t>(segment.source_offset);
@@ -131,7 +126,7 @@ extern "C" int32_t resident_device_transfer_prepare(
             CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES - destination_offset,
             static_cast<uint8_t *>(source) + source_offset, copy_bytes,
             ACL_MEMCPY_DEVICE_TO_DEVICE) != ACL_SUCCESS) {
-      return 7;
+      return 6;
     }
   }
   return 0;

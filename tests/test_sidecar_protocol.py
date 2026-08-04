@@ -22,7 +22,7 @@ from vllm_ascend_resident_epoch.kv_transfer import IPC_METADATA_BYTES
 
 def test_sidecar_binary_protocol_sizes_and_round_trip():
     assert REQUEST.size == 136
-    assert RESPONSE.size == 352
+    assert RESPONSE.size == 368
 
     request = REQUEST.pack(
         REQUEST_MAGIC,
@@ -51,6 +51,8 @@ def test_sidecar_binary_protocol_sizes_and_round_trip():
         0x12345678,
         123,
         45,
+        9,
+        4,
         260,
         368,
         *([4, 4, 0, 0]),
@@ -65,11 +67,13 @@ def test_sidecar_binary_protocol_sizes_and_round_trip():
         1,
         1,
     )
-    assert RESPONSE.unpack(response)[6:12] == (
+    assert RESPONSE.unpack(response)[6:14] == (
         EpochCommitState.COMMITTED,
         0x12345678,
         123,
         45,
+        9,
+        4,
         260,
         368,
     )
@@ -116,6 +120,8 @@ def test_device_ipc_execute_is_reported_as_kv_import():
             0x12345678,
             123,
             45,
+            9,
+            4,
             3776,
             368,
             *([1, 0, 0, 0]),
@@ -157,5 +163,7 @@ def test_device_ipc_execute_is_reported_as_kv_import():
 
     assert output.kv_imported is True
     assert output.kv_import_checksum == 0x12345678
+    assert output.device_kv_transfer_wall_us == 9
+    assert output.device_kv_transfer_cpu_us == 4
     assert len(engine.socket.payloads) == 1
     assert engine.socket.payloads[0][REQUEST.size:] == metadata

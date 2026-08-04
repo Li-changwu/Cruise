@@ -58,6 +58,8 @@ extern "C" int32_t resident_epoch_execute(
     int32_t *output_feed_calls, int32_t *output_fetch_calls,
     int32_t *output_commit_state, int32_t *output_kv_import_checksum,
     int64_t *output_wall_us, int64_t *output_native_cpu_us,
+    int64_t *output_device_kv_transfer_wall_us,
+    int64_t *output_device_kv_transfer_cpu_us,
     int64_t *output_declared_input_bytes,
     int64_t *output_declared_output_bytes,
     const char *transfer_path, uint64_t transfer_id,

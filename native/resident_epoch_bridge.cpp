@@ -415,6 +415,8 @@ extern "C" int32_t resident_epoch_execute(
     int32_t *output_feed_calls, int32_t *output_fetch_calls,
     int32_t *output_commit_state, int32_t *output_kv_import_checksum,
     int64_t *output_wall_us, int64_t *output_native_cpu_us,
+    int64_t *output_device_kv_transfer_wall_us,
+    int64_t *output_device_kv_transfer_cpu_us,
     int64_t *output_declared_input_bytes,
     int64_t *output_declared_output_bytes,
     const char *transfer_path, uint64_t transfer_id,
@@ -422,7 +424,7 @@ extern "C" int32_t resident_epoch_execute(
   if (output_commit_state == nullptr) return 10;
   *output_commit_state = CRUISE_EPOCH_PREPARED;
   const bool direct_device_import = ipc_metadata != nullptr;
-  const bool importing = transfer_path != nullptr || direct_device_import;
+  const bool importing = direct_device_import;
   if (opaque == nullptr || request_count < 1 || request_count > kBatchSize ||
       max_steps < 1 || max_steps > kMaxEpochSteps ||
       input_token_ids == nullptr || input_positions == nullptr ||
@@ -434,23 +436,17 @@ extern "C" int32_t resident_epoch_execute(
       output_feed_calls == nullptr || output_fetch_calls == nullptr ||
       output_kv_import_checksum == nullptr ||
       output_wall_us == nullptr || output_native_cpu_us == nullptr ||
+      output_device_kv_transfer_wall_us == nullptr ||
+      output_device_kv_transfer_cpu_us == nullptr ||
       output_declared_input_bytes == nullptr ||
       output_declared_output_bytes == nullptr ||
-      (importing && transfer_id == 0) || (!importing && transfer_id != 0) ||
-      (transfer_path != nullptr && direct_device_import)) {
+      transfer_path != nullptr || (importing && transfer_id == 0) ||
+      (!importing && transfer_id != 0)) {
     return 10;
   }
   auto *engine = static_cast<ResidentEpochEngine *>(opaque);
   std::lock_guard<std::mutex> execute_lock(engine->execute_mutex);
-  std::vector<uint8_t> transfer_payload;
   int32_t import_mask = 0;
-  uint32_t expected_import_checksum = 0;
-  if (importing &&
-      !direct_device_import &&
-      !ReadTransfer(transfer_path, transfer_id, input_row_generations,
-                    transfer_payload, import_mask, expected_import_checksum)) {
-    return 13;
-  }
   if (direct_device_import) {
     if (!ValidateIpcMetadata(ipc_metadata, input_row_generations) ||
         g_device_transfer_prepare == nullptr) {
@@ -465,10 +461,10 @@ extern "C" int32_t resident_epoch_execute(
   *output_kv_import_checksum = 0;
   *output_wall_us = 0;
   *output_native_cpu_us = 0;
+  *output_device_kv_transfer_wall_us = 0;
+  *output_device_kv_transfer_cpu_us = 0;
   *output_declared_input_bytes =
-      direct_device_import
-          ? kDeviceIpcDeclaredInputBytes
-          : (importing ? kImportDeclaredInputBytes : kDeclaredInputBytes);
+      direct_device_import ? kDeviceIpcDeclaredInputBytes : kDeclaredInputBytes;
   *output_declared_output_bytes = kDeclaredOutputBytes;
   const int64_t cpu_start = ProcessCpuUs();
   std::fill(output_token_ids,
@@ -550,17 +546,25 @@ extern "C" int32_t resident_epoch_execute(
       if (device_input == nullptr || device_input->GetTensor() == nullptr ||
           device_input->GetTensor()->GetData() == nullptr ||
           device_input->GetTensor()->GetSize() !=
-              CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES ||
-          g_device_transfer_prepare(
-              ipc_metadata, device_input->GetTensor()->GetData(),
-              device_input->GetTensor()->GetSize()) != 0) {
+              CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES) {
         return 35;
       }
+      const auto transfer_wall_start = std::chrono::steady_clock::now();
+      const int64_t transfer_cpu_start = ProcessCpuUs();
+      const int32_t transfer_status = g_device_transfer_prepare(
+          ipc_metadata, device_input->GetTensor()->GetData(),
+          device_input->GetTensor()->GetSize());
+      const auto transfer_wall_end = std::chrono::steady_clock::now();
+      const int64_t transfer_cpu_end = ProcessCpuUs();
+      *output_device_kv_transfer_wall_us =
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              transfer_wall_end - transfer_wall_start)
+              .count();
+      if (transfer_cpu_start >= 0 && transfer_cpu_end >= transfer_cpu_start) {
+        *output_device_kv_transfer_cpu_us = transfer_cpu_end - transfer_cpu_start;
+      }
+      if (transfer_status != 0) return 35;
       inputs.push_back(device_input);
-    } else if (!AppendHostFlowMsg(
-                   inputs, transfer_payload,
-                   {CRUISE_RESIDENT_IMPORT_PAYLOAD_BYTES}, ge::DT_UINT8)) {
-      return 36;
     }
   }
   if (!AppendHostFlowMsg(inputs, token_buffer, {4, 1}, ge::DT_INT64) ||
@@ -607,11 +611,6 @@ extern "C" int32_t resident_epoch_execute(
   *output_kv_import_checksum = result_control[5];
   if (*output_device_status == 0) {
     if (direct_device_import && *output_kv_import_checksum == 0) return 34;
-    if (importing && !direct_device_import &&
-        static_cast<uint32_t>(*output_kv_import_checksum) !=
-            expected_import_checksum) {
-      return 34;
-    }
   }
   for (int32_t row = 0; row < kBatchSize; ++row) {
     const int32_t executed = result_control[kControlExecutedOffset + row];

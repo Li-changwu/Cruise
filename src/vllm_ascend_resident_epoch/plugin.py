@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+import time
 from typing import Any
 
 from .backend import load_backend_from_env
@@ -12,13 +12,10 @@ from .contract import (
     attach_result,
     get_plan,
 )
-from .kv_transfer import (
-    capture_kv_device_transfer,
-    capture_kv_snapshot,
-    release_kv_device_exports,
-)
+from .kv_transfer import capture_kv_device_transfer, release_kv_device_exports
 from .triton_compat import ensure_triton_ascend_runtime
 from .streaming import install_strict_delta_collector
+from .benchmark_metrics import append_benchmark_event
 
 
 def _execute_model_with_fallback(
@@ -43,13 +40,20 @@ def _execute_model_with_fallback(
     try:
         if not any(request.kv_import_required for request in plan.requests):
             return backend.execute(plan)
-        try:
-            device_transfer = capture_kv_device_transfer(worker, plan)
-        except Exception:
-            if os.getenv("VLLM_ASCEND_RESIDENT_EPOCH_ALLOW_HOST_KV_SNAPSHOT", "0") != "1":
-                raise
-            snapshot = capture_kv_snapshot(worker, plan)
-            return backend.execute(plan, snapshot=snapshot)
+        transfer_wall_start_ns = time.perf_counter_ns()
+        transfer_cpu_start_ns = time.process_time_ns()
+        device_transfer = capture_kv_device_transfer(worker, plan)
+        append_benchmark_event(
+            {
+                "kind": "timing",
+                "component": "device_kv_transfer_metadata",
+                "wall_us": (time.perf_counter_ns() - transfer_wall_start_ns)
+                // 1_000,
+                "cpu_us": (time.process_time_ns() - transfer_cpu_start_ns)
+                // 1_000,
+                "tokens": plan.max_steps * len(plan.requests),
+            }
+        )
         return backend.execute(plan, device_transfer=device_transfer)
     except ResidentEpochExecutionError as exc:
         if not exc.input_preserving or not plan.host_replay_safe:
@@ -61,6 +65,7 @@ def _execute_model_with_fallback(
 def register() -> None:
     ensure_triton_ascend_runtime()
     install_strict_delta_collector()
+    _install_engine_core_timing()
     from vllm_ascend.worker.worker import NPUWorker
 
     if hasattr(NPUWorker, "_resident_epoch_original_execute_model"):
@@ -88,6 +93,41 @@ def register() -> None:
     NPUWorker.shutdown = shutdown
     NPUWorker._resident_epoch_original_execute_model = original_execute_model
     NPUWorker._resident_epoch_original_shutdown = original_shutdown
+
+
+def _install_engine_core_timing() -> None:
+    """Measure complete EngineCore iterations without changing their semantics."""
+
+    from vllm.v1.engine.core import EngineCore
+
+    if hasattr(EngineCore, "_resident_epoch_original_step"):
+        return
+    original_step = EngineCore.step
+
+    def step(self: Any):
+        wall_start_ns = time.perf_counter_ns()
+        cpu_start_ns = time.process_time_ns()
+        try:
+            return original_step(self)
+        finally:
+            plan = getattr(self.scheduler, "_resident_epoch_last_plan", None)
+            tokens = (
+                plan.max_steps * len(plan.requests)
+                if plan is not None
+                else 0
+            )
+            append_benchmark_event(
+                {
+                    "kind": "timing",
+                    "component": "engine_core_step",
+                    "wall_us": (time.perf_counter_ns() - wall_start_ns) // 1_000,
+                    "cpu_us": (time.process_time_ns() - cpu_start_ns) // 1_000,
+                    "tokens": tokens,
+                }
+            )
+
+    EngineCore.step = step
+    EngineCore._resident_epoch_original_step = original_step
 
 
 def attach_host_fallback_result(

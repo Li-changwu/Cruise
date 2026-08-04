@@ -23,7 +23,6 @@ constexpr uint16_t kProtocolVersion = CRUISE_SIDECAR_PROTOCOL_VERSION;
 constexpr uint16_t kExecute = 1;
 constexpr uint16_t kWarmUp = 2;
 constexpr uint16_t kShutdown = 3;
-constexpr uint16_t kImportExecute = 4;
 constexpr uint16_t kDeviceIpcExecute = 5;
 constexpr int32_t kBatchSize = 4;
 constexpr int32_t kMaxEpochSteps = 8;
@@ -54,6 +53,8 @@ struct Response {
   int32_t reserved;
   int64_t wall_us;
   int64_t native_cpu_us;
+  int64_t device_kv_transfer_wall_us;
+  int64_t device_kv_transfer_cpu_us;
   int64_t declared_input_bytes;
   int64_t declared_output_bytes;
   int32_t executed[kBatchSize];
@@ -183,7 +184,6 @@ int main(int argc, char **argv) {
     return 64;
   }
   const char *socket_path = argv[1];
-  const std::string transfer_path = std::string(socket_path) + ".kv-transfer";
   const int listener = CreateListener(socket_path);
   if (listener < 0) return 65;
   const int client = accept(listener, nullptr, nullptr);
@@ -243,7 +243,6 @@ int main(int argc, char **argv) {
       break;
     } else if (request.operation != kExecute &&
                request.operation != kWarmUp &&
-               request.operation != kImportExecute &&
                request.operation != kDeviceIpcExecute) {
       response.transport_status = 71;
     } else {
@@ -262,13 +261,12 @@ int main(int argc, char **argv) {
           &response.model_calls, &response.device_status,
           &response.feed_calls, &response.fetch_calls,
           &response.commit_state, &response.reserved, &response.wall_us,
-          &response.native_cpu_us, &response.declared_input_bytes,
+          &response.native_cpu_us, &response.device_kv_transfer_wall_us,
+          &response.device_kv_transfer_cpu_us, &response.declared_input_bytes,
           &response.declared_output_bytes,
-          request.operation == kImportExecute ? transfer_path.c_str()
-                                              : nullptr,
+          nullptr,
           request.transfer_id,
           direct_device_import ? ipc_metadata.get() : nullptr);
-      if (request.operation == kImportExecute) unlink(transfer_path.c_str());
     }
     if (!WriteAll(client, &response, sizeof(response))) {
       exit_status = 72;
@@ -286,6 +284,5 @@ int main(int argc, char **argv) {
   close(client);
   close(listener);
   unlink(socket_path);
-  unlink(transfer_path.c_str());
   return exit_status;
 }
