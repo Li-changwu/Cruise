@@ -247,6 +247,20 @@ def test_m4a_commands_separate_eager_graph_and_cruise(tmp_path):
     assert budgets == {str(512 * 1024 * 1024)}
 
 
+def test_m4a_source_runner_explicitly_enables_the_cruise_plugin():
+    runner = (ROOT / "experiments/m4a_performance/run_benchmark.py").read_text(
+        encoding="utf-8"
+    )
+    launcher = (ROOT / "src/vllm_ascend_resident_epoch/server_launcher.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'server_env["VLLM_ASCEND_RESIDENT_EPOCH_PLUGIN_ENABLE"] = "1"' in runner
+    assert 'server_env.pop("VLLM_ASCEND_RESIDENT_EPOCH_PLUGIN_ENABLE", None)' in runner
+    assert 'os.getenv("VLLM_ASCEND_RESIDENT_EPOCH_PLUGIN_ENABLE") == "1"' in launcher
+    assert "register_resident_epoch_plugin()" in launcher
+
+
 def test_m4a_requests_explicitly_freeze_supported_greedy_sampling():
     manifest = load_manifest(WORKLOAD)
     body = _completion_request_body("cruise-m4a", manifest.scenarios[0])

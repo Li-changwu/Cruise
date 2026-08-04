@@ -378,6 +378,7 @@ class CruiseRuntimeConfig:
                 "TRITON_CACHE_DIR": str(triton_cache),
                 "XDG_CACHE_HOME": str(xdg_cache),
                 "PYTHONDONTWRITEBYTECODE": "1",
+                "VLLM_ASCEND_RESIDENT_EPOCH_PLUGIN_ENABLE": "1",
                 "RESOURCE_CONFIG_PATH": str(self.assets.resource_config),
                 "VLLM_ASCEND_RESIDENT_EPOCH_BACKEND_FACTORY": (
                     "vllm_ascend_resident_epoch.sidecar_backend:create_sidecar_engine"

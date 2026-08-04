@@ -779,10 +779,12 @@ def run_service(
         }
     )
     if mode == "cruise":
+        server_env["VLLM_ASCEND_RESIDENT_EPOCH_PLUGIN_ENABLE"] = "1"
         server_env[
             "VLLM_ASCEND_RESIDENT_EPOCH_BENCHMARK_METRICS_PATH"
         ] = str(route_metrics_path)
     else:
+        server_env.pop("VLLM_ASCEND_RESIDENT_EPOCH_PLUGIN_ENABLE", None)
         server_env.pop("VLLM_ASCEND_RESIDENT_EPOCH_BENCHMARK_METRICS_PATH", None)
 
     result: dict[str, Any] = {

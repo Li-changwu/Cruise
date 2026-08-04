@@ -671,6 +671,7 @@ def test_runtime_environment_is_complete(tmp_path, monkeypatch):
     assert environment["ASCEND_RT_VISIBLE_DEVICES"] == "0"
     assert environment["VLLM_ASCEND_RESIDENT_EPOCH_STEPS"] == "4"
     assert environment["VLLM_ASCEND_RESIDENT_EPOCH_CAPACITY"] == "8"
+    assert environment["VLLM_ASCEND_RESIDENT_EPOCH_PLUGIN_ENABLE"] == "1"
     assert environment["VLLM_ASCEND_RESIDENT_EPOCH_SOCKET"].endswith(
         "resident-epoch.sock"
     )
