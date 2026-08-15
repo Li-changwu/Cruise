@@ -12,6 +12,12 @@ from experiments.persistent_owner_graph_v2.kv_alias_probe.prepare_graphpp_config
     VALUE_BITS,
     expected_cache,
 )
+from experiments.persistent_owner_graph_v2.device_kv_update_probe.inspect_probe_graph import (
+    inspect_graph_text as inspect_device_kv_update_graph,
+)
+from experiments.persistent_owner_graph_v2.device_kv_update_probe.prepare_probe_config import (
+    graph_config as device_kv_update_graph_config,
+)
 
 from vllm_ascend_persistent_owner.graph_family import (
     GraphFamilyContractError,
@@ -389,3 +395,84 @@ def test_v2_kv_alias_pair_oracle_has_exact_paged_nz_slots():
     second_row_block = 3 * 32 * 128 * 16 * 2
     assert key[second_row_block : second_row_block + 2] == b"\x00\x40"
     assert value[second_row_block : second_row_block + 2] == b"\x00\xc0"
+
+
+def _device_kv_update_graph(cache_op: str = "Data") -> str:
+    return f'''node {{
+  name: "cache"
+  op: "{cache_op}"
+}}
+node {{
+  name: "metadata"
+  op: "Data"
+}}
+node {{
+  name: "update"
+  op: "DeviceKvSlotUpdate"
+  input: "cache:0"
+  input: "metadata:0"
+}}
+node {{
+  name: "output"
+  op: "NetOutput"
+  input: "update:0"
+}}
+'''
+
+
+def test_v2_device_kv_update_structure_rejects_external_refdata():
+    accepted = inspect_device_kv_update_graph(_device_kv_update_graph())
+    rejected = inspect_device_kv_update_graph(_device_kv_update_graph("RefData"))
+
+    assert accepted["pass"]
+    assert accepted["update_input_ops"] == ["Data", "Data"]
+    assert accepted["external_refdata_count"] == 0
+    assert not accepted["full_cache_graph_output"]
+    assert not rejected["pass"]
+    assert rejected["external_refdata_count"] == 1
+
+
+def test_v2_device_kv_update_uses_one_public_flowmsg_across_two_calls():
+    probe = V2 / "device_kv_update_probe"
+    controller = (probe / "controller" / "device_kv_update_controller.cpp").read_text(
+        encoding="utf-8"
+    )
+    host = (probe / "device_kv_update_probe_host.cpp").read_text(encoding="utf-8")
+    protocol = (probe / "protocol.md").read_text(encoding="utf-8")
+
+    assert "FlowBufferFactory::AllocTensor" in controller
+    assert '"kv_update_graph_0", {state_cache_, inputs[0]}' in controller
+    assert "allocation_count_" in controller
+    assert "cache == cache_address_" in controller
+    assert "state_cache_.get() == cache_message_address_" in controller
+    assert 'AddInvokedClosure("kv_update_graph_0", update)' in host
+    assert 'GraphPp("device_kv_update_graph_pp"' in host
+    assert 'FlowNode("device_kv_update_controller_node", 1, 1)' in host
+    assert "MakeMetadata(1, 0, kFirstValue)" in host
+    assert "MakeMetadata(2, kFirstValue, kSecondValue)" in host
+    assert "reinterpret_cast<uint64_t>" not in controller
+    assert "raw pointer in an integer tensor" in protocol
+
+
+def test_v2_device_kv_update_has_small_public_io_and_no_cache_output():
+    config = device_kv_update_graph_config()
+    probe = V2 / "device_kv_update_probe"
+    kernel = (probe / "op_kernel" / "device_kv_slot_update.cpp").read_text(
+        encoding="utf-8"
+    )
+    verifier = (probe / "verify_probe.py").read_text(encoding="utf-8")
+    runner = (probe / "run_on_910b.sh").read_text(encoding="utf-8")
+
+    assert config["inputs_tensor_desc"] == [
+        {"data_type": "DT_BFLOAT16", "shape": [4096]},
+        {"data_type": "DT_INT32", "shape": [4]},
+    ]
+    assert "GM_ADDR gm_cache" in kernel
+    assert "cache.SetValue" in kernel
+    assert "host_cache_input_bytes" in verifier
+    assert "host_cache_output_bytes" in verifier
+    assert "dataflow_launches == 2" in verifier
+    assert "v2_capture_hbm_baseline" in runner
+    assert "v2_wait_for_hbm_recovery" in runner
+    assert "STORAGE_GUARD_MAX_IDLE_HBM_PERCENT:-65" in runner
+    assert "source-worktree-status.txt" in runner

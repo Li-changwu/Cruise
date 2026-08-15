@@ -34,7 +34,8 @@ jobs:
             tests/test_persistent_cancel_p2.py \
             tests/test_persistent_decoder_p3.py \
             tests/test_persistent_admission_p4.py \
-            tests/test_persistent_decode_p5.py
+            tests/test_persistent_decode_p5.py \
+            tests/test_persistent_owner_graph_v2.py
       - name: Verify minimal ABI structure
         run: |
           python verify_minimal_abi_source.py . \
