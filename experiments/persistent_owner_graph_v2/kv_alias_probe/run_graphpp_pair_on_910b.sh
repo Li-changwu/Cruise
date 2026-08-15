@@ -13,6 +13,7 @@ scratch=${CRUISE_V2_KV_GRAPHPP_SCRATCH:-/dev/shm/cruise-v2-kv-graphpp-${physical
 python_bin=${CRUISE_V2_GRAPHPP_PYTHON:-$(command -v python3)}
 cann_home=${CRUISE_CANN_HOME:-/usr/local/Ascend/cann-9.0.0}
 cann_set_env=${CRUISE_CANN_SET_ENV:-${cann_home}/set_env.sh}
+cann_python_env=${CRUISE_CANN_PYTHON_ENV:-/workspace/cruise-assets/python-envs/cann9-py311}
 guard=${source_dir}/storage_guard/storage_guard.sh
 hardware_policy=${v2_dir}/hardware_policy.sh
 lifecycle_tool=${CRUISE_STORAGE_TOOL:-/workspace/Cruise/scripts/manage_workspace_storage.py}
@@ -26,7 +27,8 @@ verifier=${script_dir}/verify_graphpp_pair.py
 
 for required in "${python_bin}" "${cann_set_env}" "${guard}" \
   "${hardware_policy}" "${lifecycle_tool}" "${resource_writer}" \
-  "${resource_template}" "${exporter}" "${inspector}" "${config_writer}" \
+  "${resource_template}" "${cann_python_env}/bin/python" \
+  "${exporter}" "${inspector}" "${config_writer}" \
   "${host_source}" "${verifier}"; do
   [[ -f "${required}" ]] || {
     printf 'missing V2 KV GraphPp input: %s\n' "${required}" >&2
@@ -107,6 +109,8 @@ trap finalize EXIT
 
 v2_capture_hbm_baseline "${evidence}" "${physical_npu}"
 source "${cann_set_env}"
+export PATH=${cann_python_env}/bin:${PATH}
+"${cann_python_env}/bin/python" -c 'import numpy, te, tbe'
 export ASCEND_RT_VISIBLE_DEVICES=${physical_npu}
 export RESOURCE_CONFIG_PATH=${config_dir}/numa.json
 export ASCEND_GLOBAL_LOG_LEVEL=${CRUISE_ASCEND_LOG_LEVEL:-0}

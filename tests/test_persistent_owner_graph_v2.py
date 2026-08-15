@@ -366,6 +366,8 @@ def test_v2_kv_alias_pair_uses_public_graph_and_graphpp_with_exact_oracle():
     assert "export_status" in runner
     assert "export_status} -eq 0 || ${export_status} -eq 139" in runner
     assert 'cd "${source_dir}"' in runner
+    assert "CRUISE_CANN_PYTHON_ENV" in runner
+    assert "import numpy, te, tbe" in runner
     assert '"${evidence}/kv_alias_probe.air"' not in runner
     assert "v2_capture_hbm_baseline" in runner
     assert "v2_wait_for_hbm_recovery" in runner
