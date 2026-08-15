@@ -336,6 +336,32 @@ M4b corrective entry plan:
 - [ ] Keep M2, M3, and formal M4 open; do not lower any failed threshold or
   claim accelerator idle-gap reduction without Device task timestamps.
 
+#### Persistent Device Model Owner P0-P5 research track
+
+The fixed-K M4b path established Device KV transfer and bounded multi-token
+execution, but it did not remove the Host-visible Decode epoch. The successor
+research track therefore uses one model-load-scoped Persistent Device Model
+Owner. Its ordered P0-P6 gates and accepted architecture decisions are tracked
+in [`PERSISTENT_OWNER_PLAN.md`](PERSISTENT_OWNER_PLAN.md) and [`adr/`](adr/).
+
+P0 through P4 reached Candidate Hardware Validated status on physical NPU 0:
+the Device control spike, deterministic AICore recurrence, cancellation and
+generation isolation, pinned Qwen2.5-7B-Instruct Decoder, and serial C4 service
+gate all passed their declared target-NPU checks. P3 retained three exact cold
+Owner starts against a Graph oracle with 100% Device Decode coverage. P4
+completed 32 requests and 8,192 streamed tokens with 3,064 AICore calls and
+exact oracle equivalence. Compact results are retained in
+[`PERSISTENT-OWNER-P0-P4-20260814.md`](../evidence/PERSISTENT-OWNER-P0-P4-20260814.md).
+
+This checkpoint does not close M2, M3, or M4. The accepted P3 and P4 runs were
+produced before later P5 source evolution, so their historical source hashes
+are retained rather than relabelled as evidence for a newer commit. A
+committed-source replay is required before integration. P5 remains open: its
+first same-round Graph/Owner pair proved a 69.6% whole-process-tree Host CPU
+saving, but Owner TPOT and throughput were materially worse and the measured
+AICore count was 3,071 instead of 3,064. P6 may not begin until P5 passes its
+unchanged three-start performance gate.
+
 ### M2: Lifecycle, Recovery, and Resource Safety
 
 - [ ] Add sidecar supervision, bounded startup and request timeouts, readiness

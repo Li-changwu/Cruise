@@ -1,0 +1,35 @@
+{
+  "claim_boundary": "P4 Candidate Hardware Validated for serial admission and service semantics only. P5 performance and P6 concurrency remain open.",
+  "gate": "P4-GATE-candidate-hardware-validated",
+  "identity": {
+    "oracle_identity_record_sha256": "5788553683d2258a3b6187659d7ed6de147dd589187f12d9da15b6bb815b1467",
+    "source_identity_equal": true,
+    "source_identity_sha256": "338cb965a68d4459365d921c774b21376592d61a774ffc0abfbb70e4af7e3dc0"
+  },
+  "pass": true,
+  "primary": {
+    "aicore_calls": 3064,
+    "device_decode_coverage_percent": 100,
+    "duration_ns": 170219474009,
+    "feed_calls": 33,
+    "gate_sha256": "8c026a38e40f032638f8c4931a518d84e1bd5b43504dd7d959b768a8d99ffcc7",
+    "requests": 32,
+    "run": "persistent-admission-p4-primary-c4-20260814T123734Z",
+    "summary_sha256": "403203c32a61b75675f24a4c1556ae5fd2193f238a3ead89ac5221542e377ba9",
+    "total_commits": 8192
+  },
+  "regression": {
+    "aicore_calls": 111,
+    "credit_acks": 4,
+    "feed_calls": 36,
+    "gate_sha256": "58905f5eff233c21c817d610dd7036911e0c7b85e93303702449553799f9f5e0",
+    "rejected": 4,
+    "requests": 26,
+    "run": "persistent-admission-p4-regression-20260814T122710Z",
+    "summary_sha256": "9920312b5ff11b66972ba8ab9b20fcbffcf698421377e0e6708a49133baec580",
+    "total_commits": 194
+  },
+  "release": {
+    "mutable_external_weight_views_retired": true
+  }
+}

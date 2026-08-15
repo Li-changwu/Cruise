@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+  "primary": {
+    "name": "primary-c4",
+    "prompt_tokens": 128,
+    "output_tokens": 256,
+    "request_count": 32,
+    "closed_loop_concurrency": 4,
+    "ignore_eos": true,
+    "streaming": true
+  },
+  "regression": {
+    "short_output_requests": 8,
+    "natural_eos_requests": 1,
+    "bursty_requests": 8,
+    "burst_gap_ms": 100,
+    "overload_requests": 8,
+    "overload_concurrency": 8,
+    "cancel_requests": 1
+  }
+}

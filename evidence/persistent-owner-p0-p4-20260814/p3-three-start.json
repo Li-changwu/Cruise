@@ -1,0 +1,68 @@
+{
+  "gate": "P3-GATE-three-independent-cold-owner-starts",
+  "pass": true,
+  "scenario": "b4-mixed",
+  "independent_cold_starts": 3,
+  "request_count_per_start": 4,
+  "device_decode_coverage_percent": 100,
+  "owner_summary_sha256": "c8633b1c43b2cccfcd3da9f08e3cff9e3aa9bf45931bd4d73f2f91a8073d38d2",
+  "comparison_sha256": "fa03cb8a0a0161c54a8fbfd13a3d07851cd933f89fd7a57ee7a54639cafb0894",
+  "oracle": {
+    "path": "/workspace/cruise-runs/persistent-decoder-p3-oracle-b4-mixed-final-20260814T110443Z/evidence/summary.json",
+    "sha256": "b855ae95e8a1d3119e63a887b66b9a5e60820d43b64e58a7ff94d08e0283a63e",
+    "model_calls": 383
+  },
+  "starts": [
+    {
+      "owner_summary": "/workspace/cruise-runs/persistent-decoder-p3-b4-mixed-final-r1-20260814T111441Z/evidence/summary.json",
+      "comparison": "/workspace/cruise-runs/persistent-decoder-p3-gate-b4-final-r1-20260814T112500Z/evidence/compare.json",
+      "feed_calls": 5,
+      "aicore_calls": 383,
+      "total_commits": 344,
+      "total_retired": 4,
+      "external_view_allocated_bytes_before_cleanup": 266240,
+      "external_view_file_count_before_cleanup": 723,
+      "release_observed_before_next_start": true
+    },
+    {
+      "owner_summary": "/workspace/cruise-runs/persistent-decoder-p3-b4-mixed-final-r2-20260814T112557Z/evidence/summary.json",
+      "comparison": "/workspace/cruise-runs/persistent-decoder-p3-gate-b4-final-r2-20260814T113612Z/evidence/compare.json",
+      "feed_calls": 5,
+      "aicore_calls": 383,
+      "total_commits": 344,
+      "total_retired": 4,
+      "external_view_allocated_bytes_before_cleanup": 266240,
+      "external_view_file_count_before_cleanup": 723,
+      "release_observed_before_next_start": true
+    },
+    {
+      "owner_summary": "/workspace/cruise-runs/persistent-decoder-p3-b4-mixed-final-r3-20260814T113705Z/evidence/summary.json",
+      "comparison": "/workspace/cruise-runs/persistent-decoder-p3-gate-b4-final-r3-20260814T114701Z/evidence/compare.json",
+      "feed_calls": 5,
+      "aicore_calls": 383,
+      "total_commits": 344,
+      "total_retired": 4,
+      "external_view_allocated_bytes_before_cleanup": 266240,
+      "external_view_file_count_before_cleanup": 723,
+      "release_observed_after_start": true
+    }
+  ],
+  "owner_identity": {
+    "host_source_sha256": "a478115c4f06605b2f2ad31b0738ca0bc49386c999d900b6ee141bf281a0f705",
+    "controller_source_sha256": "8a52f9e429d5a08fa09223c3319cd06174eef143a6085645a81404ae741c859d",
+    "identity_recording_scope": "Recorded at aggregation after all three finalized runs; the sources were unchanged during the three-start sequence, but the individual runs did not embed these source hashes."
+  },
+  "runtime_identity": {
+    "air_sha256": "53e7c8407ac638af4c8b50865e8cc1c5ea428aedfa399b56c9bf014b792cc60b",
+    "air_bundle_identity_sha256": "89d596ad2b5ebf65cfaabf74132733ff63c8b0fff08da9146c410b595ba69a83",
+    "external_weight_bundle_identity_sha256": "f93a2828d8b3ded10acc3831d114abe8b57738ad3adfc357a0f2bb047939866b",
+    "external_weight_logical_file_count": 721
+  },
+  "release": {
+    "physical_npu": 0,
+    "visible_process_after_final_start": false,
+    "current_short_owner_scratch_count": 0,
+    "current_short_oracle_scratch_count": 0
+  },
+  "claim_boundary": "Three independent cold B=4 Owner starts exactly match one cold Graph oracle. This is P3 correctness and lifecycle evidence only; it is not P4 service or P5 Host CPU, TPOT, throughput, or TTFT qualification."
+}

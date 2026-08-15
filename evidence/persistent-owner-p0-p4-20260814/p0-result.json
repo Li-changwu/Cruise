@@ -1,0 +1,418 @@
+{
+  "format": "cruise-persistent-control-p0-v1",
+  "mechanism_pass": true,
+  "profile_pass": true,
+  "pass": true,
+  "owner_instances_unique": true,
+  "placement": {
+    "format": "cruise-persistent-control-p0-placement-v1",
+    "pass": true,
+    "target_process_point": "persistent_control_p0_pp",
+    "files_scanned": [
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/device-0/device-3806008_20260808033924321.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033922465.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806183_20260808033931841.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806242_20260808033932176.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806243_20260808033932176.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806244_20260808033932177.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806245_20260808033932177.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806246_20260808033932177.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806247_20260808033932177.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806248_20260808033932177.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806249_20260808033932177.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806250_20260808033932177.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806279_20260808033933697.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806280_20260808033933697.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806281_20260808033933697.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806282_20260808033933697.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806283_20260808033933697.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806284_20260808033933697.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806285_20260808033933701.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806286_20260808033933706.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/run/device-0/device-3806008_20260808033927835.log",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/run/plog/plog-3806008_20260808033922637.log",
+      "/workspace/cruise-runs/persistent-control-p0-profile-20260808-r14/evidence/placement-probe.log"
+    ],
+    "bytes_scanned": 35000082,
+    "deployment_node_types": [
+      "local",
+      "local"
+    ],
+    "selected_resource_types": [
+      "Ascend"
+    ],
+    "runnable_resource_info": [
+      "Aarch, Ascend"
+    ],
+    "model_device_types": [
+      0,
+      0
+    ],
+    "device_proxy_records": 22,
+    "placement_probe_records": 1,
+    "forbidden_evidence_counts": {
+      "local_udfs": 0,
+      "host_udf_untar": 0,
+      "host_udf_executor": 0
+    },
+    "errors": [],
+    "evidence_lines": [
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:65752:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:40.603.723 [data_flow_graph_auto_deployer.cc:117]3806008 AutoDeployDataFlowGraph:Get pp[persistent_control_p0_pp]'s runnable resource info[[Aarch, Ascend]] from node[persistent_control_p0_node]",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:65753:[DEBUG] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:40.603.727 [data_flow_graph_auto_deployer.cc:243]3806008 SelectResourceType:select resource type[Ascend], logic_device_id=0:0:0:0.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:66438:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:42.996.982 [flow_model_sender.cc:498]3806008 TransferDeployPlan:Model deployment info, model_name = persistent_control_p0_pp, model_type = UDF, graph_id = 0, node_type = local, client_id = -1, device_id = 0.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:66499:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:42.999.047 [deploy_context.cc:712]3806996 SetModelInfo:[IO info] Add model info to load, graph_id = 0, model_name = persistent_control_p0_pp, model_type = UDF, input_queues = [5], output_queues = [6], device_id = 0, device_type = 0, root_model_id = 1, sub_model_id = 1, model_path = local_context_3806008/1/1/udf_resource/persistent_control_p0_pp_release.om, model_instance_name = persistent_control_p0_pp@0@0_0_0@0.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:66500:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:42.999.062 [udf_proxy_client.cc:48]3806996 LoadModel:[Load][Model] begin, model size = 1.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:66510:[DEBUG] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:42.999.719 [udf_proxy_client.cc:108]3806996 PreLoadProcess:Linked model model in [/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/dataflow-deploy/runtime/deploy_res/local_context_3806008/1/1/Ascend_udf_submodel_0_0.tar.gz].",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:66512:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.006.303 [udf_proxy_client.cc:125]3806996 PreLoadProcess:Process tar[0_Ascend-flow_model.tar.gz] to dir[/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/dataflow-deploy/runtime/deploy_res/local_context_3806008/1/1/] success.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:66513:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.006.312 [udf_proxy_client.cc:126]3806996 PreLoadProcess:[GEPERFTRACE] The time cost of Link and tar cmd is [6582] micro seconds.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:66555:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.183.302 [udf_proxy_client.cc:132]3806996 PreLoadProcess:Send tar[0_Ascend-flow_model.tar.gz] to device[0] success.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:66556:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.183.309 [udf_proxy_client.cc:133]3806996 PreLoadProcess:[GEPERFTRACE] The time cost of Tsd transport tar is [176990] micro seconds.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:66557:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.183.316 [udf_proxy_client.cc:55]3806996 LoadModel:[GEPERFTRACE] The time cost of preloading proxy udf models during deploying is [184175] micro seconds.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:66562:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.183.345 [udf_proxy_client.cc:158]3806996 LoadProcess:Fork udf process to load model on executor start.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:66596:[DEBUG] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.184.320 [udf_proxy_client.cc:181]3806996 ForkChildProcess:LD_LIBRARY_PATH is been set to local_context_3806008/1/1/udf_resource/persistent_control_p0_pp_release.om_dir",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:66603:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.184.370 [udf_proxy_client.cc:202]3806996 ForkChildProcess:ForkChildProcess dump step[] trans success.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:66671:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.234.939 [udf_proxy_client.cc:209]3806996 ForkChildProcess:for child process success, model_path=local_context_3806008/1/1/udf_resource/persistent_control_p0_pp_release.om, is_builtin=0",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:66704:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.237.053 [udf_proxy_client.cc:165]3806996 LoadProcess:Fork udf process to load model on executor success. model_type = UDF, pid = 30153, graph_id = 0, deployer pid = -1, device_id = 0.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:66705:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.237.061 [udf_proxy_client.cc:67]3806996 LoadModel:[GEPERFTRACE] The time cost of starting poxy udf and loading models during deploying is [53738] micro seconds.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/debug/plog/plog-3806008_20260808033934098.log:66706:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.237.066 [udf_proxy_client.cc:68]3806996 LoadModel:[Load][Model] success.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/run/plog/plog-3806008_20260808033922637.log:283:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:42.996.978 [flow_model_sender.cc:498]3806008 TransferDeployPlan:Model deployment info, model_name = persistent_control_p0_pp, model_type = UDF, graph_id = 0, node_type = local, client_id = -1, device_id = 0.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/run/plog/plog-3806008_20260808033922637.log:302:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:42.999.020 [deploy_context.cc:712]3806996 SetModelInfo:[IO info] Add model info to load, graph_id = 0, model_name = persistent_control_p0_pp, model_type = UDF, input_queues = [5], output_queues = [6], device_id = 0, device_type = 0, root_model_id = 1, sub_model_id = 1, model_path = local_context_3806008/1/1/udf_resource/persistent_control_p0_pp_release.om, model_instance_name = persistent_control_p0_pp@0@0_0_0@0.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/run/plog/plog-3806008_20260808033922637.log:303:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:42.999.058 [udf_proxy_client.cc:48]3806996 LoadModel:[Load][Model] begin, model size = 1.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/run/plog/plog-3806008_20260808033922637.log:309:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.006.309 [udf_proxy_client.cc:126]3806996 PreLoadProcess:[GEPERFTRACE] The time cost of Link and tar cmd is [6582] micro seconds.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/run/plog/plog-3806008_20260808033922637.log:318:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.183.305 [udf_proxy_client.cc:133]3806996 PreLoadProcess:[GEPERFTRACE] The time cost of Tsd transport tar is [176990] micro seconds.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/run/plog/plog-3806008_20260808033922637.log:319:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.183.313 [udf_proxy_client.cc:55]3806996 LoadModel:[GEPERFTRACE] The time cost of preloading proxy udf models during deploying is [184175] micro seconds.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/run/plog/plog-3806008_20260808033922637.log:322:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.183.342 [udf_proxy_client.cc:158]3806996 LoadProcess:Fork udf process to load model on executor start.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/run/plog/plog-3806008_20260808033922637.log:332:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.237.049 [udf_proxy_client.cc:165]3806996 LoadProcess:Fork udf process to load model on executor success. model_type = UDF, pid = 30153, graph_id = 0, deployer pid = -1, device_id = 0.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/run/plog/plog-3806008_20260808033922637.log:333:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.237.058 [udf_proxy_client.cc:67]3806996 LoadModel:[GEPERFTRACE] The time cost of starting poxy udf and loading models during deploying is [53738] micro seconds.",
+      "/dev/shm/cruise-persistent-control-p0-profile-20260808-r14/driver-logs/run/plog/plog-3806008_20260808033922637.log:334:[INFO] GE(3806008,persistent_control_p0_host):2026-08-08-03:39:43.237.063 [udf_proxy_client.cc:68]3806996 LoadModel:[Load][Model] success.",
+      "/workspace/cruise-runs/persistent-control-p0-profile-20260808-r14/evidence/placement-probe.log:13:P0_PLACEMENT_PROBE owner=9001 feed_calls=2 commits=1 quiescent=1 compile_status=0 fetch_status=0 remove_status=0 finalize_status=0"
+    ]
+  },
+  "starts": [
+    {
+      "path": "/workspace/cruise-runs/persistent-control-p0-profile-20260808-r14/evidence/start-1.log",
+      "pass": true,
+      "errors": [],
+      "summary": {
+        "owner": 1001,
+        "owner_starts": 1,
+        "feed_calls": 6,
+        "fetch_calls": 3215,
+        "admission_events": 4,
+        "cancel_events": 1,
+        "shutdown_events": 1,
+        "quiescent": 4,
+        "rejected": 0,
+        "generation1_commits": 1024,
+        "generation2_commits": 1024,
+        "generation3_commits": 130,
+        "generation4_commits": 1024,
+        "host_cpu_us": 14286602,
+        "wall_ms": 24356,
+        "aicore_tasks_expected": 0,
+        "compile_status": 0,
+        "fetch_status": 0,
+        "remove_status": 0,
+        "finalize_status": 0
+      },
+      "outputs": 3215
+    },
+    {
+      "path": "/workspace/cruise-runs/persistent-control-p0-profile-20260808-r14/evidence/start-2.log",
+      "pass": true,
+      "errors": [],
+      "summary": {
+        "owner": 1002,
+        "owner_starts": 1,
+        "feed_calls": 6,
+        "fetch_calls": 3214,
+        "admission_events": 4,
+        "cancel_events": 1,
+        "shutdown_events": 1,
+        "quiescent": 4,
+        "rejected": 0,
+        "generation1_commits": 1024,
+        "generation2_commits": 1024,
+        "generation3_commits": 129,
+        "generation4_commits": 1024,
+        "host_cpu_us": 14798188,
+        "wall_ms": 24552,
+        "aicore_tasks_expected": 0,
+        "compile_status": 0,
+        "fetch_status": 0,
+        "remove_status": 0,
+        "finalize_status": 0
+      },
+      "outputs": 3214
+    },
+    {
+      "path": "/workspace/cruise-runs/persistent-control-p0-profile-20260808-r14/evidence/start-3.log",
+      "pass": true,
+      "errors": [],
+      "summary": {
+        "owner": 1003,
+        "owner_starts": 1,
+        "feed_calls": 6,
+        "fetch_calls": 3217,
+        "admission_events": 4,
+        "cancel_events": 1,
+        "shutdown_events": 1,
+        "quiescent": 4,
+        "rejected": 0,
+        "generation1_commits": 1024,
+        "generation2_commits": 1024,
+        "generation3_commits": 132,
+        "generation4_commits": 1024,
+        "host_cpu_us": 15025091,
+        "wall_ms": 24574,
+        "aicore_tasks_expected": 0,
+        "compile_status": 0,
+        "fetch_status": 0,
+        "remove_status": 0,
+        "finalize_status": 0
+      },
+      "outputs": 3217
+    }
+  ],
+  "hbm_usage_percent": {
+    "before": 58,
+    "after_each_start": [
+      58,
+      58,
+      58
+    ],
+    "pass": true,
+    "allowed_growth_points": 2
+  },
+  "profile": {
+    "pass": true,
+    "command_pass": true,
+    "profile_status": {
+      "profile_exit_status": "0",
+      "aicpu": "on",
+      "ai_core": "on",
+      "task_time": "l1"
+    },
+    "profile_status_error": null,
+    "file_count": 67,
+    "file_bytes": 3800564,
+    "files": [
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/data/all_file.complete",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/data/lpmInfoConv.data.0.slice_0",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/data/lpmInfoConv.data.0.slice_0.complete",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/data/lpmInfoConv.data.0.slice_0.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/data/stars_soc.data.0.slice_0",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/data/stars_soc.data.0.slice_0.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/data/ts_track.data.0.slice_0",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/data/ts_track.data.0.slice_0.complete",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/data/ts_track.data.0.slice_0.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/dev_start.log.0",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/dev_start.log.0.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/end_info.0",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/end_info.0.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/host_start.log.0",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/host_start.log.0.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/info.json.0",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/info.json.0.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/sample.json",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/sample.json.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/sqlite/ai_core_op_summary.db",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/sqlite/ascend_task.db",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/sqlite/biu_perf.db",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/sqlite/freq.db",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/sqlite/step_trace.db",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/sqlite/time.db",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/sqlite/voltage.db",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/start_info.0",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/start_info.0.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/data/aging.api_event.data.slice_0",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/data/aging.api_event.data.slice_0.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/data/aging.compact.task_track.slice_0",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/data/aging.compact.task_track.slice_0.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/data/all_file.complete",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/data/unaging.additional.hash_dic.slice_0",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/data/unaging.additional.hash_dic.slice_0.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/data/unaging.additional.type_info_dic.slice_0",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/data/unaging.additional.type_info_dic.slice_0.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/data/unaging.compact.expand_stream_spec.slice_0",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/data/unaging.compact.expand_stream_spec.slice_0.complete",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/data/unaging.compact.expand_stream_spec.slice_0.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/end_info",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/end_info.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/host_start.log",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/host_start.log.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/info.json",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/info.json.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/sample.json",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/sample.json.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/sqlite/api_event.db",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/sqlite/ge_hash.db",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/sqlite/rts_track.db",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/sqlite/runtime.db",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/sqlite/stream_expand_spec.db",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/sqlite/time.db",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/start_info",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/host/start_info.done",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/mindstudio_profiler_log/collection_device_0.log",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/mindstudio_profiler_log/collection_host.log",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/mindstudio_profiler_log/msprof_analysis_3810667.log",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/mindstudio_profiler_log/msprof_analysis_3810762.log",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/mindstudio_profiler_log/msprof_analysis_3810794.log",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/mindstudio_profiler_log/msprof_analysis_3810856.log",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/mindstudio_profiler_output/README.txt",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/mindstudio_profiler_output/api_statistic_20260808034201.csv",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/mindstudio_profiler_output/msprof_20260808034200.json",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/mindstudio_profiler_output/task_time_20260808034201.csv",
+      "PROF_000001_20260808034131263_03809852KNFAJMHD/msprof_20260808034200.db"
+    ],
+    "files_truncated": false,
+    "task_evidence_available": true,
+    "task_schemas": [
+      {
+        "path": "PROF_000001_20260808034131263_03809852KNFAJMHD/mindstudio_profiler_output/task_time_20260808034201.csv",
+        "format": "csv",
+        "type_column": "kernel_type"
+      },
+      {
+        "path": "PROF_000001_20260808034131263_03809852KNFAJMHD/device_0/sqlite/ascend_task.db",
+        "format": "sqlite",
+        "table": "AscendTask",
+        "columns": [
+          "model_id",
+          "index_id",
+          "stream_id",
+          "task_id",
+          "context_id",
+          "batch_id",
+          "start_time",
+          "duration",
+          "host_task_type",
+          "device_task_type",
+          "connection_id"
+        ]
+      }
+    ],
+    "task_types": {
+      "csv": {
+        "PROFILING_DISABLE": 1,
+        "PROFILING_ENABLE": 1
+      },
+      "db_device": {
+        "PLACE_HOLDER_SQE": 2
+      },
+      "db_host": {
+        "PROFILING_DISABLE": 1,
+        "PROFILING_ENABLE": 1
+      }
+    },
+    "capture_started": true,
+    "capture_stopped": true,
+    "ai_cpu_task_count": 0,
+    "ai_core_task_count": 0,
+    "aicpu_task_visibility": "flowfunc_not_exported_as_ordinary_task",
+    "controller": {
+      "pass": true,
+      "errors": [],
+      "profile_host_pid": 3809852,
+      "device_executor_pids": [
+        1036
+      ],
+      "files_scanned": [
+        "debug/device-0/device-3809852_20260808034155243.log",
+        "run/device-0/device-3809852_20260808034135134.log"
+      ],
+      "bytes_scanned": 37752,
+      "expected_outputs": 3214,
+      "records": {
+        "model_init": [
+          {
+            "executor_pid": 1036,
+            "path": "run/device-0/device-3809852_20260808034135134.log",
+            "line": 119
+          }
+        ],
+        "processor_init": [
+          {
+            "executor_pid": 1036,
+            "path": "run/device-0/device-3809852_20260808034135134.log",
+            "line": 154
+          }
+        ],
+        "summary": [
+          {
+            "executor_pid": 1036,
+            "path": "run/device-0/device-3809852_20260808034135134.log",
+            "line": 177,
+            "call_flow_func_times": 2,
+            "schedule_finish_times": 1,
+            "set_output_times": 3214
+          }
+        ],
+        "metrics": [
+          {
+            "executor_pid": 1036,
+            "path": "run/device-0/device-3809852_20260808034135134.log",
+            "line": 180,
+            "min_exec_time_us": 3499206,
+            "max_exec_time_us": 3499206,
+            "sub_max_exec_time_us": 0,
+            "total_exec_time_us": 3499206,
+            "total_exec_num": 1
+          }
+        ],
+        "executor_exit": [
+          {
+            "executor_pid": 1036,
+            "path": "run/device-0/device-3809852_20260808034135134.log",
+            "line": 185
+          }
+        ]
+      },
+      "evidence_lines": [
+        "run/device-0/device-3809852_20260808034135134.log:119:[INFO] UDF(1036,udf_executor):2026-08-08-11:41:46.354.644 [flow_func_model.cpp:264][Init][tid:1036][RUN]: parse name=persistent_control_p0_pp end, flowFuncName=persistent_control_p0, instanceName=persistent_control_p0_pp@0@0_0_0@0.",
+        "run/device-0/device-3809852_20260808034135134.log:154:[INFO] UDF(1036,udf_executor):2026-08-08-11:41:46.546.560 [flow_func_processor.cpp:321][Init][tid:1050][RUN]: end to init FlowFunc processor, flow_func_info=persistent_control_p0[persistent_control_p0_pp@0@0_0_0@0].",
+        "run/device-0/device-3809852_20260808034135134.log:177:[INFO] UDF(1036,udf_executor):2026-08-08-11:41:51.064.899 [flow_func_processor.cpp:903][DumpFlowFuncInfo][tid:1036][RUN]: flow_func_info=persistent_control_p0[persistent_control_p0_pp@0@0_0_0@0], status=8, last trans_id=18446744073709551615, statistic info: input ready times=0, call flow func times=2, schedule finish times=1, set output times=[3214], cached nums=[0].",
+        "run/device-0/device-3809852_20260808034135134.log:180:[INFO] UDF(1036,udf_executor):2026-08-08-11:41:51.064.990 [flow_func_statistic.cpp:124][DumpMetrics][tid:1036][RUN]: model_metrics:name=persistent_control_p0[persistent_control_p0_pp@0@0_0_0@0], min_exec_time=3499206 us, max_exec_time=3499206 us, sub_max_exec_time=0 us, total_exec_time=3499206 us, total_exec_num=1.",
+        "run/device-0/device-3809852_20260808034135134.log:185:[INFO] UDF(1036,udf_executor):2026-08-08-11:41:51.065.766 [main.cpp:432][main][tid:1036][RUN]: Flow func executor exit."
+      ],
+      "evidence_lines_truncated": false
+    },
+    "run": {
+      "path": "/workspace/cruise-runs/persistent-control-p0-profile-20260808-r14/evidence/profile.log",
+      "pass": true,
+      "errors": [],
+      "summary": {
+        "owner": 2001,
+        "owner_starts": 1,
+        "feed_calls": 6,
+        "fetch_calls": 3214,
+        "admission_events": 4,
+        "cancel_events": 1,
+        "shutdown_events": 1,
+        "quiescent": 4,
+        "rejected": 0,
+        "generation1_commits": 1024,
+        "generation2_commits": 1024,
+        "generation3_commits": 129,
+        "generation4_commits": 1024,
+        "host_cpu_us": 15310423,
+        "wall_ms": 24570,
+        "aicore_tasks_expected": 0,
+        "compile_status": 0,
+        "fetch_status": 0,
+        "remove_status": 0,
+        "finalize_status": 0
+      },
+      "outputs": 3214
+    },
+    "owner_unique_from_mechanism_runs": true,
+    "hbm_usage_percent": {
+      "after_profile": 58,
+      "pass": true,
+      "allowed_growth_points": 2
+    }
+  },
+  "requested_gate": "full_p0",
+  "requested_gate_pass": true
+}

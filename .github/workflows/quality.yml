@@ -28,7 +28,12 @@ jobs:
             tests/test_m1_batched_prefill.py \
             tests/test_m1_continuous_admission.py \
             tests/test_m1_exit.py \
-            tests/test_m1_api.py
+            tests/test_m1_api.py \
+            tests/test_persistent_control_p0.py \
+            tests/test_persistent_recurrence_p1.py \
+            tests/test_persistent_cancel_p2.py \
+            tests/test_persistent_decoder_p3.py \
+            tests/test_persistent_admission_p4.py
       - name: Verify minimal ABI structure
         run: |
           python verify_minimal_abi_source.py . \

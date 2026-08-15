@@ -67,3 +67,11 @@ The negative result retains all nine bounded route JSON files under
 and the representative profiler-attribution JSON under
 [`m4a-attribution-npu01-20260731-r4/`](m4a-attribution-npu01-20260731-r4/).
 No raw profiler tree or server log is versioned.
+
+The Persistent Device Model Owner P0-P4 candidate-hardware checkpoint is
+summarized in
+[`PERSISTENT-OWNER-P0-P4-20260814.md`](PERSISTENT-OWNER-P0-P4-20260814.md).
+Its compact aggregate JSON files are retained under
+[`persistent-owner-p0-p4-20260814/`](persistent-owner-p0-p4-20260814/). The
+checkpoint preserves the P3/P4 historical source-identity boundary and does
+not claim M2, M3, M4, or P5 completion.
