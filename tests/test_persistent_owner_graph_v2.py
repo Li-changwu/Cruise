@@ -3,6 +3,10 @@ from pathlib import Path
 
 import pytest
 
+from experiments.persistent_owner_graph_v2.kv_alias_probe.inspect_kv_alias import (
+    inspect_graph_text,
+)
+
 from vllm_ascend_persistent_owner.graph_family import (
     GraphFamilyContractError,
     GraphPhase,
@@ -258,3 +262,63 @@ def test_v2_checked_in_state_has_no_synthetic_hardware_evidence():
     )
     assert "Contract validation alone does not satisfy" in protocol
     assert "P5 remains Stopped /\nUnqualified" in protocol
+
+
+def _kv_alias_graph(cache_op: str) -> str:
+    return f'''node {{
+  name: "key"
+  op: "Data"
+}}
+node {{
+  name: "key_cache"
+  op: "{cache_op}"
+}}
+node {{
+  name: "slots"
+  op: "Data"
+}}
+node {{
+  name: "value"
+  op: "Data"
+}}
+node {{
+  name: "value_cache"
+  op: "{cache_op}"
+}}
+node {{
+  name: "scatter"
+  op: "ScatterPaKvCache"
+  input: "key:0"
+  input: "key_cache:0"
+  input: "slots:0"
+  input: "value:0"
+  input: "value_cache:0"
+}}
+'''
+
+
+def test_v2_kv_alias_inspector_requires_direct_refdata_inputs():
+    accepted = inspect_graph_text(_kv_alias_graph("RefData"))
+    copied = inspect_graph_text(_kv_alias_graph("TensorMove"))
+
+    assert accepted["pass"]
+    assert accepted["kv_refdata_alias"]
+    assert accepted["no_kv_tensor_move"]
+    assert not copied["pass"]
+    assert copied["kv_cache_input_ops"] == ["TensorMove", "TensorMove"]
+
+
+def test_v2_kv_alias_export_uses_public_paged_update_and_target_extent():
+    probe = ROOT / "experiments" / "persistent_owner_graph_v2" / "kv_alias_probe"
+    exporter = (probe / "export_kv_alias.py").read_text(encoding="utf-8")
+    runner = (probe / "run_export_on_910b.sh").read_text(encoding="utf-8")
+    protocol = (probe / "protocol.md").read_text(encoding="utf-8")
+
+    assert "torch_npu.npu_scatter_pa_kv_cache" in exporter
+    assert "PHYSICAL_BLOCKS = BATCH_SIZE * BLOCKS_PER_ROW" in exporter
+    assert "BLOCK_SIZE = 128" in exporter
+    assert "torch.where" not in exporter
+    assert "torch.index_select" not in exporter
+    assert "STORAGE_GUARD_MAX_IDLE_HBM_PERCENT:-65" in runner
+    assert "STORAGE_GUARD_NPU_STABLE_SAMPLES=3" in runner
+    assert "historical 5% idle-HBM line" in protocol

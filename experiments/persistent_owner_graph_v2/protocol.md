@@ -29,19 +29,25 @@ KV-path `TensorMove`. The presence of this software path is design evidence
 only; the actual exported graph must establish that the optimization fired and
 that public GraphPp can load and execute the resulting artifact.
 
+V2 does not use the historical 5% idle-HBM line. New component runners require
+no visible Device process, stable HBM samples, a broad retained-model safety
+ceiling, and post-run recovery relative to the observed starting point.
+
 ## Ordered gates
 
 1. `V2-CONTRACT` validates the checked-in manifest, exact extents, public
    invocation boundary, Device-owned selection, and forbidden Host/KV paths.
-2. `V2-EXPORT` exports each graph and records source, package, graph, external
+2. `V2-KV-ALIAS` exports the weight-free `ScatterPaKvCache` component and proves
+   direct KV `RefData` inputs with no cache-path `TensorMove`.
+3. `V2-EXPORT` exports each graph and records source, package, graph, external
    weight, and model identities. Contract validation alone does not satisfy it.
-3. `V2-STRUCTURE` inspects real graph artifacts for required operators and
+4. `V2-STRUCTURE` inspects real graph artifacts for required operators and
    projection/KV features and rejects decomposed attention.
-4. `V2-GRAPH-PAIR` executes each identical artifact through ordinary Graph and
+5. `V2-GRAPH-PAIR` executes each identical artifact through ordinary Graph and
    public GraphPp, checking exact outputs and component time separately.
-5. `V2-SHARED-KV` runs Prefill then Decode against one lease and proves the
+6. `V2-SHARED-KV` runs Prefill then Decode against one lease and proves the
    supported Device alias/in-place boundary with actual copy evidence.
-6. `V2-OWNER-MINI` lets the Device controller select both closures for one
+7. `V2-OWNER-MINI` lets the Device controller select both closures for one
    bounded request cohort. Only after it passes may a new ADR consider reopening
    a P5 Graph/Owner pair.
 
