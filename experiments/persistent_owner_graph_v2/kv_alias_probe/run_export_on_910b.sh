@@ -3,6 +3,7 @@ set -euo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 source_dir=$(cd -- "${script_dir}/../../.." && pwd)
+v2_dir=$(cd -- "${script_dir}/.." && pwd)
 physical_npu=${CRUISE_PHYSICAL_NPU:-0}
 run_id=${CRUISE_RUN_ID:-persistent-owner-v2-kv-alias-$(date -u +%Y%m%dT%H%M%SZ)}
 persistent_root=${CRUISE_PERSISTENT_ROOT:-/workspace/cruise-runs}
@@ -12,11 +13,13 @@ scratch=${CRUISE_V2_KV_ALIAS_SCRATCH:-/dev/shm/cruise-v2-kv-alias-${physical_npu
 python_bin=${CRUISE_V2_EXPORT_PYTHON:-$(command -v python3)}
 cann_set_env=${CRUISE_CANN_SET_ENV:-/usr/local/Ascend/cann-9.0.0/set_env.sh}
 guard=${source_dir}/storage_guard/storage_guard.sh
+hardware_policy=${v2_dir}/hardware_policy.sh
 lifecycle_tool=${CRUISE_STORAGE_TOOL:-/workspace/Cruise/scripts/manage_workspace_storage.py}
 exporter=${script_dir}/export_kv_alias.py
 inspector=${script_dir}/inspect_kv_alias.py
 
 for required in "${python_bin}" "${cann_set_env}" "${guard}" \
+  "${hardware_policy}" \
   "${lifecycle_tool}" "${exporter}" "${inspector}"; do
   [[ -f "${required}" ]] || {
     printf 'missing V2 KV alias input: %s\n' "${required}" >&2
@@ -30,6 +33,7 @@ done
 }
 
 source "${guard}"
+source "${hardware_policy}"
 export STORAGE_GUARD_MAX_SCRATCH_GIB=1
 export STORAGE_GUARD_MAX_EVIDENCE_BYTES=$((128 * 1024 * 1024))
 export STORAGE_GUARD_NPU_WAIT_SECONDS=60
@@ -53,11 +57,18 @@ tmp=${scratch}/tmp
 mkdir -p "${driver_logs}" "${cache}" "${tmp}"
 
 finalize() {
-  local command_status=$? finalize_status=0 cleanup_status=0 lifecycle_status=0
+  local command_status=$? recovery_status=0 finalize_status=0 cleanup_status=0
+  local lifecycle_status=0
   trap - EXIT
   set +e
   printf 'driver-exit\t%s\n' "${command_status}" >"${evidence}/status.tsv"
-  if [[ -d "${driver_logs}" && ${command_status} -ne 0 ]]; then
+  if [[ -n ${V2_HBM_BASELINE_MB} ]]; then
+    v2_wait_for_hbm_recovery "${evidence}" "${physical_npu}" \
+      "${V2_HBM_BASELINE_MB}"
+    recovery_status=$?
+  fi
+  if [[ -d "${driver_logs}" && \
+        ( ${command_status} -ne 0 || ${recovery_status} -ne 0 ) ]]; then
     mkdir -p "${evidence}/failure-driver-logs"
     while IFS= read -r log; do
       tail -c $((512 * 1024)) -- "${log}" \
@@ -76,12 +87,14 @@ finalize() {
     lifecycle_status=$?
   fi
   if [[ ${command_status} -ne 0 ]]; then exit "${command_status}"; fi
+  if [[ ${recovery_status} -ne 0 ]]; then exit "${recovery_status}"; fi
   if [[ ${finalize_status} -ne 0 ]]; then exit "${finalize_status}"; fi
   if [[ ${cleanup_status} -ne 0 ]]; then exit "${cleanup_status}"; fi
   exit "${lifecycle_status}"
 }
 trap finalize EXIT
 
+v2_capture_hbm_baseline "${evidence}" "${physical_npu}"
 source "${cann_set_env}"
 export ASCEND_RT_VISIBLE_DEVICES=${physical_npu}
 export ASCEND_GLOBAL_LOG_LEVEL=${CRUISE_ASCEND_EXPORT_LOG_LEVEL:-3}

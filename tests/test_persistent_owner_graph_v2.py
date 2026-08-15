@@ -6,6 +6,12 @@ import pytest
 from experiments.persistent_owner_graph_v2.kv_alias_probe.inspect_kv_alias import (
     inspect_graph_text,
 )
+from experiments.persistent_owner_graph_v2.kv_alias_probe.prepare_graphpp_config import (
+    CACHE_ELEMENTS,
+    KEY_BITS,
+    VALUE_BITS,
+    expected_cache,
+)
 
 from vllm_ascend_persistent_owner.graph_family import (
     GraphFamilyContractError,
@@ -323,3 +329,58 @@ def test_v2_kv_alias_export_uses_public_paged_update_and_target_extent():
     assert "STORAGE_GUARD_NPU_STABLE_SAMPLES=3" in runner
     assert 'cp "${export_dir}/kv_alias_probe.air"' not in runner
     assert "historical 5% idle-HBM line" in protocol
+
+
+def test_v2_hardware_policy_uses_stable_baseline_and_relative_recovery():
+    policy = (V2 / "hardware_policy.sh").read_text(encoding="utf-8")
+    runner = (V2 / "kv_alias_probe" / "run_export_on_910b.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "CRUISE_V2_HBM_STABLE_SAMPLES:-3" in policy
+    assert "CRUISE_V2_HBM_STABILITY_TOLERANCE_MB:-64" in policy
+    assert "CRUISE_V2_HBM_RECOVERY_TOLERANCE_MB:-64" in policy
+    assert "hbm <= baseline_hbm_mb + tolerance_mb" in policy
+    assert "No process in device." in policy
+    assert "v2_capture_hbm_baseline" in runner
+    assert "v2_wait_for_hbm_recovery" in runner
+
+
+def test_v2_kv_alias_pair_uses_public_graph_and_graphpp_with_exact_oracle():
+    probe = V2 / "kv_alias_probe"
+    host = (probe / "kv_alias_graphpp_probe.cpp").read_text(encoding="utf-8")
+    runner = (probe / "run_graphpp_pair_on_910b.sh").read_text(encoding="utf-8")
+    config = (probe / "prepare_graphpp_config.py").read_text(encoding="utf-8")
+    verifier = (probe / "verify_graphpp_pair.py").read_text(encoding="utf-8")
+    protocol = (probe / "protocol.md").read_text(encoding="utf-8")
+
+    assert 'GraphPp("kv_alias_graph_pp"' in host
+    assert 'FlowNode("kv_alias_node", 5, 2)' in host
+    assert "session->RunGraph" in host
+    assert "session->FeedDataFlowGraph" in host
+    assert "session->FetchDataFlowGraph" in host
+    assert "SetOutputs({{node, {0, 1}}})" in host
+    assert "aclmdlExecute" not in host
+    assert "ModelPp" not in host
+    assert "for mode in graph dataflow" in runner
+    assert '"${evidence}/kv_alias_probe.air"' not in runner
+    assert "v2_capture_hbm_baseline" in runner
+    assert "v2_wait_for_hbm_recovery" in runner
+    assert 'struct.pack_into("<H"' in config
+    assert "ordinary_graph_matches_graphpp" in verifier
+    assert "output_matches_oracle" in verifier
+    assert "FIA GraphPp compatibility" in protocol
+
+
+def test_v2_kv_alias_pair_oracle_has_exact_paged_nz_slots():
+    key = expected_cache(KEY_BITS)
+    value = expected_cache(VALUE_BITS)
+
+    assert len(key) == CACHE_ELEMENTS * 2
+    assert len(value) == CACHE_ELEMENTS * 2
+    assert key[:32] == b"\x80\x3f" * 16
+    assert value[:32] == b"\x80\xbf" * 16
+    assert key[32 : 2048 * 2] == b"\0" * (2048 * 2 - 32)
+    second_row_block = 3 * 32 * 128 * 16 * 2
+    assert key[second_row_block : second_row_block + 2] == b"\x00\x40"
+    assert value[second_row_block : second_row_block + 2] == b"\x00\xc0"
