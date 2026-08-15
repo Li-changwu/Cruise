@@ -450,6 +450,11 @@ def test_p3_mini_fia_probe_is_weight_free_and_compares_graph_with_graphpp():
     host = (probe / "mini_fia_graphpp_probe.cpp").read_text(encoding="utf-8")
     om_host = (probe / "mini_fia_om_probe.cpp").read_text(encoding="utf-8")
     runner = (probe / "run_on_910b.sh").read_text(encoding="utf-8")
+    builder = (probe / "build_isolated_opp.sh").read_text(encoding="utf-8")
+    auditor = (probe / "audit_isolated_opp.py").read_text(encoding="utf-8")
+    hierarchy_patch = (
+        probe / "preserve_op_kernel_hierarchy.patch"
+    ).read_text(encoding="utf-8")
 
     assert "npu_fused_infer_attention_score" in exporter
     assert "torchair.ge.custom_op" in exporter
@@ -490,6 +495,27 @@ def test_p3_mini_fia_probe_is_weight_free_and_compares_graph_with_graphpp():
     assert "LoadFromSerializedModelArray" not in om_host
     assert "external-weights" in runner
     assert "CRUISE_MINI_FIA_MODES" in runner
+    assert "CRUISE_MINI_FIA_MODES:-graph dataflow" in runner
+    assert "build_isolated_opp.sh" in runner
+    assert "source-worktree-status.txt" in runner
+    assert "--jit --soc=ascend910b" in builder
+    assert "--ops=fused_infer_attention_score" in builder
+    assert "--vendor_name=cruise_fia_graph_v2" in builder
+    assert "--install-path" in builder
+    assert "cpack-staging" in builder
+    assert "fia-opp-staging-files.sha256" in builder
+    assert "bash ./install.sh --quiet" in builder
+    assert "multiple isolated FIA run packages found" in builder
+    assert "opp_proxy" in runner
+    assert "for component in built-in include lib64 bin Ascend" in runner
+    assert "ASCEND_CUSTOM_OPP_PATH=${ASCEND_CUSTOM_OPP_PATH:-}" in runner
+    assert "tracked ops-transformer source is dirty" in builder
+    assert "public_source_commit" in auditor
+    assert "isolated_install_root" in auditor
+    assert "dynamic_compile_entry_present" in auditor
+    assert "cross_family_targets" in auditor
+    assert "${_op_name}/op_kernel" in hierarchy_patch
+    assert "${_op_depened_name}/op_kernel" in hierarchy_patch
     assert '"${selected_modes[@]}"' in runner
     assert "export_status" in runner
     assert "export-result.json" in runner

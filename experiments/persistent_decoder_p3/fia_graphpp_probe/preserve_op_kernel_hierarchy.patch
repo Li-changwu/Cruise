@@ -1,0 +1,22 @@
+diff --git a/cmake/custom_build.cmake b/cmake/custom_build.cmake
+index fd12459..318cc8c 100644
+--- a/cmake/custom_build.cmake
++++ b/cmake/custom_build.cmake
+@@ -928,0 +929,8 @@ foreach (op_dir ${OP_DIR_LIST})
++    install(FILES ${SELECTED_FILES}
++        DESTINATION ${IMPL_INSTALL_DIR}/ascendc/${_op_name}/op_kernel
++        OPTIONAL
++    )
++    install(DIRECTORY ${SELECTED_DIRS}
++        DESTINATION ${IMPL_INSTALL_DIR}/ascendc/${_op_name}/op_kernel
++        OPTIONAL
++    )
+@@ -942,0 +951,8 @@ foreach (op_dir ${OP_DIR_LIST})
++        install(FILES ${SELECTED_DEPEND_FILES}
++                DESTINATION ${IMPL_INSTALL_DIR}/ascendc/${_op_depened_name}/op_kernel
++                OPTIONAL
++        )
++        install(DIRECTORY ${SELECTED_DEPEND_DIRS}
++                DESTINATION ${IMPL_INSTALL_DIR}/ascendc/${_op_depened_name}/op_kernel
++                OPTIONAL
++        )

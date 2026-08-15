@@ -12,17 +12,22 @@ scratch=${CRUISE_MINI_FIA_SCRATCH:-/dev/shm/cruise-mini-fia-${physical_npu}-$$}
 cann_set_env=${CRUISE_CANN_SET_ENV:-/usr/local/Ascend/cann-9.0.0/set_env.sh}
 cann_python_env=${CRUISE_CANN_PYTHON_ENV:-/workspace/cruise-assets/python-envs/cann9-py311}
 python_bin=${CRUISE_MINI_FIA_PYTHON:-$(command -v python3)}
-probe_modes=${CRUISE_MINI_FIA_MODES:-om graph dataflow}
+probe_modes=${CRUISE_MINI_FIA_MODES:-graph dataflow}
 guard=${source_dir}/storage_guard/storage_guard.sh
 lifecycle_tool=${CRUISE_STORAGE_TOOL:-/workspace/Cruise/scripts/manage_workspace_storage.py}
 resource_writer=${source_dir}/prepare_resource_config.py
 template=${source_dir}/experiments/synthetic-p0/numa_config.physical7.json
+ops_source=${CRUISE_FIA_OPS_SOURCE:-/dev/shm/cruise-ops-transformer-9.0.0-audit}
+opp_builder=${script_dir}/build_isolated_opp.sh
 
 for required in "${cann_set_env}" "${python_bin}" "${guard}" \
   "${lifecycle_tool}" "${resource_writer}" "${template}" \
   "${cann_python_env}/bin/python" \
   "${script_dir}/export_mini_fia.py" \
   "${script_dir}/prepare_probe_config.py" \
+  "${opp_builder}" \
+  "${script_dir}/audit_isolated_opp.py" \
+  "${script_dir}/preserve_op_kernel_hierarchy.patch" \
   "${script_dir}/mini_fia_om_probe.cpp" \
   "${script_dir}/mini_fia_graphpp_probe.cpp"; do
   [[ -f "${required}" ]] || { printf 'missing mini FIA input: %s\n' "${required}" >&2; exit 96; }
@@ -70,6 +75,9 @@ python3 "${lifecycle_tool}" mark --runs-root "${persistent_root}" \
   --max-run-gib 1
 
 build=${scratch}/build
+fia_build_root=${scratch}/fia-opp-source
+fia_install_root=${scratch}/fia-opp-install
+opp_proxy=${scratch}/opp
 export_dir=${scratch}/export
 external_weight_dir=${scratch}/external-weights
 config_dir=${scratch}/config
@@ -78,6 +86,7 @@ driver_logs=${scratch}/driver-logs
 cache=${scratch}/cache
 tmp=${scratch}/tmp
 mkdir -p "${build}" "${external_weight_dir}" "${config_dir}" "${deploy_root}" \
+  "${opp_proxy}" \
   "${driver_logs}" "${cache}" "${tmp}"
 
 finalize() {
@@ -117,9 +126,35 @@ finalize() {
 }
 trap finalize EXIT
 
+git -C "${source_dir}" status --porcelain=v1 \
+  >"${evidence}/source-worktree-status.txt"
+[[ ! -s "${evidence}/source-worktree-status.txt" ]] || {
+  printf 'mini FIA hardware probe requires a clean source worktree\n' >&2
+  exit 94
+}
+git -C "${source_dir}" rev-parse HEAD >"${evidence}/source-commit.txt"
 source "${cann_set_env}"
+system_opp=${ASCEND_OPP_PATH}
+for component in built-in include lib64 bin Ascend; do
+  [[ -e "${system_opp}/${component}" ]] || {
+    printf 'missing system OPP component: %s\n' "${component}" >&2
+    exit 96
+  }
+  ln -s "${system_opp}/${component}" "${opp_proxy}/${component}"
+done
+export ASCEND_OPP_PATH=${opp_proxy}
 export PATH=${cann_python_env}/bin:${PATH}
 "${cann_python_env}/bin/python" -c 'import numpy, te, tbe'
+custom_set_env=$("${opp_builder}" --source "${ops_source}" \
+  --work-root "${fia_build_root}" --install-root "${fia_install_root}" \
+  --evidence "${evidence}")
+[[ -f "${custom_set_env}" ]] || {
+  printf 'missing isolated FIA set_env.bash: %s\n' "${custom_set_env}" >&2
+  exit 95
+}
+export ASCEND_CUSTOM_OPP_PATH=${ASCEND_CUSTOM_OPP_PATH:-}
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}
+source "${custom_set_env}"
 export ASCEND_RT_VISIBLE_DEVICES=${physical_npu}
 export RESOURCE_CONFIG_PATH=${config_dir}/numa.json
 export ASCEND_GLOBAL_LOG_LEVEL=${CRUISE_ASCEND_LOG_LEVEL:-3}
