@@ -508,7 +508,9 @@ def test_p3_mini_fia_probe_is_weight_free_and_compares_graph_with_graphpp():
     assert "multiple isolated FIA run packages found" in builder
     assert "opp_proxy" in runner
     assert "for component in built-in include lib64 bin Ascend" in runner
+    assert "export ASCEND_OPP_PATH=${system_opp}" in runner
     assert "ASCEND_CUSTOM_OPP_PATH=${ASCEND_CUSTOM_OPP_PATH:-}" in runner
+    assert 'find "${fia_install_root}" -type d -exec chmod u+w {} +' in runner
     assert "tracked ops-transformer source is dirty" in builder
     assert "public_source_commit" in auditor
     assert "isolated_install_root" in auditor

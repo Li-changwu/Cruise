@@ -106,6 +106,9 @@ finalize() {
         >"${evidence}/failure-driver-logs/$(basename -- "${log}")"
     done < <(find "${driver_logs}" -type f -print | sort | head -n 24)
   fi
+  if [[ -d "${fia_install_root}" ]]; then
+    find "${fia_install_root}" -type d -exec chmod u+w {} +
+  fi
   storage_guard_finalize
   finalize_status=$?
   if [[ ${finalize_status} -eq 0 ]]; then
@@ -152,6 +155,7 @@ custom_set_env=$("${opp_builder}" --source "${ops_source}" \
   printf 'missing isolated FIA set_env.bash: %s\n' "${custom_set_env}" >&2
   exit 95
 }
+export ASCEND_OPP_PATH=${system_opp}
 export ASCEND_CUSTOM_OPP_PATH=${ASCEND_CUSTOM_OPP_PATH:-}
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}
 source "${custom_set_env}"
