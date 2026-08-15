@@ -365,6 +365,14 @@ current-source FIA replay also failed before the first Feed with
 `funcEntry=0` / runtime `107000`. P6 may not begin until P5 passes its
 unchanged three-start performance gate.
 
+A later minimal custom-AICore component probe passed ordinary Graph and public
+GraphPp with one bitwise-exact `Bf16Materialize` launch in each mode. This
+rules out `funcEntry=0` as a universal custom-kernel boundary, but does not
+close the FIA integration or P5 performance gate. The next ordered checkpoint
+is an exact B=4, K=384 attention component after its public host tiling, ABI,
+and OpDef dependencies are established. See
+[`PERSISTENT-OWNER-CUSTOM-GRAPHPP-20260815.md`](../evidence/PERSISTENT-OWNER-CUSTOM-GRAPHPP-20260815.md).
+
 ### M2: Lifecycle, Recovery, and Resource Safety
 
 - [ ] Add sidecar supervision, bounded startup and request timeouts, readiness

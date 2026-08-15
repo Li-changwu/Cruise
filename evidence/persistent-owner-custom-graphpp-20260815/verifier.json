@@ -1,0 +1,22 @@
+{
+  "claim_boundary": "Single BF16 identity custom AICore op only; no FIA, Owner, or P5 performance claim.",
+  "gate": "P5-CUSTOM-AICORE-GRAPHPP",
+  "input_sha256": "227e5bb13b9ce9398eaa3ea61faa9c48c7575db602da429eba368f47d6c15bec",
+  "modes": {
+    "dataflow": {
+      "custom_kernel_launch_count": 1,
+      "output_matches_input": true,
+      "output_sha256": "227e5bb13b9ce9398eaa3ea61faa9c48c7575db602da429eba368f47d6c15bec",
+      "pass": true,
+      "summary_pass": true
+    },
+    "graph": {
+      "custom_kernel_launch_count": 1,
+      "output_matches_input": true,
+      "output_sha256": "227e5bb13b9ce9398eaa3ea61faa9c48c7575db602da429eba368f47d6c15bec",
+      "pass": true,
+      "summary_pass": true
+    }
+  },
+  "pass": true
+}

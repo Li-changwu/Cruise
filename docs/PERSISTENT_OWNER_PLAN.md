@@ -165,3 +165,15 @@ runtime status `107000` at
 `persistent_decoder_p3_graph_pp/FusedInferAttentionScore`. The same committed
 P3/P4 source passed on the accepted legacy compute plane, so this is a P5
 compute-plane blocker rather than a legacy correctness regression.
+
+A bounded public custom-op probe then narrowed the blocker. In
+`persistent-decoder-p3-custom-graphpp-20260815-r3`, ordinary Graph and public
+GraphPp each loaded one generated `Bf16Materialize` custom AICore kernel,
+launched it once, and returned a bitwise-exact BF16 output. This proves that
+`funcEntry=0` is not a general GraphPp boundary for every custom AICore kernel
+on this CANN 9 stack. It does not establish FIA compatibility: Cruise must
+first show that the FIA host tiling, tiling-data ABI, and OpDef are available
+through public installed resources, or build a fixed-shape attention closure.
+Only an exact B=4, K=384 Graph/GraphPp attention component may advance to the
+second full Graph/Owner pair. Compact evidence is in
+`evidence/PERSISTENT-OWNER-CUSTOM-GRAPHPP-20260815.md`.

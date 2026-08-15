@@ -82,3 +82,10 @@ Its compact P3, P4, and FIA-boundary JSON files are retained under
 [`persistent-owner-source-bound-replay-20260815/`](persistent-owner-source-bound-replay-20260815/).
 P3/P4 are bound to commit `950df7c` on the accepted legacy compute plane; P5
 and P6 remain open.
+
+The public custom-AICore GraphPp component result is summarized in
+[`PERSISTENT-OWNER-CUSTOM-GRAPHPP-20260815.md`](PERSISTENT-OWNER-CUSTOM-GRAPHPP-20260815.md).
+Its compact verifier is retained under
+[`persistent-owner-custom-graphpp-20260815/`](persistent-owner-custom-graphpp-20260815/).
+It proves that `funcEntry=0` is not a general boundary for every custom AICore
+kernel on this stack; it does not prove FIA compatibility or P5 performance.

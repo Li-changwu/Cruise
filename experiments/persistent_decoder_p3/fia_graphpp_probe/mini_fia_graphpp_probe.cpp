@@ -126,7 +126,8 @@ bool OutputExact(const std::vector<ge::Tensor> &outputs) {
 
 void WriteSummary(const std::string &path, const std::string &mode,
                   ge::Status status, bool exact, int64_t elapsed_ms,
-                  uint32_t model_load_status, bool model_valid) {
+                  uint32_t model_load_status, bool model_valid,
+                  const std::string &jit_compile) {
   if (path.empty()) return;
   std::ofstream stream(path);
   stream << "{\n"
@@ -142,6 +143,7 @@ void WriteSummary(const std::string &path, const std::string &mode,
          << "  \"model_load_status\": " << model_load_status << ",\n"
          << "  \"model_valid\": " << (model_valid ? "true" : "false")
          << ",\n"
+         << "  \"ge_jit_compile\": \"" << jit_compile << "\",\n"
          << "  \"output_exact\": " << (exact ? "true" : "false") << ",\n"
          << "  \"elapsed_ms\": " << elapsed_ms << ",\n"
          << "  \"claim_boundary\": \"Single weight-free FIA Graph or GraphPp load only; no P3 Owner claim.\"\n"
@@ -162,8 +164,16 @@ int main(int argc, char **argv) {
   const std::string deploy_config = argv[4];
   const std::string summary_path = argv[5];
   const std::string external_weight_dir = argv[6];
+  const char *jit_compile_env =
+      std::getenv("CRUISE_MINI_FIA_GE_JIT_COMPILE");
+  const std::string jit_compile =
+      jit_compile_env == nullptr || jit_compile_env[0] == '\0'
+          ? "default"
+          : jit_compile_env;
   if ((mode != "graph" && mode != "dataflow" &&
        mode != "serialized-dataflow") ||
+      (jit_compile != "default" && jit_compile != "0" &&
+       jit_compile != "1") ||
       access(model_path.c_str(), R_OK) != 0 ||
       access(graph_config.c_str(), R_OK) != 0 ||
       access(deploy_config.c_str(), R_OK) != 0 ||
@@ -179,6 +189,9 @@ int main(int argc, char **argv) {
       {"ge.graphRunMode", "0"},
       {"ge.exec.precision_mode", "must_keep_origin_dtype"},
   };
+  if (jit_compile != "default") {
+    config["ge.jit_compile"] = jit_compile.c_str();
+  }
   if (mode == "dataflow") {
     config["ge.exec.logicalDeviceClusterDeployMode"] = "SINGLE";
     config["ge.exec.logicalDeviceId"] = "[0:0]";
@@ -189,7 +202,7 @@ int main(int argc, char **argv) {
   bool model_valid = false;
   if (status != ge::SUCCESS) {
     WriteSummary(summary_path, mode, status, false, 0, model_load_status,
-                 model_valid);
+                 model_valid, jit_compile);
     std::cout << "MINI_FIA_INIT_FAIL mode=" << mode
               << " status=" << static_cast<uint32_t>(status) << std::endl;
     return 10;
@@ -228,8 +241,9 @@ int main(int argc, char **argv) {
                               .count();
   const bool exact = status == ge::SUCCESS && OutputExact(outputs);
   WriteSummary(summary_path, mode, status, exact, elapsed_ms,
-               model_load_status, model_valid);
+               model_load_status, model_valid, jit_compile);
   std::cout << "MINI_FIA_RESULT mode=" << mode
+            << " ge_jit_compile=" << jit_compile
             << " status=" << static_cast<uint32_t>(status)
             << " output_exact=" << exact << " elapsed_ms=" << elapsed_ms
             << std::endl;

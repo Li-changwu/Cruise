@@ -465,6 +465,9 @@ def test_p3_mini_fia_probe_is_weight_free_and_compares_graph_with_graphpp():
     assert "LoadFromSerializedModelArray" in host
     assert "mini_fia_serialized_graph_pp" in host
     assert '"ge.externalWeight", "1"' in host
+    assert '"CRUISE_MINI_FIA_GE_JIT_COMPILE"' in host
+    assert 'config["ge.jit_compile"]' in host
+    assert '\\"ge_jit_compile\\"' in host
     assert "EMPTY_EXTERNAL_WEIGHT_DIR" in host
     assert "aclgrphBuildInitialize" in om_host
     assert "aclgrphBuildModel" in om_host
@@ -492,6 +495,36 @@ def test_p3_mini_fia_probe_is_weight_free_and_compares_graph_with_graphpp():
     assert "mode-status.tsv" in runner
     assert "STORAGE_GUARD_MAX_SCRATCH_GIB=1" in runner
     assert "storage_guard_cleanup_scratch" in runner
+
+
+def test_p3_custom_graphpp_probe_is_isolated_exact_and_public():
+    probe = P3 / "custom_graphpp_probe"
+    host = (probe / "bf16_graphpp_probe.cpp").read_text(encoding="utf-8")
+    runner = (probe / "run_on_910b.sh").read_text(encoding="utf-8")
+    verifier = (probe / "verify_probe.py").read_text(encoding="utf-8")
+    protocol = (probe / "protocol.md").read_text(encoding="utf-8")
+
+    assert 'GraphPp("bf16_materialize_graph_pp"' in host
+    assert 'FlowNode("bf16_materialize_node", 1, 1)' in host
+    assert 'mode != "graph" && mode != "dataflow"' in host
+    assert "OutputExact(input, outputs)" in host
+    assert "aclmdlExecute" not in host
+    assert "ModelPp" not in host
+    assert "new_op_project_template/custom_op" in runner
+    assert "bf16-materialize-attempt56r1" in runner
+    assert "export ASCEND_OPP_PATH=${opp_proxy}" in runner
+    assert "--install-path=\"${install}\"" in runner
+    assert "for mode in graph dataflow" in runner
+    assert 'find "${install}" -type d -exec chmod u+w {} +' in runner
+    assert "export_status" in runner
+    assert "export-result.json" in runner
+    assert "cd \"${scratch}\"" in runner
+    assert "ASCEND_SLOG_PRINT_TO_STDOUT=0" in runner
+    assert "mode_driver_logs=${driver_logs}/${mode}" in runner
+    assert '"${evidence}/input.bin"' not in runner
+    assert "te_bf16materialize_" in verifier
+    assert "output_matches_input" in verifier
+    assert "does not implement" in protocol
 
 
 def test_p3_owner_exercises_lifecycle_and_async_drain_contracts():
