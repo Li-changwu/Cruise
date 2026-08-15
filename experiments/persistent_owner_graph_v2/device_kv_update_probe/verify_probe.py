@@ -43,6 +43,18 @@ def main() -> int:
     dataflow = read_json(args.dataflow_result)
     graph_launches = launch_count(args.graph_log)
     dataflow_launches = launch_count(args.dataflow_log)
+    first = dataflow.get("first_summary", [])
+    second = dataflow.get("second_summary", [])
+    exact_kernel_reports = (
+        len(first) == 22
+        and len(second) == 22
+        and first[0] == 1
+        and first[7] == 1
+        and first[11:13] == [0, 0x3F80]
+        and second[0] == 2
+        and second[7] == 1
+        and second[11:13] == [0x3F80, 0x4000]
+    )
     graph_pass = (
         graph.get("pass") is True
         and graph.get("report_exact") is True
@@ -61,7 +73,8 @@ def main() -> int:
         and dataflow.get("host_cache_output_bytes") == 0
         and dataflow.get("raw_device_address_abi_used") is False
         and dataflow.get("external_refdata_used") is False
-        and dataflow_launches == 2
+        and exact_kernel_reports
+        and dataflow_launches >= 1
     )
     structure_pass = (
         structure.get("pass") is True
@@ -78,7 +91,9 @@ def main() -> int:
         "ordinary_graph_pass": graph_pass,
         "graphpp_functionpp_pass": dataflow_pass,
         "ordinary_graph_kernel_launch_count": graph_launches,
-        "graphpp_kernel_launch_count": dataflow_launches,
+        "graphpp_kernel_launch_record_count": dataflow_launches,
+        "graphpp_exact_kernel_report_count": 2 if exact_kernel_reports else 0,
+        "graphpp_execution_count_source": "exact sequenced AICore reports",
         "device_owned_allocation_count": dataflow.get("allocation_count"),
         "device_owned_graph_call_count": dataflow.get("graph_call_count"),
         "same_flowmsg_across_calls": dataflow.get("flowmsg_identity_stable"),

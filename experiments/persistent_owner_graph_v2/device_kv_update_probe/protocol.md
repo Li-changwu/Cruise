@@ -30,6 +30,12 @@ The gate requires:
 5. GraphPp Host cache input/output bytes remain zero, and no raw-address ABI is
    used.
 
+The runtime `LaunchKernel` record establishes the loaded custom-kernel identity,
+not a per-invocation count: GraphPp loads the compiled model once and can execute
+that model repeatedly without another record of the same kind. Execution count
+is therefore established by the two exact AICore reports carrying distinct
+sequence values and dependent before/after values.
+
 This probe does not prove the target Paged-KV layout, safe scheduling against a
 separate attention graph, absence of internal Device-to-Device copies, full
 Prefill/Decode execution, or P5 performance. Any failed item stops this update

@@ -471,7 +471,9 @@ def test_v2_device_kv_update_has_small_public_io_and_no_cache_output():
     assert "cache.SetValue" in kernel
     assert "host_cache_input_bytes" in verifier
     assert "host_cache_output_bytes" in verifier
-    assert "dataflow_launches == 2" in verifier
+    assert "exact_kernel_reports" in verifier
+    assert "dataflow_launches >= 1" in verifier
+    assert "exact sequenced AICore reports" in verifier
     assert "v2_capture_hbm_baseline" in runner
     assert "v2_wait_for_hbm_recovery" in runner
     assert "STORAGE_GUARD_MAX_IDLE_HBM_PERCENT:-65" in runner
