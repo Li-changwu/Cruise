@@ -321,4 +321,5 @@ def test_v2_kv_alias_export_uses_public_paged_update_and_target_extent():
     assert "torch.index_select" not in exporter
     assert "STORAGE_GUARD_MAX_IDLE_HBM_PERCENT:-65" in runner
     assert "STORAGE_GUARD_NPU_STABLE_SAMPLES=3" in runner
+    assert 'cp "${export_dir}/kv_alias_probe.air"' not in runner
     assert "historical 5% idle-HBM line" in protocol

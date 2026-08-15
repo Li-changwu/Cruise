@@ -13,7 +13,9 @@ from `RefData` nodes.
 This is only an export and structure gate. A pass does not prove ordinary Graph
 or public GraphPp execution, zero Device copies, Prefill/Decode shared state, a
 full Decoder, or performance. Those claims require later gates and separate
-evidence.
+evidence. The diagnostic run retains the AIR SHA-256 and graph text, not the AIR
+binary; a Graph/GraphPp pair must export and execute its temporary artifact in
+the same bounded run or promote it through the asset lifecycle.
 
 The V2 runner intentionally does not use the historical 5% idle-HBM line. It
 requires no visible Device process, three stable preflight samples, a 65% safety

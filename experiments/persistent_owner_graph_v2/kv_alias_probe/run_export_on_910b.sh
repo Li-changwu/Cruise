@@ -106,5 +106,4 @@ PY
 cp "${export_dir}/export-result.json" "${evidence}/"
 cp "${export_dir}/graph-structure.json" "${evidence}/"
 cp "${export_dir}/dynamo.pbtxt" "${evidence}/"
-cp "${export_dir}/kv_alias_probe.air" "${evidence}/"
 printf 'run_root\t%s\n' "${run_root}"
