@@ -73,7 +73,8 @@ add_executable(resident_epoch_server
   resident_epoch_server.cpp
   $<TARGET_OBJECTS:resident_epoch_bridge_object>)
 target_include_directories(resident_epoch_server PRIVATE
-  "${CMAKE_CURRENT_SOURCE_DIR}")
+  "${CMAKE_CURRENT_SOURCE_DIR}"
+  "${ASCEND_HOME_PATH}/include")
 target_compile_definitions(resident_epoch_server PRIVATE
   CRUISE_RESIDENT_DEVICE_TRANSFER_PLUGIN=1)
 target_compile_options(resident_epoch_server PRIVATE
@@ -82,19 +83,22 @@ target_link_libraries(resident_epoch_server PRIVATE
   -Wl,--whole-archive
   ${CANN_LIBRARIES}
   -Wl,--no-whole-archive
+  "${ASCEND_HOME_PATH}/lib64/libmsprofiler.so"
   ${CMAKE_DL_LIBS})
 
 add_executable(resident_epoch_server_old
   resident_epoch_server.cpp
   $<TARGET_OBJECTS:resident_epoch_bridge_old_object>)
 target_include_directories(resident_epoch_server_old PRIVATE
-  "${CMAKE_CURRENT_SOURCE_DIR}")
+  "${CMAKE_CURRENT_SOURCE_DIR}"
+  "${ASCEND_HOME_PATH}/include")
 target_compile_options(resident_epoch_server_old PRIVATE
   -O2 -std=c++11 -ftrapv -fstack-protector-all -fPIC)
 target_link_libraries(resident_epoch_server_old PRIVATE
   -Wl,--whole-archive
   ${CANN_LIBRARIES}
-  -Wl,--no-whole-archive)
+  -Wl,--no-whole-archive
+  "${ASCEND_HOME_PATH}/lib64/libmsprofiler.so")
 
 add_executable(relocate_air_paths relocate_air_paths.cpp)
 target_include_directories(relocate_air_paths PRIVATE

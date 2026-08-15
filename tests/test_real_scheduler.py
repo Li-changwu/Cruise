@@ -575,6 +575,25 @@ def test_delta_device_epoch_egresses_each_token_incrementally():
     assert request.status == RequestStatus.FINISHED_LENGTH_CAPPED
 
 
+def test_fixed_k_graph_limits_epoch_and_selects_the_k6_variant():
+    scheduler = make_scheduler(1)
+    scheduler._resident_epoch_config = ResidentEpochConfig(
+        max_steps=8,
+        physical_blocks=4,
+        blocks_per_request=1,
+        fixed_epoch_graph=True,
+    )
+    add_greedy_requests(scheduler, 1, max_tokens=8)
+
+    scheduler_output = scheduler.schedule()
+    plan = get_plan(scheduler_output)
+
+    assert plan is not None
+    assert plan.max_steps == 6
+    assert plan.graph_variant == 0x10
+    assert plan.requests[0].device_block_ids == (0,)
+
+
 def test_cruise_delta_collector_keeps_device_epoch_tokens_separate():
     install_strict_delta_collector()
     from vllm.v1.engine.output_processor import RequestOutputCollector

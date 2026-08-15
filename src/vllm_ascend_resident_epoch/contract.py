@@ -43,7 +43,7 @@ class ResidentEpochRequest:
     sequence_length: int
     eos_token_id: int
     scheduler_block_ids: tuple[int, ...]
-    device_block_ids: tuple[int, int]
+    device_block_ids: tuple[int, ...]
     state_owner: Literal["host", "device"] = "host"
     kv_import_required: bool = False
 
@@ -79,6 +79,11 @@ class ResidentEpochPlan:
             raise ValueError(f"unsupported resident epoch contract {self.version}")
         if self.graph_batch_size not in (1, 2, 4):
             raise ValueError("graph batch size must be 1, 2, or 4")
+        if self.graph_variant not in (0, 0x10):
+            raise ValueError("resident epoch graph variant is unsupported")
+        if self.graph_variant == 0x10 and self.max_steps > 6:
+            raise ValueError("fixed-K resident epoch graph supports at most six steps")
+        expected_device_blocks = 1 if self.graph_variant == 0x10 else 2
         if not 1 <= len(self.requests) <= self.graph_batch_size:
             raise ValueError("request count does not fit the static graph")
         if len(self.active_mask) != self.graph_batch_size:
@@ -102,6 +107,10 @@ class ResidentEpochPlan:
             expected_active[request.row] = 1
             if request.sequence_length != request.position + 1:
                 raise ValueError("sequence length and position disagree")
+            if len(request.device_block_ids) != expected_device_blocks:
+                raise ValueError("device block IDs disagree with graph layout")
+            if len(set(request.device_block_ids)) != len(request.device_block_ids):
+                raise ValueError("device block IDs must be unique per resident row")
             if request.state_owner not in ("host", "device"):
                 raise ValueError("resident request has an invalid state owner")
             if request.kv_import_required and request.state_owner != "host":
@@ -217,9 +226,10 @@ class ResidentEpochResult:
             if self.route == "device" and steps < plan.max_steps:
                 if not tokens or tokens[-1] != request.eos_token_id:
                     raise ValueError("a short device epoch must terminate at EOS")
-        if self.route == "device" and self.model_calls != max(
+        expected_model_calls = 1 if plan.graph_variant == 0x10 else max(
             self.computed_steps.values()
-        ):
+        )
+        if self.route == "device" and self.model_calls != expected_model_calls:
             raise ValueError("device model-call count disagrees with executed steps")
 
 

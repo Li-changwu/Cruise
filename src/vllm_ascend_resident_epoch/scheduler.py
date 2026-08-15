@@ -278,6 +278,8 @@ class ResidentEpochScheduler(Scheduler):
             remaining_steps.append(remaining)
 
         epoch_budget = min(config.max_steps, min(remaining_steps))
+        if config.fixed_epoch_graph:
+            epoch_budget = min(epoch_budget, 6)
         # The controller and sidecar support every bounded value through eight.
         # Preserving the exact remaining budget lets a six-token decode use one
         # Device epoch instead of two Host-visible epochs (4 + 2).
@@ -314,9 +316,9 @@ class ResidentEpochScheduler(Scheduler):
                     sequence_length=position + 1,
                     eos_token_id=int(params.eos_token_id),
                     scheduler_block_ids=flat_block_ids,
-                    device_block_ids=(
-                        row * config.blocks_per_request,
-                        row * config.blocks_per_request + 1,
+                    device_block_ids=tuple(
+                        row * config.blocks_per_request + local_block
+                        for local_block in range(config.blocks_per_request)
                     ),
                     state_owner=(
                         "device"
@@ -339,6 +341,7 @@ class ResidentEpochScheduler(Scheduler):
             logical_capacity=config.logical_capacity,
             requests=tuple(request_plans),
             active_mask=tuple(active_mask),
+            graph_variant=0x10 if config.fixed_epoch_graph else 0,
         )
         plan.validate()
         return plan, None

@@ -110,6 +110,76 @@ def test_short_device_result_requires_eos():
     result.validate_against(plan, {"r0": [3, 9]})
 
 
+def test_fixed_k_graph_accepts_one_model_call_for_a_multi_token_epoch():
+    base = make_plan()
+    fixed_request = ResidentEpochRequest(
+        req_id=base.requests[0].req_id,
+        row=base.requests[0].row,
+        generation=base.requests[0].generation,
+        token_id=base.requests[0].token_id,
+        position=base.requests[0].position,
+        sequence_length=base.requests[0].sequence_length,
+        eos_token_id=base.requests[0].eos_token_id,
+        scheduler_block_ids=base.requests[0].scheduler_block_ids,
+        device_block_ids=(0,),
+    )
+    plan = ResidentEpochPlan(
+        version=base.version,
+        graph_batch_size=base.graph_batch_size,
+        max_steps=4,
+        logical_capacity=base.logical_capacity,
+        requests=(fixed_request,),
+        active_mask=base.active_mask,
+        graph_variant=0x10,
+    )
+    result = ResidentEpochResult(
+        version=CONTRACT_VERSION,
+        route="device",
+        status=0,
+        model_calls=1,
+        computed_steps={"r0": 4},
+        row_generations=plan.row_generations,
+    )
+    result.validate_against(plan, {"r0": [3, 4, 5, 6]})
+
+    invalid = ResidentEpochResult(
+        version=CONTRACT_VERSION,
+        route="device",
+        status=0,
+        model_calls=2,
+        computed_steps={"r0": 4},
+        row_generations=plan.row_generations,
+    )
+    with pytest.raises(ValueError, match="model-call count"):
+        invalid.validate_against(plan, {"r0": [3, 4, 5, 6]})
+
+
+def test_fixed_k_graph_rejects_more_than_six_steps():
+    base = make_plan()
+    fixed_request = ResidentEpochRequest(
+        req_id=base.requests[0].req_id,
+        row=base.requests[0].row,
+        generation=base.requests[0].generation,
+        token_id=base.requests[0].token_id,
+        position=base.requests[0].position,
+        sequence_length=base.requests[0].sequence_length,
+        eos_token_id=base.requests[0].eos_token_id,
+        scheduler_block_ids=base.requests[0].scheduler_block_ids,
+        device_block_ids=(0,),
+    )
+    plan = ResidentEpochPlan(
+        version=base.version,
+        graph_batch_size=base.graph_batch_size,
+        max_steps=7,
+        logical_capacity=8,
+        requests=(fixed_request,),
+        active_mask=base.active_mask,
+        graph_variant=0x10,
+    )
+    with pytest.raises(ValueError, match="at most six"):
+        plan.validate()
+
+
 def test_host_fallback_keeps_one_step_accounting():
     plan = make_plan()
     result = ResidentEpochResult(

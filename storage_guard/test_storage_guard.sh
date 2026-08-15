@@ -57,6 +57,24 @@ export STORAGE_GUARD_PROJECT_AUDIT_INTERVAL_SECONDS=2
 export STORAGE_GUARD_NPU_STABLE_SAMPLES=1
 export STORAGE_GUARD_MAX_IDLE_HBM_PERCENT=5
 
+mkdir "${persistent}/allowed-large"
+if storage_guard_large_dir_allowed "${persistent}/allowed-large"; then
+  exit 102
+fi
+export STORAGE_GUARD_ENABLE_LARGE_ALLOWLIST=1
+expires_epoch=$(($(date +%s) + 3600))
+{
+  printf 'format\tstorage-guard-large-retention-v1\n'
+  printf 'expires_epoch\t%s\n' "${expires_epoch}"
+  printf 'reason\ttest-only temporary artifact\n'
+} >"${persistent}/allowed-large/.storage-guard-large-retention.tsv"
+storage_guard_large_dir_allowed "${persistent}/allowed-large" || exit 104
+sed -i 's/^expires_epoch.*/expires_epoch\t1/' \
+  "${persistent}/allowed-large/.storage-guard-large-retention.tsv"
+if storage_guard_large_dir_allowed "${persistent}/allowed-large"; then exit 105; fi
+rm -rf -- "${persistent}/allowed-large"
+unset STORAGE_GUARD_ENABLE_LARGE_ALLOWLIST
+
 printf 'small-log\n' |
   python3 "${guard_dir}/bounded_log.py" \
     --output "${test_root}/small.log" \

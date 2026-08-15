@@ -1,4 +1,5 @@
 #include <cerrno>
+#include <cstdlib>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -8,6 +9,8 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+
+#include <acl/acl_prof.h>
 
 #ifdef CRUISE_RESIDENT_DEVICE_TRANSFER_PLUGIN
 #include <dlfcn.h>
@@ -24,6 +27,8 @@ constexpr uint16_t kExecute = 1;
 constexpr uint16_t kWarmUp = 2;
 constexpr uint16_t kShutdown = 3;
 constexpr uint16_t kDeviceIpcExecute = 5;
+constexpr uint16_t kStartProfiling = 6;
+constexpr uint16_t kStopProfiling = 7;
 constexpr int32_t kBatchSize = 4;
 constexpr int32_t kMaxEpochSteps = 8;
 
@@ -70,6 +75,97 @@ static_assert(sizeof(Response) == CRUISE_SIDECAR_RESPONSE_BYTES,
 static_assert(sizeof(ResidentEpochIpcMetadata) ==
                   CRUISE_RESIDENT_IPC_METADATA_BYTES,
               "resident Device IPC metadata ABI changed");
+
+bool RebindDynamicProfiling() {
+  const char *enabled =
+      std::getenv("VLLM_ASCEND_RESIDENT_EPOCH_DYNAMIC_PROFILING");
+  const char *mode = std::getenv("PROFILING_MODE");
+  if ((enabled == nullptr || std::strcmp(enabled, "1") != 0) &&
+      (mode == nullptr || std::strcmp(mode, "dynamic") != 0)) {
+    return true;
+  }
+
+  char pid_text[32] = {};
+  std::snprintf(pid_text, sizeof(pid_text), "%ld", static_cast<long>(getpid()));
+  if (setenv("PROFILING_MODE", "dynamic", 1) != 0 ||
+      setenv("DYNAMIC_PROFILING_KEY_PID", pid_text, 1) != 0) {
+    return false;
+  }
+
+  const char *temporary_directory = std::getenv("TMPDIR");
+  if (temporary_directory == nullptr || temporary_directory[0] == '\0') {
+    return true;
+  }
+  std::string binding_path =
+      std::string(temporary_directory) + "/dynamic-profiling-binding-" +
+      pid_text + ".tsv";
+  std::FILE *binding = std::fopen(binding_path.c_str(), "w");
+  if (binding == nullptr) return false;
+  const int written = std::fprintf(
+      binding,
+      "key\tvalue\nprofiling_mode\tdynamic\ndynamic_profiling_key_pid\t%s\n",
+      pid_text);
+  return std::fclose(binding) == 0 && written > 0;
+}
+
+struct PostWarmupProfiler {
+  aclprofConfig *config = nullptr;
+  bool initialized = false;
+};
+
+int32_t StartPostWarmupProfiler(PostWarmupProfiler *profiler) {
+  if (profiler == nullptr || profiler->initialized || profiler->config != nullptr) {
+    return 75;
+  }
+  const char *output =
+      std::getenv("VLLM_ASCEND_RESIDENT_EPOCH_PROFILE_OUTPUT");
+  if (output == nullptr || std::strncmp(output, "/dev/shm/", 9) != 0) {
+    return 76;
+  }
+  const aclError init_status = aclprofInit(output, std::strlen(output));
+  if (init_status != ACL_SUCCESS) {
+    std::fprintf(stderr, "resident profiler init failed: %d\n", init_status);
+    return 77;
+  }
+  profiler->initialized = true;
+  uint32_t device_id = 0;
+  profiler->config = aclprofCreateConfig(
+      &device_id, 1, ACL_AICORE_NONE, nullptr, ACL_PROF_TASK_TIME_L0);
+  if (profiler->config == nullptr) {
+    aclprofFinalize();
+    profiler->initialized = false;
+    return 78;
+  }
+  const aclError start_status = aclprofStart(profiler->config);
+  if (start_status != ACL_SUCCESS) {
+    std::fprintf(stderr, "resident profiler start failed: %d\n", start_status);
+    aclprofDestroyConfig(profiler->config);
+    profiler->config = nullptr;
+    aclprofFinalize();
+    profiler->initialized = false;
+    return 79;
+  }
+  return 0;
+}
+
+int32_t StopPostWarmupProfiler(PostWarmupProfiler *profiler) {
+  if (profiler == nullptr || !profiler->initialized || profiler->config == nullptr) {
+    return 80;
+  }
+  const aclError stop_status = aclprofStop(profiler->config);
+  const aclError destroy_status = aclprofDestroyConfig(profiler->config);
+  profiler->config = nullptr;
+  const aclError finalize_status = aclprofFinalize();
+  profiler->initialized = false;
+  if (stop_status != ACL_SUCCESS || destroy_status != ACL_SUCCESS ||
+      finalize_status != ACL_SUCCESS) {
+    std::fprintf(stderr,
+                 "resident profiler stop failed: stop=%d destroy=%d finalize=%d\n",
+                 stop_status, destroy_status, finalize_status);
+    return 81;
+  }
+  return 0;
+}
 
 bool ReadAll(int fd, void *buffer, size_t bytes) {
   auto *cursor = static_cast<uint8_t *>(buffer);
@@ -183,6 +279,7 @@ int main(int argc, char **argv) {
                  argv[0]);
     return 64;
   }
+  if (!RebindDynamicProfiling()) return 74;
   const char *socket_path = argv[1];
   const int listener = CreateListener(socket_path);
   if (listener < 0) return 65;
@@ -226,6 +323,7 @@ int main(int argc, char **argv) {
   }
 
   int exit_status = 0;
+  PostWarmupProfiler profiler;
   while (true) {
     Request request{};
     if (!ReadAll(client, &request, sizeof(request))) {
@@ -239,8 +337,21 @@ int main(int argc, char **argv) {
         request.version != kProtocolVersion) {
       response.transport_status = 69;
     } else if (request.operation == kShutdown) {
+      if (profiler.initialized) StopPostWarmupProfiler(&profiler);
       if (!WriteAll(client, &response, sizeof(response))) exit_status = 70;
       break;
+    } else if (request.operation == kStartProfiling) {
+      response.transport_status = StartPostWarmupProfiler(&profiler);
+      response.device_status = response.transport_status == 0 ? 0 : -1;
+      response.commit_state = response.transport_status == 0
+                                  ? CRUISE_EPOCH_COMMITTED
+                                  : CRUISE_EPOCH_PREPARED;
+    } else if (request.operation == kStopProfiling) {
+      response.transport_status = StopPostWarmupProfiler(&profiler);
+      response.device_status = response.transport_status == 0 ? 0 : -1;
+      response.commit_state = response.transport_status == 0
+                                  ? CRUISE_EPOCH_COMMITTED
+                                  : CRUISE_EPOCH_EXECUTING;
     } else if (request.operation != kExecute &&
                request.operation != kWarmUp &&
                request.operation != kDeviceIpcExecute) {
@@ -273,6 +384,8 @@ int main(int argc, char **argv) {
       break;
     }
   }
+
+  if (profiler.initialized) StopPostWarmupProfiler(&profiler);
 
 #ifdef CRUISE_RESIDENT_DEVICE_TRANSFER_PLUGIN
   resident_epoch_destroy(engine);

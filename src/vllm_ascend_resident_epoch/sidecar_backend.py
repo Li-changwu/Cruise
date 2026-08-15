@@ -26,6 +26,8 @@ EXECUTE = 1
 WARM_UP = 2
 SHUTDOWN = 3
 DEVICE_IPC_EXECUTE = 5
+START_PROFILING = 6
+STOP_PROFILING = 7
 GRAPH_BATCH_SIZE = 4
 MAX_EPOCH_STEPS = 8
 WARMUP_GENERATION = 2**31 - 1
@@ -271,6 +273,32 @@ class SidecarDataFlowEngine:
 
     def execute(self, plan: ResidentEpochPlan) -> NativeEpochOutput:
         return self._execute(plan, operation=EXECUTE, transfer_id=0)
+
+    def start_profiling(self) -> None:
+        self._profiling_control(START_PROFILING, "start")
+
+    def stop_profiling(self) -> None:
+        self._profiling_control(STOP_PROFILING, "stop")
+
+    def _profiling_control(self, operation: int, action: str) -> None:
+        if self.socket is None:
+            raise RuntimeError("resident epoch sidecar is closed")
+        self.socket.sendall(
+            REQUEST.pack(
+                REQUEST_MAGIC,
+                PROTOCOL_VERSION,
+                operation,
+                0,
+                0,
+                0,
+                *([0] * 20),
+            )
+        )
+        values = self._receive_response()
+        if values[1] != 0:
+            raise RuntimeError(
+                f"resident epoch sidecar profiler {action} failed: {values[1]}"
+            )
 
     def execute_with_device_transfer(
         self, plan: ResidentEpochPlan, transfer: DeviceKVTransfer

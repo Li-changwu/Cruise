@@ -20,16 +20,29 @@ profile_attribution=${CRUISE_M4A_PROFILE_ATTRIBUTION:-0}
 profile_routes=${CRUISE_M4A_PROFILE_ROUTES:-eager,graph,cruise}
 profile_cruise_host_eager=${CRUISE_M4A_PROFILE_CRUISE_HOST_EAGER:-0}
 epoch_steps=${CRUISE_M4A_EPOCH_STEPS:-6}
+epoch_graph=${CRUISE_M4B_EPOCH_GRAPH:-0}
+epoch_air=${CRUISE_M4B_EPOCH_AIR:-}
+epoch_external_weights=${CRUISE_M4B_EPOCH_EXTERNAL_WEIGHTS:-}
 
 model=${artifacts}/model-frozen
 export CRUISE_API_TOKENIZER=${CRUISE_API_TOKENIZER:-${model}}
 frozen=${artifacts}/frozen
 frozen_air=${frozen}/qwen_b4_decoder_step_attempt69c_r2.air
 tiling=${frozen}/explicit_tiling.bin
+graph_config=${source_dir}/config/graph_config.json
+if [[ "${epoch_graph}" == 1 ]]; then
+  [[ -n "${epoch_air}" && -n "${epoch_external_weights}" ]] || {
+    printf 'K=6 requires CRUISE_M4B_EPOCH_AIR and CRUISE_M4B_EPOCH_EXTERNAL_WEIGHTS\n' >&2
+    exit 96
+  }
+  frozen_air=${epoch_air}
+  graph_config=${source_dir}/config/graph_config_epoch_k6.json
+fi
 old_weight_prefix=${CRUISE_OLD_WEIGHT_PREFIX:-/root/ascend-control-g4-20260723/export-attempt69c-b4}
 workload=${CRUISE_M4A_WORKLOAD:-${source_dir}/experiments/m4a_performance/workload.json}
 generation_config=${source_dir}/experiments/m4a_performance/generation_config/generation_config.json
 runner=${source_dir}/experiments/m4a_performance/run_benchmark.py
+sidecar_profiler=${source_dir}/experiments/m4a_performance/profile_sidecar.py
 verifier=${source_dir}/experiments/m4a_performance/verify_results.py
 profile_analyzer=${source_dir}/experiments/m4a_performance/analyze_profiles.py
 
@@ -41,6 +54,9 @@ runtime_weight_digest=2ec95bf8e78cfaf091782b3c531b19b9cced35dcfab0e418c756e25abe
 runtime_weights=${runtime_asset_root}/runtime-weights/${runtime_weight_digest}
 runtime_weights_manifest=${runtime_asset_root}/manifests/${runtime_weight_digest}.json
 runtime_air=${scratch}/qwen_b4_decoder_step_${run_id}.air
+if [[ "${epoch_graph}" == 1 ]]; then
+  runtime_air=${frozen_air}
+fi
 external_weights=${scratch}/external-weights
 driver_cache=${scratch}/driver-cache
 driver_cann_logs=${scratch}/driver-cann-logs
@@ -58,6 +74,7 @@ guard=${source_dir}/storage_guard/storage_guard.sh
 required=(
   "${guard}"
   "${runner}"
+  "${sidecar_profiler}"
   "${verifier}"
   "${profile_analyzer}"
   "${workload}"
@@ -69,6 +86,7 @@ required=(
   "${source_dir}/native/CMakeLists.txt"
   "${source_dir}/controller/CMakeLists.txt"
   "${source_dir}/controller/g4c_b4_resident_epoch.cpp"
+  "${graph_config}"
   "${resource_config_template}"
   "${frozen_air}"
   "${tiling}"
@@ -85,6 +103,20 @@ done
 [[ -f "${conda_sh}" && -f "${cann_set_env}" ]] || exit 96
 [[ -d "${runtime_weights}" ]] || exit 96
 [[ "${profile_attribution}" == 0 || "${profile_attribution}" == 1 ]] || exit 96
+[[ "${epoch_graph}" == 0 || "${epoch_graph}" == 1 ]] || {
+  printf 'CRUISE_M4B_EPOCH_GRAPH must be 0 or 1\n' >&2
+  exit 96
+}
+if [[ "${epoch_graph}" == 1 ]]; then
+  [[ -d "${epoch_external_weights}" ]] || {
+    printf 'CRUISE_M4B_EPOCH_EXTERNAL_WEIGHTS must name an existing directory\n' >&2
+    exit 96
+  }
+  [[ $(stat -c '%d' "${epoch_external_weights}") == $(stat -c '%d' /dev/shm) ]] || {
+    printf 'K=6 external weights must be on /dev/shm for per-run hard links\n' >&2
+    exit 96
+  }
+fi
 [[ "${profile_cruise_host_eager}" == 0 || \
    "${profile_cruise_host_eager}" == 1 ]] || exit 96
 if [[ "${profile_cruise_host_eager}" == 1 && "${profile_attribution}" != 1 ]]; then
@@ -141,13 +173,16 @@ mkdir -p "${build}" "${controller}" "${config_dir}" \
   "${external_weights}" "${driver_cache}" "${driver_cann_logs}" \
   "${driver_tmp}" "${runtime_workdir}" "${deploy_root}" "${runs}"
 mkdir -p "${profile_root}"
-for path in "${build}" "${controller}" "${config_dir}" "${runtime_air}" \
+for path in "${build}" "${controller}" "${config_dir}" \
   "${external_weights}" "${driver_cache}" "${driver_cann_logs}" \
   "${driver_tmp}" "${runtime_workdir}" "${deploy_root}" "${runs}" \
   "${profile_root}" \
   "${resource_config}"; do
   storage_guard_assert_scratch_path "${path}"
 done
+if [[ "${epoch_graph}" == 0 ]]; then
+  storage_guard_assert_scratch_path "${runtime_air}"
+fi
 
 run_step() {
   local name=$1 timeout_value=$2
@@ -200,7 +235,7 @@ export VLLM_ASCEND_RESIDENT_EPOCH_CHILD_LIBRARY_PATH=${materialize_opp}/op_api/l
 export PYTHONPATH=${source_dir}/src:${source_dir}:${vllm_root}:${vllm_ascend_root}:${PYTHONPATH:-}
 export VLLM_ASCEND_RESIDENT_EPOCH_BACKEND_FACTORY=vllm_ascend_resident_epoch.sidecar_backend:create_sidecar_engine
 export VLLM_ASCEND_RESIDENT_EPOCH_AIR=${runtime_air}
-export VLLM_ASCEND_RESIDENT_EPOCH_GRAPH_CONFIG=${source_dir}/config/graph_config.json
+export VLLM_ASCEND_RESIDENT_EPOCH_GRAPH_CONFIG=${graph_config}
 export VLLM_ASCEND_RESIDENT_EPOCH_FUNC_CONFIG=${runtime_func_config}
 export VLLM_ASCEND_RESIDENT_EPOCH_TILING=${tiling}
 export VLLM_ASCEND_RESIDENT_EPOCH_EXTERNAL_WEIGHTS=${external_weights}
@@ -210,6 +245,11 @@ export VLLM_ASCEND_RESIDENT_EPOCH_STARTUP_TIMEOUT=3600
 export VLLM_ASCEND_RESIDENT_EPOCH_STEPS=${epoch_steps}
 export VLLM_ASCEND_RESIDENT_EPOCH_CAPACITY=8
 export CRUISE_VLLM_KV_CACHE_BYTES=${vllm_kv_cache_bytes}
+if [[ "${epoch_graph}" == 1 ]]; then
+  export VLLM_ASCEND_RESIDENT_EPOCH_K6=1
+else
+  unset VLLM_ASCEND_RESIDENT_EPOCH_K6
+fi
 
 printf 'case\texit_status\n' >"${status}"
 git -C "${source_dir}" rev-parse HEAD >"${evidence}/source-commit.txt"
@@ -243,12 +283,16 @@ run_step prepare-resource-config 120s python3 \
   printf 'profile_routes\t%s\n' "${profile_routes}"
   printf 'profile_cruise_host_eager\t%s\n' "${profile_cruise_host_eager}"
   printf 'resident_epoch_steps\t%s\n' "${epoch_steps}"
+  printf 'resident_epoch_k6_graph\t%s\n' "${epoch_graph}"
+  printf 'resident_epoch_air\t%s\n' "${runtime_air}"
+  printf 'resident_epoch_external_weights\t%s\n' \
+    "$([[ "${epoch_graph}" == 1 ]] && printf '%s' "${epoch_external_weights}" || printf generated)"
   printf 'max_idle_hbm_percent\t%s\n' "${STORAGE_GUARD_MAX_IDLE_HBM_PERCENT}"
   printf 'formal_m2\topen\n'
   printf 'formal_m3\topen\n'
   printf 'formal_m4\topen\n'
 } >"${evidence}/deployment-config.tsv"
-sha256sum "${workload}" "${generation_config}" "${frozen_air}" "${tiling}" "${resource_config}" \
+sha256sum "${workload}" "${generation_config}" "${frozen_air}" "${tiling}" "${graph_config}" "${resource_config}" \
   "${runtime_weights_manifest}" >"${evidence}/input-integrity.log"
 git -C "${vllm_root}" rev-parse HEAD >"${evidence}/vllm-commit.txt"
 git -C "${vllm_ascend_root}" rev-parse HEAD \
@@ -266,22 +310,30 @@ run_step prepare-runtime-config 120s python3 \
   --output "${runtime_func_config}"
 run_step cmake 600s cmake -S "${source_dir}/native" -B "${build}"
 run_step build 1800s cmake --build "${build}" --parallel 2
-run_step verify-runtime-weights 3600s python3 \
-  "${source_dir}/materialize_runtime_weights.py" \
-  --model-dir "${model}" \
-  --output-dir "${runtime_weights}" \
-  --manifest "${runtime_weights_manifest}" \
-  --persistent-asset-root "${runtime_asset_root}"
-cp "${runtime_weights_manifest}" "${evidence}/runtime-weights-manifest.json"
-run_step relocate-runtime-air 600s "${build}/relocate_air_paths" \
-  "${frozen_air}" "${runtime_air}" "${old_weight_prefix}" \
-  "${runtime_weights}" "${evidence}/air-relocation.json"
+if [[ "${epoch_graph}" == 0 ]]; then
+  run_step verify-runtime-weights 3600s python3 \
+    "${source_dir}/materialize_runtime_weights.py" \
+    --model-dir "${model}" \
+    --output-dir "${runtime_weights}" \
+    --manifest "${runtime_weights_manifest}" \
+    --persistent-asset-root "${runtime_asset_root}"
+  cp "${runtime_weights_manifest}" "${evidence}/runtime-weights-manifest.json"
+  run_step relocate-runtime-air 600s "${build}/relocate_air_paths" \
+    "${frozen_air}" "${runtime_air}" "${old_weight_prefix}" \
+    "${runtime_weights}" "${evidence}/air-relocation.json"
+fi
 
 cd "${runtime_workdir}"
 
-# CANN dynamic profiling must be initialized by each EngineCore before it
-# constructs the model executor. The launcher is re-executed after spawn and
-# rebinds its key to the EngineCore PID, not the API server PID it inherited.
+prepare_graph_external_weights() {
+  find "${external_weights}" -depth -mindepth 1 -delete
+  if [[ "${epoch_graph}" == 1 ]]; then
+    cp -al "${epoch_external_weights}/." "${external_weights}/"
+  fi
+}
+
+# CANN dynamic profiling must be initialized by the process that owns the NPU.
+# EngineCore rebinds after spawn; resident_epoch_server rebinds before GE init.
 if [[ "${profile_attribution}" == 1 ]]; then
   export VLLM_ASCEND_RESIDENT_EPOCH_DYNAMIC_PROFILING=1
 else
@@ -374,19 +426,40 @@ run_profile_route() {
 
   wait_npu_ready "pre-profile-${mode}"
   if [[ "${mode}" == cruise ]]; then
-    find "${external_weights}" -depth -mindepth 1 -delete
+    prepare_graph_external_weights
     target_pattern=${build}/resident_epoch_server
   else
     target_pattern='VLLM::EngineCore'
   fi
-  timeout --signal=TERM --kill-after=30s 7200s python3 "${runner}" \
-    --mode "${mode}" --run-label "${mode}-profile" --model "${model}" \
-    --workload "${workload}" --runtime-dir "${runtime}" \
-    --only-scenario decode-stream-c4 \
-    --profile-ready-file "${ready}" --profile-start-file "${start}" \
-    --profile-workload-done-file "${workload_done}" \
-    --profile-release-file "${release}" \
-    --output "${result}" >"${benchmark_stdout}" 2>&1 &
+  if [[ "${mode}" == cruise ]]; then
+    mkdir -p "${runtime}/cache" "${runtime}/cann-logs" "${runtime}/tmp" \
+      "${profile_root}/${mode}"
+    timeout --signal=TERM --kill-after=30s 7200s env \
+      -u VLLM_ASCEND_RESIDENT_EPOCH_DYNAMIC_PROFILING \
+      -u PROFILING_MODE -u DYNAMIC_PROFILING_KEY_PID \
+      ASCEND_CACHE_PATH="${runtime}/cache" \
+      ASCEND_PROCESS_LOG_PATH="${runtime}/cann-logs" \
+      TORCHINDUCTOR_CACHE_DIR="${runtime}/cache/torchinductor" \
+      TRITON_CACHE_DIR="${runtime}/cache/triton" \
+      XDG_CACHE_HOME="${runtime}/cache/xdg" TMPDIR="${runtime}/tmp" \
+      VLLM_ASCEND_RESIDENT_EPOCH_SOCKET="${runtime}/control.sock" \
+      VLLM_ASCEND_RESIDENT_EPOCH_PROFILE_OUTPUT="${profile_root}/${mode}" \
+      python3 "${sidecar_profiler}" --runtime-dir "${runtime}" \
+      --epochs 32 --steps "${epoch_steps}" \
+      --profile-ready-file "${ready}" --profile-start-file "${start}" \
+      --profile-workload-done-file "${workload_done}" \
+      --profile-release-file "${release}" --output "${result}" \
+      >"${benchmark_stdout}" 2>&1 &
+  else
+    timeout --signal=TERM --kill-after=30s 7200s python3 "${runner}" \
+      --mode "${mode}" --run-label "${mode}-profile" --model "${model}" \
+      --workload "${workload}" --runtime-dir "${runtime}" \
+      --only-scenario decode-stream-c4 \
+      --profile-ready-file "${ready}" --profile-start-file "${start}" \
+      --profile-workload-done-file "${workload_done}" \
+      --profile-release-file "${release}" \
+      --output "${result}" >"${benchmark_stdout}" 2>&1 &
+  fi
   benchmark_pid=$!
 
   for _ in $(seq 1 2400); do
@@ -416,6 +489,87 @@ run_profile_route() {
   printf '%s\n' "${api_pid}" >"${evidence}/profile-${mode}-target-pid.txt"
   printf '%s\n' "${target_pid}" \
     >"${evidence}/profile-${mode}-device-process-pid.txt"
+  if [[ "${mode}" == cruise ]]; then
+    printf '%s\n' 'post-warmup-in-process-task-time-l0' \
+      >"${evidence}/profile-${mode}-profiler-mode.txt"
+    if ! tr '\0' '\n' <"/proc/${target_pid}/environ" \
+        >"${evidence}/profile-${mode}-target-environ.txt"; then
+      environment_status=126
+    elif grep -Fxq 'PROFILING_MODE=dynamic' \
+        "${evidence}/profile-${mode}-target-environ.txt"; then
+      environment_status=126
+    elif ! grep -Fxq \
+        "VLLM_ASCEND_RESIDENT_EPOCH_PROFILE_OUTPUT=${profile_root}/${mode}" \
+        "${evidence}/profile-${mode}-target-environ.txt"; then
+      environment_status=126
+    elif [[ $(jq -er '.sidecar_pid' "${ready}") != "${target_pid}" ]]; then
+      environment_status=126
+    fi
+    dynamic_socket=$(find_dynamic_profile_socket "${target_pid}")
+    if [[ -n "${dynamic_socket}" ]]; then
+      socket_status=126
+    fi
+    if [[ ${environment_status} -ne 0 || ${socket_status} -ne 0 ]]; then
+      : >"${start}"
+      : >"${release}"
+      if wait "${benchmark_pid}"; then benchmark_status=0; else benchmark_status=$?; fi
+      retain_bounded_log "${benchmark_stdout}" "profile-${mode}-benchmark"
+      printf 'profile-%s-dynamic-env\t%s\n' "${mode}" "${environment_status}" >>"${status}"
+      printf 'profile-%s-dynamic-socket\t%s\n' "${mode}" "${socket_status}" >>"${status}"
+      printf 'profile-%s-benchmark\t%s\n' "${mode}" "${benchmark_status}" >>"${status}"
+      return 126
+    fi
+
+    : >"${start}"
+    if ! wait_for_profile_barrier "${workload_done}" "${benchmark_pid}"; then
+      workload_status=124
+    elif ! jq -e '.pass == true' "${workload_done}" >/dev/null; then
+      workload_status=126
+    fi
+    if ! jq -e '.profiler_started == true' "${workload_done}" >/dev/null; then
+      start_status=126
+    fi
+    if ! jq -e '.profiler_stopped == true' "${workload_done}" >/dev/null; then
+      stop_status=126
+    fi
+    if [[ ${start_status} -ne 0 || ${stop_status} -ne 0 ]]; then
+      profiler_status=126
+    fi
+    : >"${release}"
+    if wait "${benchmark_pid}"; then benchmark_status=0; else benchmark_status=$?; fi
+    if ! find "${profile_root}/${mode}" -maxdepth 1 -type d \
+        -name 'PROF_*' -print -quit | grep -q .; then
+      profiler_status=126
+    fi
+    printf '%s\n' \
+      'post-warmup in-process ACL profiler controlled by Cruise harness' \
+      >"${msprof_stdout}"
+    if timeout --signal=TERM --kill-after=30s 300s msprof \
+        --export=on --type=db --output="${profile_root}/${mode}" \
+        >"${export_stdout}" 2>&1; then
+      export_status=0
+    else
+      export_status=$?
+    fi
+    retain_bounded_log "${benchmark_stdout}" "profile-${mode}-benchmark"
+    retain_bounded_log "${msprof_stdout}" "profile-${mode}-msprof"
+    retain_bounded_log "${export_stdout}" "profile-${mode}-export"
+    printf 'profile-%s-benchmark\t%s\n' "${mode}" "${benchmark_status}" >>"${status}"
+    printf 'profile-%s-dynamic-env\t%s\n' "${mode}" "${environment_status}" >>"${status}"
+    printf 'profile-%s-dynamic-socket\t%s\n' "${mode}" "${socket_status}" >>"${status}"
+    printf 'profile-%s-workload\t%s\n' "${mode}" "${workload_status}" >>"${status}"
+    printf 'profile-%s-start\t%s\n' "${mode}" "${start_status}" >>"${status}"
+    printf 'profile-%s-stop\t%s\n' "${mode}" "${stop_status}" >>"${status}"
+    printf 'profile-%s-quit\t%s\n' "${mode}" "${quit_status}" >>"${status}"
+    printf 'profile-%s-msprof\t%s\n' "${mode}" "${profiler_status}" >>"${status}"
+    printf 'profile-%s-export\t%s\n' "${mode}" "${export_status}" >>"${status}"
+    [[ ${benchmark_status} -eq 0 && ${environment_status} -eq 0 && \
+       ${socket_status} -eq 0 && ${workload_status} -eq 0 && \
+       ${start_status} -eq 0 && ${stop_status} -eq 0 && \
+       ${quit_status} -eq 0 && ${profiler_status} -eq 0 && \
+       ${export_status} -eq 0 ]]
+    return
+  fi
   if ! tr '\0' '\n' <"/proc/${target_pid}/environ" \
       >"${evidence}/profile-${mode}-target-environ.txt"; then
     environment_status=126
@@ -551,8 +705,7 @@ for label in "${order[@]}"; do
   mode=${label%%-*}
   wait_npu_ready "pre-${label}"
   if [[ "${mode}" == cruise ]]; then
-    storage_guard_assert_scratch_path "${external_weights}"
-    find "${external_weights}" -depth -mindepth 1 -delete
+    prepare_graph_external_weights
   fi
   result=${evidence}/${label}.json
   run_step "benchmark-${label}" 7200s python3 "${runner}" \

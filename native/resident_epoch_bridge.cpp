@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -24,10 +25,13 @@ namespace {
 constexpr int32_t kBatchSize = 4;
 constexpr int32_t kMaxEpochSteps = 8;
 constexpr int32_t kLogicalCapacity = 8;
-constexpr int32_t kBlocksPerRequest = 2;
+constexpr int32_t kLegacyBlocksPerRequest = 2;
+constexpr int32_t kFixedEpochBlocksPerRequest = 1;
 constexpr int32_t kBlockSize = 128;
 constexpr int32_t kVocabSize = 152064;
 constexpr int32_t kConfiguredEos = 151645;
+constexpr int32_t kFixedEpochGraphVariant = 0x10;
+constexpr int32_t kDirectDeviceImportGraphFlag = 0x200;
 constexpr int32_t kControlInputElements = 1 + kBatchSize + 2 + kBatchSize;
 constexpr int32_t kControlOutputElements = 6 + 4 * kBatchSize + 2 + kBatchSize;
 constexpr int32_t kControlExecutedOffset = 6 + 2 * kBatchSize;
@@ -246,6 +250,18 @@ bool ValidateIpcMetadata(const ResidentEpochIpcMetadata *metadata,
                             CRUISE_RESIDENT_KV_BLOCK_BYTES;
 }
 
+uint32_t IpcMetadataFingerprint(const ResidentEpochIpcMetadata &metadata) {
+  constexpr uint32_t kOffsetBasis = 2166136261U;
+  constexpr uint32_t kPrime = 16777619U;
+  uint32_t value = kOffsetBasis;
+  const auto *bytes = reinterpret_cast<const uint8_t *>(&metadata);
+  for (size_t index = 0; index < sizeof(metadata); ++index) {
+    value ^= bytes[index];
+    value *= kPrime;
+  }
+  return value == 0 ? 1 : value;
+}
+
 ge::Tensor MakeTensor(std::vector<uint8_t> &data,
                       const std::vector<int64_t> &shape,
                       ge::DataType dtype) {
@@ -284,6 +300,11 @@ int64_t ProcessCpuUs() {
   if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &value) != 0) return -1;
   return static_cast<int64_t>(value.tv_sec) * 1000000LL +
          static_cast<int64_t>(value.tv_nsec) / 1000LL;
+}
+
+bool FixedEpochGraphEnabled() {
+  const char *value = std::getenv("VLLM_ASCEND_RESIDENT_EPOCH_K6");
+  return value != nullptr && std::strcmp(value, "1") == 0;
 }
 
 bool ReplaceLogitsWithDeviceGreedyTokens(ge::Graph &graph) {
@@ -331,6 +352,7 @@ bool ReplaceLogitsWithDeviceGreedyTokens(ge::Graph &graph) {
 ge::dflow::FlowGraph BuildDeviceFlow(const std::string &air_path,
                                      const std::string &graph_config,
                                      const std::string &func_config) {
+  const bool fixed_epoch_graph = FixedEpochGraphEnabled();
   auto data0 = ge::dflow::FlowData("input0", 0);
   auto data1 = ge::dflow::FlowData("input1", 1);
   auto data2 = ge::dflow::FlowData("input2", 2);
@@ -340,13 +362,14 @@ ge::dflow::FlowGraph BuildDeviceFlow(const std::string &air_path,
   auto data6 = ge::dflow::FlowData("input6", 6);
   auto control = ge::dflow::FlowData("control", 7);
   auto graph_pp = ge::dflow::GraphPp(
-      "attempt69e_b4_decoder_graph_pp", [air_path]() {
+      "attempt69e_b4_decoder_graph_pp", [air_path, fixed_epoch_graph]() {
         ge::Graph graph("Attempt69eB4InvokedDecoder");
         const auto status = graph.LoadFromFile(air_path.c_str());
         std::cout << "ATTEMPT71_AIR_LOAD status=" << status
                   << " valid=" << graph.IsValid() << std::endl;
         if (status != ge::GRAPH_SUCCESS || !graph.IsValid() ||
-            !ReplaceLogitsWithDeviceGreedyTokens(graph)) {
+            (!fixed_epoch_graph &&
+             !ReplaceLogitsWithDeviceGreedyTokens(graph))) {
           std::cerr << "resident epoch failed to install Device greedy "
                        "sampling output"
                     << std::endl;
@@ -377,12 +400,13 @@ ge::dflow::FlowGraph BuildDeviceFlow(const std::string &air_path,
   return flow_graph;
 }
 
-int32_t ComputeSlot(int32_t row, int64_t position) {
+int32_t ComputeSlot(int32_t row, int64_t position,
+                    int32_t blocks_per_request) {
   if (row < 0 || row >= kBatchSize || position < 0 ||
       position >= kLogicalCapacity) {
     return -1;
   }
-  const int32_t physical_block = row * kBlocksPerRequest;
+  const int32_t physical_block = row * blocks_per_request;
   return physical_block * kBlockSize + static_cast<int32_t>(position);
 }
 }  // namespace
@@ -474,8 +498,12 @@ extern "C" int32_t resident_epoch_execute(
   *output_commit_state = CRUISE_EPOCH_PREPARED;
   const bool direct_device_import = ipc_metadata != nullptr;
   const bool importing = direct_device_import;
+  const bool fixed_epoch_graph = FixedEpochGraphEnabled();
+  const int32_t blocks_per_request =
+      fixed_epoch_graph ? kFixedEpochBlocksPerRequest : kLegacyBlocksPerRequest;
   if (opaque == nullptr || request_count < 1 || request_count > kBatchSize ||
       max_steps < 1 || max_steps > kMaxEpochSteps ||
+      (fixed_epoch_graph && max_steps > 6) ||
       input_token_ids == nullptr || input_positions == nullptr ||
       input_sequence_lengths == nullptr || input_eos_token_ids == nullptr ||
       input_row_generations == nullptr ||
@@ -496,12 +524,14 @@ extern "C" int32_t resident_epoch_execute(
   auto *engine = static_cast<ResidentEpochEngine *>(opaque);
   std::lock_guard<std::mutex> execute_lock(engine->execute_mutex);
   int32_t import_mask = 0;
+  uint32_t expected_import_checksum = 0;
   if (direct_device_import) {
     if (!ValidateIpcMetadata(ipc_metadata, input_row_generations) ||
         g_device_transfer_prepare == nullptr) {
       return 35;
     }
     import_mask = static_cast<int32_t>(ipc_metadata->import_mask);
+    expected_import_checksum = IpcMetadataFingerprint(*ipc_metadata);
   }
   *output_model_calls = 0;
   *output_device_status = -1;
@@ -528,7 +558,7 @@ extern "C" int32_t resident_epoch_execute(
   std::vector<uint8_t> slot_buffer(kBatchSize * sizeof(int32_t), 0);
   std::vector<uint8_t> active_buffer(kBatchSize * sizeof(int32_t), 0);
   std::vector<uint8_t> block_buffer(
-      kBatchSize * kBlocksPerRequest * sizeof(int32_t), 0);
+      kBatchSize * blocks_per_request * sizeof(int32_t), 0);
   std::vector<uint8_t> tiling_buffer(engine->tiling.size(), 0);
   auto *tokens = reinterpret_cast<int64_t *>(token_buffer.data());
   auto *positions = reinterpret_cast<int64_t *>(position_buffer.data());
@@ -539,12 +569,15 @@ extern "C" int32_t resident_epoch_execute(
   auto *active = reinterpret_cast<int32_t *>(active_buffer.data());
   auto *blocks = reinterpret_cast<int32_t *>(block_buffer.data());
   for (int32_t row = 0; row < kBatchSize; ++row) {
-    blocks[row * kBlocksPerRequest] = row * kBlocksPerRequest;
-    blocks[row * kBlocksPerRequest + 1] = row * kBlocksPerRequest + 1;
+    for (int32_t local_block = 0; local_block < blocks_per_request;
+         ++local_block) {
+      blocks[row * blocks_per_request + local_block] =
+          row * blocks_per_request + local_block;
+    }
     tokens[row] = 0;
     positions[row] = 0;
     lengths[row] = 0;
-    if (slots != nullptr) slots[row] = ComputeSlot(row, 0);
+    if (slots != nullptr) slots[row] = ComputeSlot(row, 0, blocks_per_request);
     active[row] = 0;
   }
   int32_t active_count = 0;
@@ -563,7 +596,9 @@ extern "C" int32_t resident_epoch_execute(
     tokens[row] = input_token_ids[row];
     positions[row] = input_positions[row];
     lengths[row] = input_sequence_lengths[row];
-    if (slots != nullptr) slots[row] = ComputeSlot(row, input_positions[row]);
+    if (slots != nullptr) {
+      slots[row] = ComputeSlot(row, input_positions[row], blocks_per_request);
+    }
     active[row] = 1;
   }
   if (active_count != request_count) return 12;
@@ -577,9 +612,16 @@ extern "C" int32_t resident_epoch_execute(
                            ? input_eos_token_ids[row]
                            : kConfiguredEos;
   }
-  control[1 + kBatchSize] = 0;
-  control[2 + kBatchSize] =
-      importing ? CRUISE_RESIDENT_IMPORT_GRAPH_FLAG | import_mask : 0;
+  control[1 + kBatchSize] =
+      direct_device_import ? static_cast<int32_t>(expected_import_checksum) : 0;
+  control[2 + kBatchSize] = fixed_epoch_graph ? kFixedEpochGraphVariant : 0;
+  if (importing) {
+    control[2 + kBatchSize] |=
+        CRUISE_RESIDENT_IMPORT_GRAPH_FLAG | import_mask;
+    if (direct_device_import) {
+      control[2 + kBatchSize] |= kDirectDeviceImportGraphFlag;
+    }
+  }
   for (int32_t row = 0; row < kBatchSize; ++row) {
     control[3 + kBatchSize + row] = input_row_generations[row];
   }
@@ -627,7 +669,8 @@ extern "C" int32_t resident_epoch_execute(
     }
   }
   if (!AppendHostFlowMsg(inputs, active_buffer, {4}, ge::DT_INT32) ||
-      !AppendHostFlowMsg(inputs, block_buffer, {4, 2}, ge::DT_INT32) ||
+      !AppendHostFlowMsg(inputs, block_buffer, {4, blocks_per_request},
+                         ge::DT_INT32) ||
       !AppendHostFlowMsg(inputs, tiling_buffer, {72}, ge::DT_UINT8) ||
       !AppendHostFlowMsg(inputs, control_bytes, {kControlInputElements},
                          ge::DT_INT32)) {
@@ -659,7 +702,11 @@ extern "C" int32_t resident_epoch_execute(
   *output_model_calls = result_control[4];
   *output_kv_import_checksum = result_control[5];
   if (*output_device_status == 0) {
-    if (direct_device_import && *output_kv_import_checksum == 0) return 34;
+    if (direct_device_import &&
+        static_cast<uint32_t>(*output_kv_import_checksum) !=
+            expected_import_checksum) {
+      return 34;
+    }
   }
   for (int32_t row = 0; row < kBatchSize; ++row) {
     const int32_t executed = result_control[kControlExecutedOffset + row];

@@ -157,10 +157,25 @@ storage_guard_wait_for_npu_idle() {
 }
 
 storage_guard_large_dir_allowed() {
-  local candidate=$1 entry
+  local candidate=$1 base entry marker format expires_epoch reason now max_epoch
+  local max_days=${STORAGE_GUARD_MAX_LARGE_RETENTION_DAYS:-7}
+  [[ ${STORAGE_GUARD_ENABLE_LARGE_ALLOWLIST:-0} == 1 ]] || return 1
+  [[ ${max_days} =~ ^[1-9][0-9]*$ ]] || return 1
+  base=${candidate##*/}
   IFS=':' read -r -a entries <<<"${STORAGE_GUARD_LARGE_ALLOWLIST:-}"
   for entry in "${entries[@]}"; do
-    [[ -n "${entry}" && "${candidate}" == "${entry}" ]] && return 0
+    [[ -n "${entry}" && "${base}" == "${entry}" ]] || continue
+    marker=${candidate}/.storage-guard-large-retention.tsv
+    [[ -f "${marker}" && ! -L "${marker}" ]] || return 1
+    format=$(awk -F '\t' '$1 == "format" {print $2}' "${marker}")
+    expires_epoch=$(awk -F '\t' '$1 == "expires_epoch" {print $2}' "${marker}")
+    reason=$(awk -F '\t' '$1 == "reason" {print $2}' "${marker}")
+    [[ "${format}" == storage-guard-large-retention-v1 &&
+       "${expires_epoch}" =~ ^[0-9]+$ && -n "${reason}" ]] || return 1
+    now=$(date +%s)
+    max_epoch=$((now + max_days * 86400))
+    (( expires_epoch > now && expires_epoch <= max_epoch )) || return 1
+    return 0
   done
   return 1
 }
@@ -179,8 +194,7 @@ storage_guard_audit_persistent() {
   while IFS= read -r -d '' dir; do
     dir_bytes=$(storage_guard_used_bytes "${dir}") || return 92
     if (( dir_bytes > 2 * 1024 * 1024 * 1024 )); then
-      base=${dir##*/}
-      if ! storage_guard_large_dir_allowed "${base}"; then
+      if ! storage_guard_large_dir_allowed "${dir}"; then
         storage_guard_error \
           "unapproved persistent directory exceeds 2 GiB: ${dir} (${dir_bytes})"
         return 92
@@ -322,6 +336,8 @@ storage_guard_preflight() {
   {
     printf 'format\tstorage-guard-scratch-v1\n'
     printf 'evidence_dir\t%s\n' "${STORAGE_GUARD_EVIDENCE_DIR}"
+    printf 'physical_npu\t%s\n' "${physical_npu}"
+    printf 'lock_path\t%s\n' "${lock_path}"
     printf 'created_utc\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   } >"${scratch_dir}/.storage-guard-scratch.tsv"
   storage_guard_capture_persistent_baseline || return $?

@@ -7,6 +7,8 @@ from vllm_ascend_resident_epoch.sidecar_backend import (
     REQUEST_MAGIC,
     RESPONSE,
     RESPONSE_MAGIC,
+    START_PROFILING,
+    STOP_PROFILING,
     WARM_UP,
     WARMUP_GENERATION,
     SidecarDataFlowEngine,
@@ -96,6 +98,38 @@ def test_warmup_operation_uses_reserved_generation():
     unpacked = REQUEST.unpack(request)
     assert unpacked[:5] == (REQUEST_MAGIC, PROTOCOL_VERSION, WARM_UP, 1, 1)
     assert unpacked[-GRAPH_BATCH_SIZE:] == (WARMUP_GENERATION, 0, 0, 0)
+
+
+def test_post_warmup_profiler_control_uses_sidecar_protocol():
+    class RecordingSocket:
+        def __init__(self):
+            self.payloads = []
+
+        def sendall(self, payload):
+            self.payloads.append(payload)
+
+    engine = SidecarDataFlowEngine.__new__(SidecarDataFlowEngine)
+    engine.socket = RecordingSocket()
+    engine._receive_response = lambda: RESPONSE.unpack(
+        RESPONSE.pack(
+            RESPONSE_MAGIC,
+            0,
+            0,
+            0,
+            0,
+            0,
+            EpochCommitState.COMMITTED,
+            0,
+            *([0] * 14),
+            *([-1] * (GRAPH_BATCH_SIZE * 8)),
+        )
+    )
+
+    engine.start_profiling()
+    engine.stop_profiling()
+
+    operations = [REQUEST.unpack(payload)[2] for payload in engine.socket.payloads]
+    assert operations == [START_PROFILING, STOP_PROFILING]
 
 
 def test_device_ipc_execute_is_reported_as_kv_import():

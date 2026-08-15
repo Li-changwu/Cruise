@@ -22,6 +22,12 @@ from experiments.m4a_performance.run_benchmark import (
     percentile,
     server_command,
 )
+from experiments.m4a_performance.profile_sidecar import (
+    EVIDENCE_LIMITATION,
+    _build_plan,
+    _validate_epoch,
+    run_profile,
+)
 from experiments.m4a_performance.analyze_profiles import _analyze_route
 from experiments.m4a_performance.verify_results import verify
 from vllm_ascend_resident_epoch.benchmark_metrics import (
@@ -93,6 +99,15 @@ def test_m4a_hardware_runner_preserves_storage_and_milestone_contract():
     assert script.index("if run_step verify") < script.rindex("result-integrity.log")
     assert "local mode=$1 runtime=" not in script
     assert '--run-label "${mode}-profile"' in script
+    assert 'sidecar_profiler=${source_dir}/experiments/m4a_performance/profile_sidecar.py' in script
+    assert 'python3 "${sidecar_profiler}" --runtime-dir "${runtime}"' in script
+    assert '"${mode}" == cruise' in script
+    assert '--epochs 32 --steps "${epoch_steps}"' in script
+    assert "-u VLLM_ASCEND_RESIDENT_EPOCH_DYNAMIC_PROFILING" in script
+    assert "VLLM_ASCEND_RESIDENT_EPOCH_PROFILE_OUTPUT=" in script
+    assert "post-warmup-in-process-task-time-l0" in script
+    assert ".profiler_started == true" in script
+    assert ".profiler_stopped == true" in script
     assert 'local runtime=${scratch}/p/${route_code}' in script
     assert '--dynamic=on --pid="${target_pid}"' in script
     assert "--task-time=l1" in script
@@ -119,6 +134,177 @@ def test_m4a_hardware_runner_preserves_storage_and_milestone_contract():
     assert "huggingface-cli" not in script
     assert "wget " not in script
     assert "curl " not in script
+
+
+def test_m4a_runner_selects_k6_graph_only_when_explicitly_enabled():
+    script = RUNNER.read_text(encoding="utf-8")
+
+    assert "epoch_graph=${CRUISE_M4B_EPOCH_GRAPH:-0}" in script
+    assert "graph_config=${source_dir}/config/graph_config.json" in script
+    assert "graph_config=${source_dir}/config/graph_config_epoch_k6.json" in script
+    assert "VLLM_ASCEND_RESIDENT_EPOCH_K6=1" in script
+    assert "unset VLLM_ASCEND_RESIDENT_EPOCH_K6" in script
+    assert "CRUISE_M4B_EPOCH_AIR" in script
+    assert "CRUISE_M4B_EPOCH_EXTERNAL_WEIGHTS" in script
+    assert "K=6 requires CRUISE_M4B_EPOCH_AIR" in script
+    assert 'cp -al "${epoch_external_weights}/." "${external_weights}/"' in script
+
+
+def test_sidecar_profile_builds_full_b4_k6_new_generations():
+    first = _build_plan(0, 6)
+    second = _build_plan(1, 6)
+
+    assert first.graph_batch_size == 4
+    assert first.max_steps == 6
+    assert first.active_mask == (1, 1, 1, 1)
+    assert first.row_generations == (1, 2, 3, 4)
+    assert second.row_generations == (5, 6, 7, 8)
+    assert all(request.position == 0 for request in first.requests)
+    assert all(request.sequence_length == 1 for request in first.requests)
+    assert all(request.state_owner == "device" for request in first.requests)
+    assert all(not request.kv_import_required for request in first.requests)
+
+
+def test_sidecar_profile_selects_fixed_k_graph_and_compact_device_blocks(
+    monkeypatch,
+):
+    monkeypatch.setenv("VLLM_ASCEND_RESIDENT_EPOCH_K6", "1")
+
+    plan = _build_plan(0, 6)
+
+    assert plan.graph_variant == 0x10
+    assert tuple(request.device_block_ids for request in plan.requests) == (
+        (0,),
+        (1,),
+        (2,),
+        (3,),
+    )
+    _validate_epoch(
+        plan,
+        SimpleNamespace(
+            status=0,
+            commit_state=2,
+            model_calls=1,
+            feed_calls=1,
+            fetch_calls=1,
+            row_generations=plan.row_generations,
+            kv_imported=False,
+            token_ids={request.req_id: [7] * 6 for request in plan.requests},
+        ),
+        epoch_index=0,
+    )
+
+
+def test_sidecar_profile_runs_four_barriers_and_labels_scope(tmp_path, monkeypatch):
+    runtime = tmp_path / "runtime"
+    ready = runtime / "profile-ready.json"
+    start = runtime / "profile-start"
+    workload_done = runtime / "profile-workload-done.json"
+    release = runtime / "profile-release"
+    output = tmp_path / "profile-cruise.json"
+    runtime.mkdir()
+
+    def release_barrier(path, _engine, **_kwargs):
+        path.write_text("released\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "experiments.m4a_performance.profile_sidecar._wait_for_file",
+        release_barrier,
+    )
+
+    class FakeEngine:
+        def __init__(self):
+            self.process = SimpleNamespace(
+                pid=456,
+                returncode=None,
+                poll=lambda: None,
+            )
+            self.closed = False
+            self.profiling = False
+
+        def warm_up(self):
+            return SimpleNamespace(
+                status=0,
+                model_calls=1,
+                feed_calls=1,
+                fetch_calls=1,
+                commit_state=2,
+                wall_us=10,
+                native_cpu_us=5,
+            )
+
+        def execute(self, plan):
+            assert self.profiling is True
+            return SimpleNamespace(
+                status=0,
+                model_calls=plan.max_steps,
+                feed_calls=1,
+                fetch_calls=1,
+                commit_state=2,
+                wall_us=100,
+                native_cpu_us=20,
+                row_generations=plan.row_generations,
+                token_ids={request.req_id: [7] * 6 for request in plan.requests},
+                kv_imported=False,
+            )
+
+        def start_profiling(self):
+            assert self.profiling is False
+            self.profiling = True
+
+        def stop_profiling(self):
+            assert self.profiling is True
+            self.profiling = False
+
+        def close(self):
+            self.closed = True
+            self.process.returncode = 0
+
+    engine = FakeEngine()
+    result = run_profile(
+        runtime_dir=runtime,
+        ready_file=ready,
+        start_file=start,
+        workload_done_file=workload_done,
+        release_file=release,
+        output_file=output,
+        epochs=2,
+        steps=6,
+        engine_factory=lambda: engine,
+    )
+
+    assert result["pass"] is True
+    assert result["mode"] == "cruise-sidecar-only"
+    assert result["execution_scope"] == {
+        "engine_core_colocated": False,
+        "device_kv_import": False,
+        "first_epoch_device_kv_import": False,
+        "evidence_limitation": EVIDENCE_LIMITATION,
+    }
+    assert len(result["epochs"]) == 2
+    assert result["checks"]["six_tokens_per_row"] is True
+    assert result["checks"]["post_warmup_profiler_started"] is True
+    assert result["checks"]["post_warmup_profiler_stopped"] is True
+    assert result["checks"]["clean_sidecar_exit"] is True
+    assert engine.closed is True
+    assert json.loads(ready.read_text(encoding="utf-8"))["api_server_pid"] == os.getpid()
+    assert json.loads(workload_done.read_text(encoding="utf-8"))["pass"] is True
+    assert json.loads(output.read_text(encoding="utf-8"))["pass"] is True
+
+
+def test_native_sidecar_rebinds_dynamic_profiler_before_ge_init():
+    server = (ROOT / "native/resident_epoch_server.cpp").read_text(
+        encoding="utf-8"
+    )
+
+    assert "bool RebindDynamicProfiling()" in server
+    assert 'setenv("DYNAMIC_PROFILING_KEY_PID", pid_text, 1)' in server
+    assert '"/dynamic-profiling-binding-"' in server
+    assert "StartPostWarmupProfiler" in server
+    assert "ACL_PROF_TASK_TIME_L0" in server
+    assert server.index("RebindDynamicProfiling()") < server.index(
+        "resident_epoch_create("
+    )
 
 
 def test_dynamic_profiling_binds_the_current_engine_process(monkeypatch, tmp_path):

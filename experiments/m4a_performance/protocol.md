@@ -80,6 +80,20 @@ discard the data. It leaves Cruise opt-in, keeps M4 open, and triggers an
 attribution step using K=6 control-plane timing, eager versus graph, Host CPU,
 Device graph time, IPC, streaming cadence, and profiler evidence.
 
+For profiler attribution only, the Cruise route uses
+`profile_sidecar.py`. It loads and warms the same AIR, controller, native
+sidecar, Unix socket, and B=4 K=6 plan without starting a colocated vLLM
+EngineCore. This avoids the profiler-time HBM collision between two model
+copies. The sidecar first loads the graph and completes warmup with profiling
+disabled. It then starts CANN `TASK_TIME_L0` collection in-process, executes
+the representative epochs, and stops collection before releasing the runner.
+This ordering also avoids retaining profiler-time GE compilation memory while
+weights are loaded. The output is labeled `cruise-sidecar-only`, performs no
+initial Device KV import, and is valid only for Device graph timeline
+attribution. It does not replace API semantics, Host process-tree CPU,
+streaming cadence, or service-level TPOT and throughput evidence from the
+formal runs.
+
 All builds, caches, logs, sockets, generated GraphPp weights, and profiler data
 remain in marker-owned `/dev/shm` scratch. The existing content-addressed
 runtime-weight bundle is reused in place. Only bounded JSON, counter files,
