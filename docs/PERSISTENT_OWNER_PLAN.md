@@ -214,3 +214,17 @@ gate must prove the target B4/K384 Paged-KV layout and an explicit in-graph
 update-to-reader dependency before any Prefill/Decode graph uses the mechanism.
 P5 remains Stopped / Unqualified; no P5 pair, six-start matrix, or P6 run is
 authorized by this component result.
+
+The target-layout ordering gate passed on 2026-08-15 at clean commit
+`babcf33`. One FunctionPp-owned 3 MiB state tensor used the formal
+`[2, 12, 32, 128, 16]` B4/K384 PA-NZ layout. `DevicePagedKvUpdate` updated
+positions 0, 127, 128, and 383, and its compact ticket directly fed a
+`DevicePagedKvRead` in the same graph. Ordinary Graph and two public GraphPp
+invocations were exact; the Device controller's complete state scans rejected
+missing, misplaced, or extra writes. GraphPp Host KV I/O remained zero.
+
+This closes only `V2-KV-ORDER`. It does not establish attention execution,
+internal Device-to-Device copy absence, whole-model graph export, or service
+performance. The next graph-family integration must retain this dependency and
+state boundary while adding a real attention consumer. P5 remains Stopped /
+Unqualified and P6 remains closed.

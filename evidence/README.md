@@ -97,3 +97,11 @@ Its compact verifier is retained under
 It proves exact repeated custom-AICore mutation of one FunctionPp-owned Device
 buffer without Host cache I/O, external `RefData`, or a raw-address ABI. It does
 not prove the target Paged-KV layout, graph ordering, full Decoder, or P5.
+
+The Controller-Aware Graph V2 target-layout ordering result is summarized in
+[`PERSISTENT-OWNER-V2-KV-ORDER-20260815.md`](PERSISTENT-OWNER-V2-KV-ORDER-20260815.md).
+Its compact verifier is retained under
+[`persistent-owner-v2-kv-order-20260815/`](persistent-owner-v2-kv-order-20260815/).
+It proves exact B4/K384 PA-NZ updates and an explicit in-graph update-to-reader
+dependency through ordinary Graph and public GraphPp. It does not prove real
+attention, internal Device-copy absence, a whole-model graph, or P5.

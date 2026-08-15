@@ -47,7 +47,8 @@ ceiling, and post-run recovery relative to the observed starting point.
    identity/address, exact repeated GraphPp mutation, compact outputs, and zero
    Host cache I/O. The synthetic lifetime probe passed.
 4. `V2-KV-ORDER` must prove the target B4/K384 layout and an explicit graph
-   dependency from `DevicePagedKvUpdate` to a downstream Device reader.
+   dependency from `DevicePagedKvUpdate` to a downstream Device reader. The
+   bounded target-hardware probe passed on 2026-08-15.
 5. `V2-EXPORT` exports each graph and records source, package, graph, external
    weight, and model identities. Contract validation alone does not satisfy it.
 6. `V2-STRUCTURE` inspects real graph artifacts for required operators and
@@ -59,6 +60,11 @@ ceiling, and post-run recovery relative to the observed starting point.
 9. `V2-OWNER-MINI` lets the Device controller select both closures for one
    bounded request cohort. Only after it passes may a new ADR consider reopening
    a P5 Graph/Owner pair.
+
+The passed ordering probe is component evidence only. Gate 5 must replace its
+synthetic reader with a real attention consumer while preserving the exact
+Device State Handle and update dependency; it may not infer FIA compatibility,
+zero internal Device copies, or whole-model readiness from gate 4.
 
 No gate here changes ADR 0020. Until all component gates are backed by target
 NPU evidence, the V2 state is `contract_defined`, P5 remains Stopped /
