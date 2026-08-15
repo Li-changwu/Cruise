@@ -18,6 +18,12 @@ from experiments.persistent_owner_graph_v2.device_kv_update_probe.inspect_probe_
 from experiments.persistent_owner_graph_v2.device_kv_update_probe.prepare_probe_config import (
     graph_config as device_kv_update_graph_config,
 )
+from experiments.persistent_owner_graph_v2.paged_kv_order_probe.inspect_probe_graph import (
+    inspect_graph_text as inspect_paged_kv_order_graph,
+)
+from experiments.persistent_owner_graph_v2.paged_kv_order_probe.prepare_probe_config import (
+    graph_config as paged_kv_order_graph_config,
+)
 
 from vllm_ascend_persistent_owner.graph_family import (
     GraphFamilyContractError,
@@ -512,4 +518,135 @@ def test_v2_device_kv_update_has_small_public_io_and_no_cache_output():
     assert "v2_capture_hbm_baseline" in runner
     assert "v2_wait_for_hbm_recovery" in runner
     assert "STORAGE_GUARD_MAX_IDLE_HBM_PERCENT:-65" in runner
+    assert "source-worktree-status.txt" in runner
+
+
+def _paged_kv_order_graph(ticket_source: str = "update") -> str:
+    extra_ticket = ""
+    if ticket_source != "update":
+        extra_ticket = '''node {
+  name: "other_ticket"
+  op: "Data"
+}
+'''
+    return f'''node {{
+  name: "state"
+  op: "Data"
+}}
+node {{
+  name: "metadata"
+  op: "Data"
+}}
+node {{
+  name: "update"
+  op: "DevicePagedKvUpdate"
+  input: "state:0"
+  input: "metadata:0"
+}}
+{extra_ticket}node {{
+  name: "reader"
+  op: "DevicePagedKvRead"
+  input: "state:0"
+  input: "metadata:0"
+  input: "{ticket_source}:0"
+}}
+node {{
+  name: "output"
+  op: "NetOutput"
+  input: "reader:0"
+}}
+'''
+
+
+def test_v2_paged_kv_order_inspector_requires_explicit_dependency():
+    accepted = inspect_paged_kv_order_graph(_paged_kv_order_graph())
+    unordered = inspect_paged_kv_order_graph(_paged_kv_order_graph("other_ticket"))
+    external = inspect_paged_kv_order_graph(
+        _paged_kv_order_graph().replace('op: "Data"', 'op: "RefData"', 1)
+    )
+
+    assert accepted["pass"]
+    assert accepted["shared_state_input"]
+    assert accepted["explicit_update_to_reader_dependency"]
+    assert accepted["report_only_graph_output"]
+    assert not unordered["pass"]
+    assert not unordered["explicit_update_to_reader_dependency"]
+    assert not external["pass"]
+    assert external["external_refdata_count"] == 1
+
+
+def test_v2_paged_kv_order_freezes_target_layout_and_small_graph_io():
+    config = paged_kv_order_graph_config()
+    probe = V2 / "paged_kv_order_probe"
+    exporter = (probe / "export_probe.py").read_text(encoding="utf-8")
+    protocol = (probe / "protocol.md").read_text(encoding="utf-8")
+
+    assert config["inputs_tensor_desc"] == [
+        {"data_type": "DT_BFLOAT16", "shape": [2, 12, 32, 128, 16]},
+        {"data_type": "DT_INT32", "shape": [5]},
+    ]
+    assert "STATE_SHAPE = (2, PHYSICAL_BLOCKS" in exporter
+    assert "POSITIONS = (0, 127, 128, 383)" in exporter
+    assert "DevicePagedKvUpdate" in exporter
+    assert "DevicePagedKvRead" in exporter
+    assert "ticket = torch.ops.cruise_device_paged_kv.update" in exporter
+    assert "read(state, metadata, ticket)" in exporter
+    assert "The graph returns only the reader report" in protocol
+    assert (
+        "does not establish absence of internal Device-to-Device copies" in protocol
+    )
+
+
+def test_v2_paged_kv_order_has_exact_update_reader_and_full_state_scan():
+    probe = V2 / "paged_kv_order_probe"
+    update = (probe / "op_kernel" / "device_paged_kv_update.cpp").read_text(
+        encoding="utf-8"
+    )
+    reader = (probe / "op_kernel" / "device_paged_kv_read.cpp").read_text(
+        encoding="utf-8"
+    )
+    controller = (
+        probe / "controller" / "paged_kv_order_controller.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert "StateIndex" in update
+    assert "ExpectedBits(sequence - 1" in update
+    assert "state.SetValue(StateIndex" in update
+    assert "GM_ADDR gm_ticket" in update
+    assert "ticket.GetValue(0) != sequence" in reader
+    assert "mismatch_count" in reader
+    assert "DataCacheCleanAndInvalid<uint16_t" in reader
+    assert "FullStateExact" in controller
+    assert "Adler32(state, kStateElements)" in controller
+    assert "FlowBufferFactory::AllocTensor" in controller
+    assert '"paged_kv_order_graph_0", {state_message_, inputs[0]}' in controller
+    assert "state_message_.get() == state_message_address_" in controller
+    assert "reinterpret_cast<uint64_t>" not in controller
+
+
+def test_v2_paged_kv_order_uses_public_graph_graphpp_and_bounded_evidence():
+    probe = V2 / "paged_kv_order_probe"
+    host = (probe / "paged_kv_order_probe_host.cpp").read_text(encoding="utf-8")
+    verifier = (probe / "verify_probe.py").read_text(encoding="utf-8")
+    runner = (probe / "run_on_910b.sh").read_text(encoding="utf-8")
+
+    assert 'GraphPp("paged_kv_order_graph_pp"' in host
+    assert 'AddInvokedClosure("paged_kv_order_graph_0", order)' in host
+    assert 'FlowNode("paged_kv_order_controller_node", 1, 1)' in host
+    assert "session->RunGraph" in host
+    assert "session->FeedDataFlowGraph" in host
+    assert "MakeMetadata(1)" in host
+    assert "MakeMetadata(2)" in host
+    assert "aclmdlExecute" not in host
+    assert "ModelPp" not in host
+    assert "explicit_update_to_reader_dependency" in verifier
+    assert "exact_full_state_after_each_call" in verifier
+    assert "host_cache_input_bytes" in verifier
+    assert "host_cache_output_bytes" in verifier
+    assert "dataflow_update_launches >= 1" in verifier
+    assert "dataflow_read_launches >= 1" in verifier
+    assert "v2_capture_hbm_baseline" in runner
+    assert "v2_wait_for_hbm_recovery" in runner
+    assert "STORAGE_GUARD_MAX_IDLE_HBM_PERCENT:-65" in runner
+    assert '"${evidence}/paged_kv_order_probe.air"' not in runner
     assert "source-worktree-status.txt" in runner
