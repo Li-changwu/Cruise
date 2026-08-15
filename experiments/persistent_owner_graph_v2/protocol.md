@@ -61,10 +61,14 @@ ceiling, and post-run recovery relative to the observed starting point.
    bounded request cohort. Only after it passes may a new ADR consider reopening
    a P5 Graph/Owner pair.
 
-The passed ordering probe is component evidence only. Gate 5 must replace its
-synthetic reader with a real attention consumer while preserving the exact
-Device State Handle and update dependency; it may not infer FIA compatibility,
-zero internal Device copies, or whole-model readiness from gate 4.
+The passed ordering probe is component evidence only. The bounded public FIA
+and PA-NZ consumer prerequisites later passed, but the one combined real-
+attention gate failed before execution. TorchAir exported metadata at `Data`
+index 2 and query at index 3, while the Graph config and C++ callers supplied
+query at index 2 and metadata at index 3. GE rejected BF16 metadata for
+`DevicePagedKvUpdate`; ordinary Graph launched no target kernel, and GraphPp
+failed compilation before FunctionPp allocation or Feed. Under the frozen
+stop rule, gates 5-9 do not advance and this path receives no corrected rerun.
 
 No gate here changes ADR 0020. Until all component gates are backed by target
 NPU evidence, the V2 state is `contract_defined`, P5 remains Stopped /

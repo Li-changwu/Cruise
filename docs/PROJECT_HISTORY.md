@@ -386,6 +386,18 @@ remains closed, and reopening requires the new supported capability and ADR
 defined by ADR 0020. See
 [`PERSISTENT-OWNER-FIA-GRAPHPP-20260815.md`](../evidence/PERSISTENT-OWNER-FIA-GRAPHPP-20260815.md).
 
+Later public-source work repaired the FIA JIT hierarchy in isolated scratch.
+The minimal FIA component and the real `[12, 4, 8, 128, 16]` PA-NZ cache then
+executed exactly through ordinary Graph and public GraphPp. The final combined
+FunctionPp-owned KV-update-to-FIA gate nevertheless failed before execution:
+TorchAir exported metadata at input index 2 and query at index 3, while the
+compile config and C++ callers supplied those two inputs in the opposite order.
+GE rejected BF16 metadata for `DevicePagedKvUpdate`; ordinary Graph launched no
+target kernel, and GraphPp failed compilation before FunctionPp allocation or
+Feed. The frozen one-run stop rule therefore keeps the combined V2 path closed,
+with no corrected rerun, second P5 pair, or six-start matrix. See
+[`PERSISTENT-OWNER-V2-KV-ATTENTION-20260815.md`](../evidence/PERSISTENT-OWNER-V2-KV-ATTENTION-20260815.md).
+
 ### M2: Lifecycle, Recovery, and Resource Safety
 
 - [ ] Add sidecar supervision, bounded startup and request timeouts, readiness

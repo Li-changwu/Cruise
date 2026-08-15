@@ -30,3 +30,18 @@ The gate passes only when:
 Any failure stops this combined path. A pass remains a component result: it
 does not prove zero internal Device-to-Device copies, full-model correctness,
 service behavior, performance, or P5 qualification.
+
+## Result
+
+The single run `persistent-owner-v2-kv-attention-20260815-r1` failed and stops
+this path. Toolchain build, AIR export, and structure passed. The exported AIR
+ordered its six `Data` inputs as key, value, metadata, query, mask, and block
+table, but the compile config and both callers used key, value, query,
+metadata, mask, and block table. GE consequently bound BF16 query data to the
+INT32 update metadata input and rejected engine assignment.
+
+Ordinary Graph and GraphPp both stopped before a target kernel launch.
+GraphPp returned compile status `1343225857` before its first Feed, so
+FunctionPp performed zero allocations and zero graph calls. Address lifetime,
+exact update, attention visibility, and dual-route execution were not proven.
+No corrected rerun or downstream P5 work is authorized by this probe.

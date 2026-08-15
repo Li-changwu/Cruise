@@ -228,3 +228,27 @@ internal Device-to-Device copy absence, whole-model graph export, or service
 performance. The next graph-family integration must retain this dependency and
 state boundary while adding a real attention consumer. P5 remains Stopped /
 Unqualified and P6 remains closed.
+
+The public FIA JIT path was subsequently repaired without a private ABI or
+system OPP modification. A minimal FIA component and a real five-dimensional
+PA-NZ cache `[12, 4, 8, 128, 16]` both executed exactly through ordinary Graph
+and public GraphPp. This removed the earlier `funcEntry=0` and cache-layout
+component blockers, but did not reopen P5.
+
+The one permitted combined KV-update-to-FIA gate then failed on 2026-08-15 at
+clean commit `864fb94`. AIR export and structure passed, including shared
+key/value inputs, an explicit update-ticket-to-FIA dependency, compact outputs,
+and zero `RefData` or `TensorMove`. TorchAir had reordered the six exported
+`Data` indices to key, value, metadata, query, mask, and block table, while the
+Graph config and C++ callers retained key, value, query, metadata, mask, and
+block table. GE therefore received BF16 at the update operator's INT32 metadata
+input, rejected engine assignment, and launched none of the three target
+kernels. Ordinary Graph failed before execution; GraphPp failed compilation
+with `1343225857` before FunctionPp allocated the long-lived KV buffers.
+
+Because the frozen combined gate required every input/lifetime, exactness,
+no-full-KV-I/O, and dual-route condition in one run, this input-index failure
+stops the path. No corrected rerun, full Decoder graph-family integration,
+second P5 pair, or six-start matrix is authorized. Compact evidence is in
+`evidence/PERSISTENT-OWNER-V2-KV-ATTENTION-20260815.md`. P5 remains Stopped /
+Unqualified and P6 remains closed.
