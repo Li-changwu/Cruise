@@ -79,6 +79,9 @@ def test_p5_driver_requires_full_model_revision_and_sha256_manifest() -> None:
     assert "P5_GRAPH1_SMOKE_COMPLETE" in driver
     assert "CRUISE_P5_STOP_AFTER_FIRST_PAIR" in driver
     assert "P5_FIRST_PAIR_COMPLETE" in driver
+    assert (
+        "STORAGE_GUARD_MAX_IDLE_HBM_PERCENT:-5" in driver
+    )
 
 
 def test_owner_entry_has_no_legacy_runtime_import() -> None:
