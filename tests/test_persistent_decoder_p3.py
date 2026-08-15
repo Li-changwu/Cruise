@@ -467,6 +467,13 @@ def test_p3_mini_fia_probe_is_weight_free_and_compares_graph_with_graphpp():
     assert "model-dir" not in exporter
     assert "BATCH = 4" in exporter
     assert "KV_TOKENS = 384" in exporter
+    assert 'choices=("dense", "pa-nz")' in exporter
+    assert "actual_seq_lengths_kv=[KV_TOKENS] * BATCH" in exporter
+    assert "block_table=auxiliary if paged else None" in exporter
+    assert "V2-PA-NZ-FIA-EXPORT" in exporter
+    assert 'kv_layout == "pa-nz"' in host
+    assert "MakeBlockTable" in host
+    assert "V2-PA-NZ-FIA-GRAPHPP" in host
     assert "attention.transpose(1, 2).reshape" in exporter
     assert '"mini_fia_graph_pp"' in host
     assert 'mode == "graph"' in host
@@ -495,6 +502,8 @@ def test_p3_mini_fia_probe_is_weight_free_and_compares_graph_with_graphpp():
     assert "LoadFromSerializedModelArray" not in om_host
     assert "external-weights" in runner
     assert "CRUISE_MINI_FIA_MODES" in runner
+    assert "CRUISE_MINI_FIA_KV_LAYOUT" in runner
+    assert "PA-NZ mini FIA supports only graph and dataflow modes" in runner
     assert "CRUISE_MINI_FIA_MODES:-graph dataflow" in runner
     assert "build_isolated_opp.sh" in runner
     assert "source-worktree-status.txt" in runner

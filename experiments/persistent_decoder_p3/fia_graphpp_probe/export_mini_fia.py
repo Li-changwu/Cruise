@@ -7,7 +7,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 import torch_npu
@@ -17,6 +17,10 @@ from torchair._ge_concrete_graph.fx2ge_converter import (
 )
 from torchair.ge import attr
 from torchair.ge._ge_graph import Tensor, TensorSpec
+from torchair._ge_concrete_graph.ge_converter.converter_utils import (
+    DataType,
+    dtype_promote,
+)
 
 # Load the built-in converter set before installing this probe-local override.
 from torchair._ge_concrete_graph.ge_converter import custom as _custom_converters  # noqa: F401
@@ -28,6 +32,10 @@ KV_HEADS = 4
 QUERY_TOKENS = 1
 KV_TOKENS = 384
 HEAD_DIM = 128
+PHYSICAL_BLOCKS = 12
+BLOCK_SIZE = 128
+PA_PACKED_CHANNELS = 32
+PA_PACK_WIDTH = 16
 
 FIA_INPUT_NAMES = (
     "query",
@@ -74,8 +82,8 @@ def convert_mini_fia_with_explicit_optional_slots(
     *,
     pse_shift: Optional[Tensor] = None,
     atten_mask: Optional[Tensor] = None,
-    actual_seq_lengths: Optional[Tensor] = None,
-    actual_seq_lengths_kv: Optional[Tensor] = None,
+    actual_seq_lengths: Optional[Union[list[int], Tensor]] = None,
+    actual_seq_lengths_kv: Optional[Union[list[int], Tensor]] = None,
     dequant_scale1: Optional[Tensor] = None,
     quant_scale1: Optional[Tensor] = None,
     dequant_scale2: Optional[Tensor] = None,
@@ -111,6 +119,14 @@ def convert_mini_fia_with_explicit_optional_slots(
     value_antiquant_mode: int = 0,
     meta_outputs: TensorSpec = None,
 ):
+    if actual_seq_lengths is not None:
+        actual_seq_lengths = dtype_promote(
+            actual_seq_lengths, target_dtype=DataType.DT_INT64
+        )
+    if actual_seq_lengths_kv is not None:
+        actual_seq_lengths_kv = dtype_promote(
+            actual_seq_lengths_kv, target_dtype=DataType.DT_INT64
+        )
     return torchair.ge.custom_op(
         "FusedInferAttentionScore",
         inputs={
@@ -169,13 +185,18 @@ def convert_mini_fia_with_explicit_optional_slots(
 
 
 class MiniFIA(torch.nn.Module):
+    def __init__(self, kv_layout: str) -> None:
+        super().__init__()
+        self.kv_layout = kv_layout
+
     def forward(
         self,
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
-        mask: torch.Tensor,
+        auxiliary: torch.Tensor,
     ) -> torch.Tensor:
+        paged = self.kv_layout == "pa-nz"
         attention = torch_npu.npu_fused_infer_attention_score(
             query,
             key,
@@ -183,7 +204,10 @@ class MiniFIA(torch.nn.Module):
             num_heads=QUERY_HEADS,
             num_key_value_heads=KV_HEADS,
             input_layout="BNSD",
-            atten_mask=mask,
+            atten_mask=None if paged else auxiliary,
+            actual_seq_lengths_kv=[KV_TOKENS] * BATCH if paged else None,
+            block_table=auxiliary if paged else None,
+            block_size=BLOCK_SIZE if paged else 0,
             scale=HEAD_DIM**-0.5,
             sparse_mode=0,
         )[0]
@@ -192,24 +216,30 @@ class MiniFIA(torch.nn.Module):
         )
 
 
-def inputs() -> tuple[torch.Tensor, ...]:
+def inputs(kv_layout: str) -> tuple[torch.Tensor, ...]:
     query = torch.ones(
         (BATCH, QUERY_HEADS, QUERY_TOKENS, HEAD_DIM),
         dtype=torch.bfloat16,
         device="npu",
     )
-    key = torch.ones(
-        (BATCH, KV_HEADS, KV_TOKENS, HEAD_DIM),
-        dtype=torch.bfloat16,
-        device="npu",
+    key_shape = (
+        (PHYSICAL_BLOCKS, PA_PACKED_CHANNELS, BLOCK_SIZE, PA_PACK_WIDTH)
+        if kv_layout == "pa-nz"
+        else (BATCH, KV_HEADS, KV_TOKENS, HEAD_DIM)
     )
+    key = torch.ones(key_shape, dtype=torch.bfloat16, device="npu")
     value = torch.ones_like(key)
-    mask = torch.zeros(
-        (BATCH, 1, QUERY_TOKENS, KV_TOKENS),
-        dtype=torch.bool,
-        device="npu",
-    )
-    return query, key, value, mask
+    if kv_layout == "pa-nz":
+        auxiliary = torch.arange(
+            PHYSICAL_BLOCKS, dtype=torch.int32, device="npu"
+        ).reshape(BATCH, PHYSICAL_BLOCKS // BATCH)
+    else:
+        auxiliary = torch.zeros(
+            (BATCH, 1, QUERY_TOKENS, KV_TOKENS),
+            dtype=torch.bool,
+            device="npu",
+        )
+    return query, key, value, auxiliary
 
 
 def sha256(path: Path) -> str:
@@ -278,14 +308,17 @@ def inspect_fia_air(path: Path) -> dict[str, object]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--kv-layout", choices=("dense", "pa-nz"), default="dense"
+    )
     args = parser.parse_args()
     if args.output_dir.exists():
         raise FileExistsError(args.output_dir)
     args.output_dir.mkdir(parents=True)
 
     torch.npu.set_device(0)
-    model = MiniFIA().eval().npu()
-    sample_inputs = inputs()
+    model = MiniFIA(args.kv_layout).eval().npu()
+    sample_inputs = inputs(args.kv_layout)
 
     from torchair.configs.compiler_config import CompilerConfig
     from torchair.npu_export import dynamo_export
@@ -306,13 +339,20 @@ def main() -> int:
         "fia_slot_contract_pass": False
     }
     result = {
-        "gate": "P3-MINI-FIA-EXPORT",
+        "gate": (
+            "V2-PA-NZ-FIA-EXPORT"
+            if args.kv_layout == "pa-nz"
+            else "P3-MINI-FIA-EXPORT"
+        ),
         "pass": (
             air.is_file()
             and graph.is_file()
             and fia_air["fia_slot_contract_pass"] is True
         ),
         "eager_exact": None,
+        "kv_layout": args.kv_layout,
+        "key_shape": list(sample_inputs[1].shape),
+        "page_attention": args.kv_layout == "pa-nz",
         "air_bytes": air.stat().st_size if air.is_file() else 0,
         "air_sha256": sha256(air) if air.is_file() else None,
         "graph_sha256": sha256(graph) if graph.is_file() else None,

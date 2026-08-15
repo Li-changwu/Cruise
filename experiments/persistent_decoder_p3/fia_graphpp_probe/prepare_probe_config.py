@@ -17,15 +17,24 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--graph-output", type=Path, required=True)
     parser.add_argument("--deploy-output", type=Path, required=True)
+    parser.add_argument(
+        "--kv-layout", choices=("dense", "pa-nz"), default="dense"
+    )
     args = parser.parse_args()
+    if args.kv_layout == "pa-nz":
+        key_shape = [12, 32, 128, 16]
+        auxiliary = {"data_type": "DT_INT32", "shape": [4, 3]}
+    else:
+        key_shape = [4, 4, 384, 128]
+        auxiliary = {"data_type": "DT_BOOL", "shape": [4, 1, 1, 384]}
     write(
         args.graph_output,
         {
             "inputs_tensor_desc": [
                 {"data_type": "DT_BFLOAT16", "shape": [4, 28, 1, 128]},
-                {"data_type": "DT_BFLOAT16", "shape": [4, 4, 384, 128]},
-                {"data_type": "DT_BFLOAT16", "shape": [4, 4, 384, 128]},
-                {"data_type": "DT_BOOL", "shape": [4, 1, 1, 384]},
+                {"data_type": "DT_BFLOAT16", "shape": key_shape},
+                {"data_type": "DT_BFLOAT16", "shape": key_shape},
+                auxiliary,
             ]
         },
     )

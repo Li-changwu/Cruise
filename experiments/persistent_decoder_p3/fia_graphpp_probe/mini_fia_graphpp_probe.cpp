@@ -23,6 +23,11 @@ constexpr int32_t kFetchTimeoutMs = 120000;
 constexpr size_t kQueryElements = 4 * 28 * 1 * 128;
 constexpr size_t kKvElements = 4 * 4 * 384 * 128;
 constexpr size_t kMaskElements = 4 * 1 * 1 * 384;
+constexpr size_t kPhysicalBlocks = 12;
+constexpr size_t kPaPackedChannels = 32;
+constexpr size_t kBlockSize = 128;
+constexpr size_t kPaPackWidth = 16;
+constexpr size_t kBlockTableElements = 4 * 3;
 
 ge::Tensor MakeBf16(const std::vector<int64_t> &shape, size_t elements) {
   std::vector<uint16_t> values(elements, 0x3f80);
@@ -43,7 +48,30 @@ ge::Tensor MakeMask() {
   return tensor;
 }
 
-std::vector<ge::Tensor> MakeInputs() {
+ge::Tensor MakeBlockTable() {
+  std::vector<int32_t> values(kBlockTableElements);
+  for (size_t index = 0; index < values.size(); ++index) {
+    values[index] = static_cast<int32_t>(index);
+  }
+  ge::Tensor tensor;
+  tensor.SetTensorDesc(ge::TensorDesc(ge::Shape({4, 3}), ge::FORMAT_ND,
+                                      ge::DT_INT32));
+  tensor.SetData(reinterpret_cast<const uint8_t *>(values.data()),
+                 values.size() * sizeof(values[0]));
+  return tensor;
+}
+
+std::vector<ge::Tensor> MakeInputs(const std::string &kv_layout) {
+  if (kv_layout == "pa-nz") {
+    const size_t elements = kPhysicalBlocks * kPaPackedChannels *
+                            kBlockSize * kPaPackWidth;
+    return {
+        MakeBf16({4, 28, 1, 128}, kQueryElements),
+        MakeBf16({12, 32, 128, 16}, elements),
+        MakeBf16({12, 32, 128, 16}, elements),
+        MakeBlockTable(),
+    };
+  }
   return {
       MakeBf16({4, 28, 1, 128}, kQueryElements),
       MakeBf16({4, 4, 384, 128}, kKvElements),
@@ -127,11 +155,15 @@ bool OutputExact(const std::vector<ge::Tensor> &outputs) {
 void WriteSummary(const std::string &path, const std::string &mode,
                   ge::Status status, bool exact, int64_t elapsed_ms,
                   uint32_t model_load_status, bool model_valid,
-                  const std::string &jit_compile) {
+                  const std::string &jit_compile,
+                  const std::string &kv_layout) {
   if (path.empty()) return;
   std::ofstream stream(path);
   stream << "{\n"
-         << "  \"gate\": \"P3-MINI-FIA-GRAPHPP\",\n"
+         << "  \"gate\": \""
+         << (kv_layout == "pa-nz" ? "V2-PA-NZ-FIA-GRAPHPP"
+                                    : "P3-MINI-FIA-GRAPHPP")
+         << "\",\n"
          << "  \"pass\": "
          << (status == ge::SUCCESS && exact &&
                      model_load_status == ge::GRAPH_SUCCESS && model_valid
@@ -139,6 +171,9 @@ void WriteSummary(const std::string &path, const std::string &mode,
                  : "false")
          << ",\n"
          << "  \"mode\": \"" << mode << "\",\n"
+         << "  \"kv_layout\": \"" << kv_layout << "\",\n"
+         << "  \"page_attention\": "
+         << (kv_layout == "pa-nz" ? "true" : "false") << ",\n"
          << "  \"status\": " << static_cast<uint32_t>(status) << ",\n"
          << "  \"model_load_status\": " << model_load_status << ",\n"
          << "  \"model_valid\": " << (model_valid ? "true" : "false")
@@ -152,9 +187,10 @@ void WriteSummary(const std::string &path, const std::string &mode,
 }  // namespace
 
 int main(int argc, char **argv) {
-  if (argc != 7) {
+  if (argc != 8) {
     std::cerr << "usage: mini_fia_graphpp_probe MODE AIR_OR_OM GRAPH_CONFIG "
-                 "DEPLOY_CONFIG SUMMARY_JSON EMPTY_EXTERNAL_WEIGHT_DIR"
+                 "DEPLOY_CONFIG SUMMARY_JSON EMPTY_EXTERNAL_WEIGHT_DIR "
+                 "KV_LAYOUT"
               << std::endl;
     return 2;
   }
@@ -164,6 +200,7 @@ int main(int argc, char **argv) {
   const std::string deploy_config = argv[4];
   const std::string summary_path = argv[5];
   const std::string external_weight_dir = argv[6];
+  const std::string kv_layout = argv[7];
   const char *jit_compile_env =
       std::getenv("CRUISE_MINI_FIA_GE_JIT_COMPILE");
   const std::string jit_compile =
@@ -177,7 +214,8 @@ int main(int argc, char **argv) {
       access(model_path.c_str(), R_OK) != 0 ||
       access(graph_config.c_str(), R_OK) != 0 ||
       access(deploy_config.c_str(), R_OK) != 0 ||
-      access(external_weight_dir.c_str(), R_OK) != 0) {
+      access(external_weight_dir.c_str(), R_OK) != 0 ||
+      (kv_layout != "dense" && kv_layout != "pa-nz")) {
     return 2;
   }
 
@@ -202,7 +240,7 @@ int main(int argc, char **argv) {
   bool model_valid = false;
   if (status != ge::SUCCESS) {
     WriteSummary(summary_path, mode, status, false, 0, model_load_status,
-                 model_valid, jit_compile);
+                 model_valid, jit_compile, kv_layout);
     std::cout << "MINI_FIA_INIT_FAIL mode=" << mode
               << " status=" << static_cast<uint32_t>(status) << std::endl;
     return 10;
@@ -219,7 +257,7 @@ int main(int argc, char **argv) {
   if (mode == "graph") {
     status = session->AddGraph(kGraphId, source_graph);
     if (status == ge::SUCCESS) {
-      status = session->RunGraph(kGraphId, MakeInputs(), outputs);
+      status = session->RunGraph(kGraphId, MakeInputs(kv_layout), outputs);
     }
   } else {
     const auto flow_graph = BuildFlowGraph(
@@ -228,8 +266,8 @@ int main(int argc, char **argv) {
     if (status == ge::SUCCESS) status = session->CompileGraph(kGraphId);
     if (status == ge::SUCCESS) {
       ge::DataFlowInfo flow_info;
-      status = session->FeedDataFlowGraph(kGraphId, MakeInputs(), flow_info,
-                                          kFeedTimeoutMs);
+      status = session->FeedDataFlowGraph(
+          kGraphId, MakeInputs(kv_layout), flow_info, kFeedTimeoutMs);
       if (status == ge::SUCCESS) {
         status = session->FetchDataFlowGraph(kGraphId, outputs, flow_info,
                                              kFetchTimeoutMs);
@@ -241,7 +279,7 @@ int main(int argc, char **argv) {
                               .count();
   const bool exact = status == ge::SUCCESS && OutputExact(outputs);
   WriteSummary(summary_path, mode, status, exact, elapsed_ms,
-               model_load_status, model_valid, jit_compile);
+               model_load_status, model_valid, jit_compile, kv_layout);
   std::cout << "MINI_FIA_RESULT mode=" << mode
             << " ge_jit_compile=" << jit_compile
             << " status=" << static_cast<uint32_t>(status)

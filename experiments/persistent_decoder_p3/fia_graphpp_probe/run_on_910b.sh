@@ -13,6 +13,7 @@ cann_set_env=${CRUISE_CANN_SET_ENV:-/usr/local/Ascend/cann-9.0.0/set_env.sh}
 cann_python_env=${CRUISE_CANN_PYTHON_ENV:-/workspace/cruise-assets/python-envs/cann9-py311}
 python_bin=${CRUISE_MINI_FIA_PYTHON:-$(command -v python3)}
 probe_modes=${CRUISE_MINI_FIA_MODES:-graph dataflow}
+kv_layout=${CRUISE_MINI_FIA_KV_LAYOUT:-dense}
 guard=${source_dir}/storage_guard/storage_guard.sh
 lifecycle_tool=${CRUISE_STORAGE_TOOL:-/workspace/Cruise/scripts/manage_workspace_storage.py}
 resource_writer=${source_dir}/prepare_resource_config.py
@@ -33,6 +34,10 @@ for required in "${cann_set_env}" "${python_bin}" "${guard}" \
   [[ -f "${required}" ]] || { printf 'missing mini FIA input: %s\n' "${required}" >&2; exit 96; }
 done
 read -r -a selected_modes <<<"${probe_modes}"
+[[ "${kv_layout}" == dense || "${kv_layout}" == pa-nz ]] || {
+  printf 'invalid mini FIA KV layout: %s\n' "${kv_layout}" >&2
+  exit 96
+}
 [[ ${#selected_modes[@]} -gt 0 ]] || { printf 'no mini FIA probe modes selected\n' >&2; exit 96; }
 declare -A seen_modes=()
 om_precedes_serialized=0
@@ -54,6 +59,12 @@ for mode in "${selected_modes[@]}"; do
     exit 96
   fi
 done
+if [[ "${kv_layout}" == pa-nz && \
+      ( -n "${seen_modes[om]:-}" || \
+        -n "${seen_modes[serialized-dataflow]:-}" ) ]]; then
+  printf 'PA-NZ mini FIA supports only graph and dataflow modes\n' >&2
+  exit 96
+fi
 [[ "${scratch}" == /dev/shm/cruise-mini-fia-* ]] || {
   printf 'mini FIA scratch must be PID-scoped under /dev/shm: %s\n' "${scratch}" >&2
   exit 96
@@ -184,11 +195,12 @@ wait_for_release() {
   --output "${RESOURCE_CONFIG_PATH}"
 "${python_bin}" "${script_dir}/prepare_probe_config.py" \
   --graph-output "${config_dir}/graph.json" \
-  --deploy-output "${config_dir}/deploy.json"
+  --deploy-output "${config_dir}/deploy.json" \
+  --kv-layout "${kv_layout}"
 set +e
 storage_guard_run_log "${evidence}/export.log" "${evidence}/export.meta.json" \
   300s -- "${python_bin}" "${script_dir}/export_mini_fia.py" \
-  --output-dir "${export_dir}"
+  --output-dir "${export_dir}" --kv-layout "${kv_layout}"
 export_status=$?
 set -e
 printf 'export-exit\t%s\n' "${export_status}" >"${evidence}/export-status.tsv"
@@ -259,7 +271,7 @@ for mode in "${selected_modes[@]}"; do
       300s -- "${build}/mini_fia_graphpp_probe" "${mode}" \
       "${model_input}" "${config_dir}/graph.json" \
       "${config_dir}/deploy.json" "${scratch}/${mode}.json" \
-      "${external_weight_dir}"
+      "${external_weight_dir}" "${kv_layout}"
   fi
   mode_status=$?
   cd "${source_dir}"
