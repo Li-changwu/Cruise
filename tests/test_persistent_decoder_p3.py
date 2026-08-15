@@ -468,6 +468,8 @@ def test_p3_mini_fia_probe_is_weight_free_and_compares_graph_with_graphpp():
     assert "BATCH = 4" in exporter
     assert "KV_TOKENS = 384" in exporter
     assert 'choices=("dense", "pa-nz")' in exporter
+    assert "PA_PACKS_PER_HEAD = HEAD_DIM // 16" in exporter
+    assert "{12, 4, 8, 128, 16}" in host
     assert "actual_seq_lengths_kv=[KV_TOKENS] * BATCH" in exporter
     assert "block_table=auxiliary if paged else None" in exporter
     assert "V2-PA-NZ-FIA-EXPORT" in exporter

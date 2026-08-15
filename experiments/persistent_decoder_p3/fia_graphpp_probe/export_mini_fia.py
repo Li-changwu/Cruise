@@ -34,7 +34,7 @@ KV_TOKENS = 384
 HEAD_DIM = 128
 PHYSICAL_BLOCKS = 12
 BLOCK_SIZE = 128
-PA_PACKED_CHANNELS = 32
+PA_PACKS_PER_HEAD = HEAD_DIM // 16
 PA_PACK_WIDTH = 16
 
 FIA_INPUT_NAMES = (
@@ -223,7 +223,13 @@ def inputs(kv_layout: str) -> tuple[torch.Tensor, ...]:
         device="npu",
     )
     key_shape = (
-        (PHYSICAL_BLOCKS, PA_PACKED_CHANNELS, BLOCK_SIZE, PA_PACK_WIDTH)
+        (
+            PHYSICAL_BLOCKS,
+            KV_HEADS,
+            PA_PACKS_PER_HEAD,
+            BLOCK_SIZE,
+            PA_PACK_WIDTH,
+        )
         if kv_layout == "pa-nz"
         else (BATCH, KV_HEADS, KV_TOKENS, HEAD_DIM)
     )

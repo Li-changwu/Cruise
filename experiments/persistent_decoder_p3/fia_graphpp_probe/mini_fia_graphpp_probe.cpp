@@ -24,7 +24,8 @@ constexpr size_t kQueryElements = 4 * 28 * 1 * 128;
 constexpr size_t kKvElements = 4 * 4 * 384 * 128;
 constexpr size_t kMaskElements = 4 * 1 * 1 * 384;
 constexpr size_t kPhysicalBlocks = 12;
-constexpr size_t kPaPackedChannels = 32;
+constexpr size_t kKvHeads = 4;
+constexpr size_t kPaPacksPerHead = 8;
 constexpr size_t kBlockSize = 128;
 constexpr size_t kPaPackWidth = 16;
 constexpr size_t kBlockTableElements = 4 * 3;
@@ -63,12 +64,12 @@ ge::Tensor MakeBlockTable() {
 
 std::vector<ge::Tensor> MakeInputs(const std::string &kv_layout) {
   if (kv_layout == "pa-nz") {
-    const size_t elements = kPhysicalBlocks * kPaPackedChannels *
+    const size_t elements = kPhysicalBlocks * kKvHeads * kPaPacksPerHead *
                             kBlockSize * kPaPackWidth;
     return {
         MakeBf16({4, 28, 1, 128}, kQueryElements),
-        MakeBf16({12, 32, 128, 16}, elements),
-        MakeBf16({12, 32, 128, 16}, elements),
+        MakeBf16({12, 4, 8, 128, 16}, elements),
+        MakeBf16({12, 4, 8, 128, 16}, elements),
         MakeBlockTable(),
     };
   }

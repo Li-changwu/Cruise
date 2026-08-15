@@ -22,7 +22,7 @@ def main() -> int:
     )
     args = parser.parse_args()
     if args.kv_layout == "pa-nz":
-        key_shape = [12, 32, 128, 16]
+        key_shape = [12, 4, 8, 128, 16]
         auxiliary = {"data_type": "DT_INT32", "shape": [4, 3]}
     else:
         key_shape = [4, 4, 384, 128]
