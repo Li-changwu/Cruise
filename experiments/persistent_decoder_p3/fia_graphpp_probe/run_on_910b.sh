@@ -244,6 +244,7 @@ fi
 result_paths=()
 for mode in "${selected_modes[@]}"; do
   set +e
+  cd "${scratch}"
   if [[ "${mode}" == om ]]; then
     storage_guard_run_log "${evidence}/om.log" "${evidence}/om.meta.json" \
       900s -- "${build}/mini_fia_om_probe" \
@@ -261,6 +262,7 @@ for mode in "${selected_modes[@]}"; do
       "${external_weight_dir}"
   fi
   mode_status=$?
+  cd "${source_dir}"
   set -e
   printf '%s-exit\t%s\n' "${mode}" "${mode_status}" \
     >>"${evidence}/mode-status.tsv"
