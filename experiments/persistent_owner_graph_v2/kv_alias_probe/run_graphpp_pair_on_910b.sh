@@ -69,6 +69,7 @@ finalize() {
   local lifecycle_status=0
   trap - EXIT
   set +e
+  cd "${source_dir}"
   printf 'driver-exit\t%s\n' "${command_status}" >"${evidence}/status.tsv"
   if [[ -n ${V2_HBM_BASELINE_MB} ]]; then
     v2_wait_for_hbm_recovery "${evidence}" "${physical_npu}" \
@@ -134,10 +135,16 @@ wait_for_release() {
   --deploy-output "${config_dir}/deploy.json" \
   --expected-output "${scratch}/expected-output.bin"
 
+set +e
 cd "${scratch}"
 storage_guard_run_log "${evidence}/export.log" "${evidence}/export.meta.json" \
   600s -- "${python_bin}" "${exporter}" --output-dir "${export_dir}"
+export_status=$?
 cd "${source_dir}"
+set -e
+printf 'export-exit\t%s\n' "${export_status}" >"${evidence}/export-status.tsv"
+[[ ${export_status} -eq 0 || ${export_status} -eq 139 ]] || \
+  exit "${export_status}"
 "${python_bin}" - "${export_dir}/export-result.json" \
   "${export_dir}/kv_alias_probe.air" "${export_dir}/dynamo.pbtxt" <<'PY'
 import json
