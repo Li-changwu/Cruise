@@ -1,0 +1,15 @@
+{
+  "base_cruise_commit": "c48116e5c1bba82b9d241acd67aede12e89f9d9b",
+  "cruise_sources": {
+    "experiments/persistent_decoder_p3/fia_graphpp_probe/export_mini_fia.py": "25eed7245902e69091b9bbb9fd8f6e3e4ecd35ed511992eb9347145c8a814e26",
+    "experiments/persistent_decoder_p3/fia_graphpp_probe/mini_fia_graphpp_probe.cpp": "5b84d576977de51389c2ba2b42f94fce60b01e427042f7d6e5338a061baf124c",
+    "experiments/persistent_decoder_p3/fia_graphpp_probe/run_on_910b.sh": "e3bc5a1403810aad4308dd014149ead34b9f9b505ab3409c68c5e3c4e4f30056"
+  },
+  "ops_transformer": {
+    "commit": "afe72144f9f2ac8441929035795db88a111b30c5",
+    "package_sha256": "b1addf2218bad0e968470b9e294bf5f5597b86432d25376592db470f55afded8",
+    "tag": "v9.0.0",
+    "tiling_key": "103000000000022220",
+    "variant": "FusedInferAttentionScore_3b093497fc536d61a77a7a3293a524da"
+  }
+}

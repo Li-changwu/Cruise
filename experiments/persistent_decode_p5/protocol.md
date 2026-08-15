@@ -147,3 +147,15 @@ blocked on one of two supported compute-plane outcomes: an officially exposed
 precompiled-model process point for this CANN stack, or a GraphPp-compatible
 FIA/custom AICore implementation. The legacy Owner remains the correctness
 reference while this single permitted P5 redesign is open.
+
+The second bounded public compute-plane path is now complete and failed its
+prerequisite component gate. The public TorchAir `custom_op` path produced an
+exact 31-slot FIA AIR, and an isolated official ops-transformer v9.0.0 package
+contained the target ordinary and relocatable static objects plus generated
+registration files. Ordinary Graph and public GraphPp nevertheless ignored the
+target `3b093497...` variant, entered online `te_fusedinferattentionscore_*`
+precompile, and failed before execution on a missing relative
+IncreFlashAttention header. No exact mini pass exists, so the second pair and
+six-start matrix are not run. This is not a second performance measurement:
+P5 is Stopped / Unqualified on this CANN 9 / Ascend 910B2 stack, and ADR 0020
+keeps P6 closed.

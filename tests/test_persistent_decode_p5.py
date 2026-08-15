@@ -83,6 +83,15 @@ def test_p5_driver_requires_full_model_revision_and_sha256_manifest() -> None:
     assert "STORAGE_GUARD_MAX_IDLE_HBM_PERCENT:-5" in driver
 
 
+def test_p5_protocol_stops_before_p6_when_public_redesign_is_exhausted() -> None:
+    protocol = (P5 / "protocol.md").read_text(encoding="utf-8")
+    normalized = " ".join(protocol.split())
+    assert "exact 31-slot FIA AIR" in normalized
+    assert "the second pair and six-start matrix are not run" in normalized
+    assert "P5 is Stopped / Unqualified" in normalized
+    assert "keeps P6 closed" in normalized
+
+
 def test_owner_entry_has_no_legacy_runtime_import() -> None:
     forbidden = {
         "vllm_ascend_resident_epoch.scheduler",

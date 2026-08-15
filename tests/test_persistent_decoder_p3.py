@@ -452,6 +452,13 @@ def test_p3_mini_fia_probe_is_weight_free_and_compares_graph_with_graphpp():
     runner = (probe / "run_on_910b.sh").read_text(encoding="utf-8")
 
     assert "npu_fused_infer_attention_score" in exporter
+    assert "torchair.ge.custom_op" in exporter
+    assert '"dequant_scale_query": None' in exporter
+    assert '"learnable_sink": None' in exporter
+    assert '"q_start_idx": None' in exporter
+    assert '"kv_start_idx": None' in exporter
+    assert '"fia_slot_contract_pass"' in exporter
+    assert '"fia_input_count"' in exporter
     assert "model-dir" not in exporter
     assert "BATCH = 4" in exporter
     assert "KV_TOKENS = 384" in exporter

@@ -1,0 +1,30 @@
+{
+  "air_contract": {
+    "input_count": 31,
+    "input_desc_count": 31,
+    "pass": true,
+    "sha256": "d550a851388d419c99f5d4456d6ea39df6ac556bf7c0996c4e7c0792f2300f3c"
+  },
+  "claim_boundary": "Public FIA component stop record only; no second P5 performance result and no P6 claim.",
+  "dataflow": {
+    "elapsed_ms": 5297,
+    "evidence_sha256": "4ae8d90e29595042cf7dfa23736ffce25bd207ba70a8623edaffa26be178bb5b",
+    "observed_kernel_prefix": "te_fusedinferattentionscore_6897a7c",
+    "output_exact": false,
+    "status": 1343225857
+  },
+  "decision": "stop-p5-unqualified-on-cann9-ascend910b2-keep-p6-closed",
+  "expected_static_variant": "FusedInferAttentionScore_3b093497fc536d61a77a7a3293a524da",
+  "gate": "P5-PUBLIC-FIA-GRAPHPP",
+  "graph": {
+    "elapsed_ms": 5243,
+    "evidence_sha256": "0f60e8d05d6afd94b79615450bffb7c0c4cee7b7eeedbb7ebe7b46a0f61b31c5",
+    "observed_kernel_prefix": "te_fusedinferattentionscore_8b383e9",
+    "output_exact": false,
+    "status": 4294967295
+  },
+  "online_compile_failure": "../../incre_flash_attention/op_kernel/incre_flash_attention_arch32.h not found",
+  "pass": false,
+  "run_id": "persistent-decoder-p3-mini-fia-custom-r4-20260815-r1",
+  "static_variant_observed": false
+}

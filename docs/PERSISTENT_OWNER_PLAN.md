@@ -26,6 +26,12 @@ redesign and full rerun; a second Host, TPOT, or throughput miss stops P6. A P6
 failure leaves at most a Persistent Decode Qualified research candidate and
 does not complete Cruise or Stable v1.0.
 
+If the single permitted P5 redesign cannot pass its exact attention component
+through a public supported Device path, it cannot enter the second pair or full
+rerun. That leaves P5 Stopped / Unqualified on the current stack and keeps P6
+closed; it is not reclassified as a second performance measurement. ADR 0020
+defines the evidence and reopening requirements for this condition.
+
 ## Current gate state
 
 P0 passed the full target-NPU gate in
@@ -177,3 +183,15 @@ through public installed resources, or build a fixed-shape attention closure.
 Only an exact B=4, K=384 Graph/GraphPp attention component may advance to the
 second full Graph/Owner pair. Compact evidence is in
 `evidence/PERSISTENT-OWNER-CUSTOM-GRAPHPP-20260815.md`.
+
+The bounded public FIA package attempt then generated a valid 31-input AIR from
+the public TorchAir `custom_op` extension point and installed the official
+ops-transformer v9.0.0 ordinary and relocatable objects in an isolated custom
+OPP. Ordinary Graph and public GraphPp still did not select the static
+`FusedInferAttentionScore_3b093497...` object. Both fell back to online
+`te_fusedinferattentionscore_*` compilation and failed before a launch because
+the package's relative IncreFlashAttention header was unavailable. The mini
+component therefore did not pass, and no full P3 FIA graph, second Graph/Owner
+pair, or six-start matrix was run. P5 is Stopped / Unqualified on this CANN 9 /
+Ascend 910B2 stack; P6 remains closed under ADR 0020. Compact evidence is in
+`evidence/PERSISTENT-OWNER-FIA-GRAPHPP-20260815.md`.

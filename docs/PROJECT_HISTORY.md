@@ -373,6 +373,19 @@ is an exact B=4, K=384 attention component after its public host tiling, ABI,
 and OpDef dependencies are established. See
 [`PERSISTENT-OWNER-CUSTOM-GRAPHPP-20260815.md`](../evidence/PERSISTENT-OWNER-CUSTOM-GRAPHPP-20260815.md).
 
+That exact attention checkpoint did not pass. A public TorchAir `custom_op`
+export produced the required 31-slot FIA AIR, and an isolated package built
+from public ops-transformer v9.0.0 contained the target
+`FusedInferAttentionScore_3b093497...` objects and generated registration
+files. Ordinary Graph and public GraphPp both ignored that static variant,
+fell back to online `te_fusedinferattentionscore_*` precompile, and failed
+before execution on an unavailable relative IncreFlashAttention header. The
+permitted P5 redesign therefore cannot enter its second pair or six-start
+matrix on this CANN 9 / Ascend 910B2 stack. P5 is Stopped / Unqualified, P6
+remains closed, and reopening requires the new supported capability and ADR
+defined by ADR 0020. See
+[`PERSISTENT-OWNER-FIA-GRAPHPP-20260815.md`](../evidence/PERSISTENT-OWNER-FIA-GRAPHPP-20260815.md).
+
 ### M2: Lifecycle, Recovery, and Resource Safety
 
 - [ ] Add sidecar supervision, bounded startup and request timeouts, readiness
