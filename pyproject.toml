@@ -17,6 +17,7 @@ ascend_resident_epoch = "vllm_ascend_resident_epoch.plugin:register"
 
 [project.scripts]
 cruise = "vllm_ascend_resident_epoch.cli:main"
+cruise-owner-serve = "vllm_ascend_persistent_owner.server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
