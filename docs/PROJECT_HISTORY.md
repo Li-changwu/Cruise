@@ -353,13 +353,16 @@ completed 32 requests and 8,192 streamed tokens with 3,064 AICore calls and
 exact oracle equivalence. Compact results are retained in
 [`PERSISTENT-OWNER-P0-P4-20260814.md`](../evidence/PERSISTENT-OWNER-P0-P4-20260814.md).
 
-This checkpoint does not close M2, M3, or M4. The accepted P3 and P4 runs were
-produced before later P5 source evolution, so their historical source hashes
-are retained rather than relabelled as evidence for a newer commit. A
-committed-source replay is required before integration. P5 remains open: its
-first same-round Graph/Owner pair proved a 69.6% whole-process-tree Host CPU
-saving, but Owner TPOT and throughput were materially worse and the measured
-AICore count was 3,071 instead of 3,064. P6 may not begin until P5 passes its
+This checkpoint does not close M2, M3, or M4. A 2026-08-15 replay bound P3 and
+P4 to commit `950df7c`: three cold P3 starts matched the Graph oracle exactly,
+and P4 primary plus lifecycle regression passed with identical source
+identities. The compact replay is in
+[`PERSISTENT-OWNER-SOURCE-BOUND-REPLAY-20260815.md`](../evidence/PERSISTENT-OWNER-SOURCE-BOUND-REPLAY-20260815.md).
+P5 remains open: its first same-round Graph/Owner pair proved a 69.6%
+whole-process-tree Host CPU saving, but Owner TPOT and throughput were
+materially worse and the measured AICore count was 3,071 instead of 3,064. A
+current-source FIA replay also failed before the first Feed with
+`funcEntry=0` / runtime `107000`. P6 may not begin until P5 passes its
 unchanged three-start performance gate.
 
 ### M2: Lifecycle, Recovery, and Resource Safety

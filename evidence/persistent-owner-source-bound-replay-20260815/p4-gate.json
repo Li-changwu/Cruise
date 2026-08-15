@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "gate": "P4-GATE-candidate-hardware-validated-source-bound",
+  "pass": true,
+  "commit": "950df7ca2d0667b7c04e151a75c65d62b2ee1fd3",
+  "physical_npu": 0,
+  "identity": {
+    "source_identity_equal": true,
+    "source_identity_sha256": "b3a36b4458840e3b0165a2c7c7fadebe874931ac19e2086f1f0aacba2202d962",
+    "oracle_identity_record_sha256": "5788553683d2258a3b6187659d7ed6de147dd589187f12d9da15b6bb815b1467"
+  },
+  "primary": {
+    "run": "persistent-admission-p4-source-bound-primary-950df7c-20260815",
+    "summary_sha256": "af088ba87c6c70d573d72df09e5f73072883b99103a6a9bb0d063130e491b6f4",
+    "gate_sha256": "8c026a38e40f032638f8c4931a518d84e1bd5b43504dd7d959b768a8d99ffcc7",
+    "requests": 32,
+    "feed_calls": 33,
+    "aicore_calls": 3064,
+    "total_commits": 8192,
+    "device_decode_coverage_percent": 100
+  },
+  "regression": {
+    "run": "persistent-admission-p4-source-bound-regression-950df7c-20260815",
+    "summary_sha256": "abfd3c79177d65e46fd5ffa4c8381f7c26099d8e6ea9ef61a61e51e63383a499",
+    "gate_sha256": "58905f5eff233c21c817d610dd7036911e0c7b85e93303702449553799f9f5e0",
+    "requests": 26,
+    "feed_calls": 36,
+    "aicore_calls": 111,
+    "total_commits": 194,
+    "rejected": 4,
+    "credit_acks": 4
+  },
+  "release": {
+    "mutable_external_weight_views_retired": true,
+    "visible_process_after_regression": false,
+    "post_run_hbm_usage_percent": 5
+  },
+  "claim_boundary": "P4 serial admission and service semantics only. P5 performance and P6 concurrency remain open."
+}

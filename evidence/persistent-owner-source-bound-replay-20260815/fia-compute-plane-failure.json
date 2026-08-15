@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "gate": "P5-FIA-GraphPp-compute-plane-replay",
+  "pass": false,
+  "commit": "950df7ca2d0667b7c04e151a75c65d62b2ee1fd3",
+  "physical_npu": 0,
+  "run": "persistent-decoder-p3-source-bound-950df7c-r1-20260815",
+  "runtime_identity": {
+    "air_sha256": "423123e4eabc0b0784a98386960b4af1a0db465e6ac2ab367ddb80461383e48d",
+    "external_weight_meta_sha256": "1fe0dc667a4439f2c5c34c8496db2ed2458151f17b85bd52e3a4bccde294031f",
+    "external_weight_manifest_sha256": "311b006b485a602a89a68e6e2b6afe270e27011415fc9548496beee522e9a959"
+  },
+  "execution": {
+    "driver_exit": 20,
+    "feed_calls": 0,
+    "aicore_calls": 0,
+    "total_commits": 0,
+    "error": "BinaryGetFunctionByEntry failed, funcEntry=0",
+    "runtime_error": 107000,
+    "node": "persistent_decoder_p3_graph_pp/FusedInferAttentionScore"
+  },
+  "integrity": {
+    "summary_sha256": "45bc2dd16e9b321c74ed5eb85d4b1569b7e08973d2b9d57923d147043caba45c",
+    "source_identity_record_sha256": "68e1fa029f827470d9c9ac5ec00777cae1ed6589f4b92b46192ce711b942951a",
+    "bounded_stdout_sha256": "8ff7d9fa1a37965a0347693617321df4f11c3b406ad44a134cba0f01cec474be"
+  },
+  "release": {
+    "mutable_external_weight_view_retired": true,
+    "visible_process_after_failure": false,
+    "post_run_hbm_usage_percent": 5
+  },
+  "decision": "P5 compute-plane integration remains blocked; do not run a new performance pair or P6."
+}

@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "gate": "P3-GATE-three-independent-cold-owner-starts-source-bound",
+  "pass": true,
+  "commit": "950df7ca2d0667b7c04e151a75c65d62b2ee1fd3",
+  "physical_npu": 0,
+  "scenario": "b4-mixed",
+  "independent_cold_starts": 3,
+  "request_count_per_start": 4,
+  "device_decode_coverage_percent": 100,
+  "owner_summary_sha256": "c8633b1c43b2cccfcd3da9f08e3cff9e3aa9bf45931bd4d73f2f91a8073d38d2",
+  "comparison_sha256": "fa03cb8a0a0161c54a8fbfd13a3d07851cd933f89fd7a57ee7a54639cafb0894",
+  "source_identity_record_sha256": "0ac94bd98ee428a8d621d6a13867814ffe38d91bf3db36929aa06c46446720f1",
+  "source_identity": {
+    "host_source_sha256": "5274a5ddd7ace250b59146062bbaf9a725908f9a9d339db25e6fcb648eb4c8d5",
+    "controller_source_sha256": "2ffac90c944a7d5c49714f63e9584f0a5026647f7d09e9d68ece941a5a47b616"
+  },
+  "runtime_identity": {
+    "air_sha256": "53e7c8407ac638af4c8b50865e8cc1c5ea428aedfa399b56c9bf014b792cc60b",
+    "external_weight_bundle_identity": "f93a2828d8b3ded10acc3831d114abe8b57738ad3adfc357a0f2bb047939866b"
+  },
+  "starts": [
+    {
+      "run": "persistent-decoder-p3-source-bound-legacy-950df7c-r1-20260815",
+      "feed_calls": 5,
+      "aicore_calls": 383,
+      "total_commits": 344,
+      "total_retired": 4,
+      "comparison_pass": true
+    },
+    {
+      "run": "persistent-decoder-p3-source-bound-legacy-950df7c-r2-20260815",
+      "feed_calls": 5,
+      "aicore_calls": 383,
+      "total_commits": 344,
+      "total_retired": 4,
+      "comparison_pass": true
+    },
+    {
+      "run": "persistent-decoder-p3-source-bound-legacy-950df7c-r3-20260815",
+      "feed_calls": 5,
+      "aicore_calls": 383,
+      "total_commits": 344,
+      "total_retired": 4,
+      "comparison_pass": true
+    }
+  ],
+  "release": {
+    "mutable_external_weight_views_retired": true,
+    "visible_process_after_final_start": false,
+    "post_run_hbm_usage_percent": 5
+  },
+  "claim_boundary": "Current committed P3 source is correct on the accepted legacy compute plane. This is not P5 FIA integration or performance evidence."
+}

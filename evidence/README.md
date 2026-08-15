@@ -75,3 +75,10 @@ Its compact aggregate JSON files are retained under
 [`persistent-owner-p0-p4-20260814/`](persistent-owner-p0-p4-20260814/). The
 checkpoint preserves the P3/P4 historical source-identity boundary and does
 not claim M2, M3, M4, or P5 completion.
+
+The follow-up committed-source replay is summarized in
+[`PERSISTENT-OWNER-SOURCE-BOUND-REPLAY-20260815.md`](PERSISTENT-OWNER-SOURCE-BOUND-REPLAY-20260815.md).
+Its compact P3, P4, and FIA-boundary JSON files are retained under
+[`persistent-owner-source-bound-replay-20260815/`](persistent-owner-source-bound-replay-20260815/).
+P3/P4 are bound to commit `950df7c` on the accepted legacy compute plane; P5
+and P6 remain open.

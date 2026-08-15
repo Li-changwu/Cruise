@@ -128,6 +128,13 @@ they have no same-round Graph baseline or whole-process-tree Host CPU
 attribution. No P4 result is a vLLM performance qualification or concurrent
 Prefill/Decode claim; those remain blocked on P5 and P6.
 
+The 2026-08-15 committed-source replay binds P3 and P4 to commit `950df7c`.
+Three independent P3 cold starts were byte-identical and matched the cold
+Graph oracle exactly. P4 primary again completed 32 requests, 8,192 commits,
+33 Feed calls, and exactly 3,064 AICore calls; its lifecycle regression also
+passed with the same source identity. Compact evidence is in
+`evidence/PERSISTENT-OWNER-SOURCE-BOUND-REPLAY-20260815.md`.
+
 P5 now has an implementation-ready vLLM-compatible Owner entry, a sampled
 whole-process-tree CPU meter, and an independent six-start matrix verifier in
 `experiments/persistent_decode_p5`. Its Owner runtime imports neither the
@@ -151,3 +158,10 @@ OM format, and the installed CANN 9.0 DataFlow headers declare no precompiled
 model process point. Cruise will not call Host ACL once per Decode step and
 will not bind to the undeclared private `ModelPp` ABI. P5 remains open at this
 compute-plane integration blocker; P6 remains closed.
+
+A current-source FIA replay on 2026-08-15 reproduced that boundary before the
+first admission Feed: `BinaryGetFunctionByEntry` failed with `funcEntry=0` and
+runtime status `107000` at
+`persistent_decoder_p3_graph_pp/FusedInferAttentionScore`. The same committed
+P3/P4 source passed on the accepted legacy compute plane, so this is a P5
+compute-plane blocker rather than a legacy correctness regression.

@@ -19,6 +19,14 @@ the checkpoint branch before commit. The accepted P3/P4 runs predate later P5
 source evolution. Their historical identities are preserved below; they must
 not be attributed to the newer committed source without a replay.
 
+That replay completed on 2026-08-15 at commit
+`950df7ca2d0667b7c04e151a75c65d62b2ee1fd3`. P3 passed three independent
+cold starts on the accepted legacy compute plane, and P4 primary plus
+regression passed with byte-identical source identities. See
+`PERSISTENT-OWNER-SOURCE-BOUND-REPLAY-20260815.md`. The separate FIA replay
+failed at the known P5 compute-plane boundary and does not invalidate the
+legacy P3/P4 correctness result.
+
 ## Source identity
 
 | Scope | Host SHA-256 | Controller SHA-256 | Relationship to checkpoint source |
