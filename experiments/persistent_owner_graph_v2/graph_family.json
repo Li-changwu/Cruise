@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "family_id": "qwen2.5-7b-controller-aware-b4-v2",
+  "model": {
+    "id": "Qwen/Qwen2.5-7B-Instruct",
+    "revision": "a09a35458c702b33eeacc393d103063234e8bc28"
+  },
+  "qualification_state": "contract_defined",
+  "controller": {
+    "authority": "persistent_device_model_owner",
+    "graph_selection_owner": "device_control_plane",
+    "process_point": "GraphPp",
+    "invocation_api": "RunFlowModel",
+    "closure_lifetime": "model_load",
+    "host_token_step_control": false
+  },
+  "shared_device_state": {
+    "contract_id": "qwen2.5-7b-b4-k384-paged-kv-v1",
+    "owner": "persistent_device_model_owner",
+    "batch_size": 4,
+    "page_size_tokens": 128,
+    "pages_per_row": 3,
+    "capacity_tokens_per_row": 384,
+    "access_mode": "paged_in_place",
+    "phase_handoff": "device_alias",
+    "host_copy_allowed": false,
+    "full_cache_graph_io_policy": "forbidden_without_proven_alias",
+    "proof_required": "before_graphpp_candidate_gate"
+  },
+  "graphs": [
+    {
+      "graph_id": "Prefill-B4-L128",
+      "closure_name": "controller_aware_prefill_b4_l128_graph_pp",
+      "phase": "prefill",
+      "extent": {
+        "batch_size": 4,
+        "tokens_per_row": 128,
+        "attention_capacity_tokens": 128
+      },
+      "qualification_state": "contract_defined",
+      "required_ops": {
+        "FusedInferAttentionScore": 28,
+        "ScatterPaKvCache": 28,
+        "RmsNorm": 1,
+        "AddRmsNorm": 56,
+        "RotaryMul": 56
+      },
+      "forbidden_ops": [
+        "SoftmaxV2",
+        "BatchMatMul"
+      ],
+      "required_features": [
+        "merged_qkv",
+        "merged_gate_up",
+        "native_norm",
+        "native_rotary",
+        "fused_attention",
+        "paged_kv_update",
+        "kv_refdata_alias",
+        "no_kv_tensor_move"
+      ],
+      "kv_contract_id": "qwen2.5-7b-b4-k384-paged-kv-v1"
+    },
+    {
+      "graph_id": "Decode-B4",
+      "closure_name": "controller_aware_decode_b4_graph_pp",
+      "phase": "decode",
+      "extent": {
+        "batch_size": 4,
+        "tokens_per_row": 1,
+        "attention_capacity_tokens": 384
+      },
+      "qualification_state": "contract_defined",
+      "required_ops": {
+        "FusedInferAttentionScore": 28,
+        "ScatterPaKvCache": 28,
+        "RmsNorm": 1,
+        "AddRmsNorm": 56,
+        "RotaryMul": 56,
+        "ArgMaxV2": 1
+      },
+      "forbidden_ops": [
+        "SoftmaxV2",
+        "BatchMatMul"
+      ],
+      "required_features": [
+        "merged_qkv",
+        "merged_gate_up",
+        "native_norm",
+        "native_rotary",
+        "fused_attention",
+        "paged_kv_update",
+        "kv_refdata_alias",
+        "no_kv_tensor_move"
+      ],
+      "kv_contract_id": "qwen2.5-7b-b4-k384-paged-kv-v1"
+    }
+  ]
+}

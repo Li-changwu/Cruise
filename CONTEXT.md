@@ -53,6 +53,19 @@ The AICore execution owned by the Device Control Plane for Prefill, Decode,
 sampling, and state advancement.
 _Avoid_: Device scheduler, Host execution
 
+**Controller-Aware Graph Family**:
+A model-load-scoped set of phase-specific whole-model graphs selected by the
+Device Control Plane. Each graph preserves the strongest supported compute
+structure for its phase while the Persistent Device Model Owner retains request
+and scheduling authority.
+_Avoid_: Universal graph, Host graph dispatcher, per-operator execution
+
+**Shared Device State Contract**:
+The identity, layout, ownership, and aliasing rules that allow graphs in one
+Controller-Aware Graph Family to advance the same Device KV Lease without a
+Host copy or an implicit full-cache reconstruction.
+_Avoid_: KV tensor handoff, Host cache, matching tensor shapes
+
 **Epoch Reference Scaffold**:
 The frozen fixed-K Host-Visible Decode Epoch path retained only as a correctness
 oracle, measurement reference, and bring-up aid for the Persistent architecture.
