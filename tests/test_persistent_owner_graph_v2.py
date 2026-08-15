@@ -24,6 +24,9 @@ from experiments.persistent_owner_graph_v2.paged_kv_order_probe.inspect_probe_gr
 from experiments.persistent_owner_graph_v2.paged_kv_order_probe.prepare_probe_config import (
     graph_config as paged_kv_order_graph_config,
 )
+from experiments.persistent_owner_graph_v2.attention_kv_probe.inspect_probe_graph import (
+    inspect_graph_text as inspect_attention_kv_graph,
+)
 
 from vllm_ascend_persistent_owner.graph_family import (
     GraphFamilyContractError,
@@ -650,3 +653,131 @@ def test_v2_paged_kv_order_uses_public_graph_graphpp_and_bounded_evidence():
     assert "STORAGE_GUARD_MAX_IDLE_HBM_PERCENT:-65" in runner
     assert '"${evidence}/paged_kv_order_probe.air"' not in runner
     assert "source-worktree-status.txt" in runner
+
+
+def _attention_kv_graph(ticket_source: str = "update") -> str:
+    ticket_node = ""
+    if ticket_source != "update":
+        ticket_node = '''node {
+  name: "other_ticket"
+  op: "Data"
+}
+'''
+    fia_inputs = ["ordered_query", "key_cache", "value_cache"] + [""] * 28
+    fia_input_text = "".join(
+        f'  input: "{name}:0"\n' if name else '  input: ""\n'
+        for name in fia_inputs
+    )
+    return f'''node {{
+  name: "key_cache"
+  op: "Data"
+}}
+node {{
+  name: "value_cache"
+  op: "Data"
+}}
+node {{
+  name: "query"
+  op: "Data"
+}}
+node {{
+  name: "metadata"
+  op: "Data"
+}}
+{ticket_node}node {{
+  name: "update"
+  op: "DevicePagedKvUpdate"
+  input: "key_cache:0"
+  input: "value_cache:0"
+  input: "metadata:0"
+}}
+node {{
+  name: "ordered_query"
+  op: "DeviceQueryAfterKvUpdate"
+  input: "query:0"
+  input: "{ticket_source}:0"
+}}
+node {{
+  name: "attention"
+  op: "FusedInferAttentionScore"
+{fia_input_text}}}
+node {{
+  name: "output"
+  op: "NetOutput"
+  input: "attention:0"
+  input: "update:0"
+}}
+'''
+
+
+def test_v2_attention_kv_structure_shares_state_and_orders_fia():
+    accepted = inspect_attention_kv_graph(_attention_kv_graph())
+    unordered = inspect_attention_kv_graph(_attention_kv_graph("other_ticket"))
+    external = inspect_attention_kv_graph(
+        _attention_kv_graph().replace(
+            'name: "key_cache"\n  op: "Data"',
+            'name: "key_cache"\n  op: "RefData"',
+        )
+    )
+
+    assert accepted["pass"]
+    assert accepted["shared_update_and_fia_kv_inputs"]
+    assert accepted["explicit_update_to_fia_dependency"]
+    assert accepted["compact_attention_and_ticket_outputs"]
+    assert not accepted["full_kv_graph_output"]
+    assert accepted["external_refdata_count"] == 0
+    assert accepted["tensor_move_count"] == 0
+    assert not unordered["pass"]
+    assert not unordered["explicit_update_to_fia_dependency"]
+    assert not external["pass"]
+    assert external["external_refdata_count"] == 1
+
+
+def test_v2_attention_kv_uses_owned_buffers_narrow_host_io_and_public_routes():
+    probe = V2 / "attention_kv_probe"
+    controller = (probe / "controller" / "attention_kv_controller.cpp").read_text(
+        encoding="utf-8"
+    )
+    host = (probe / "attention_kv_probe_host.cpp").read_text(encoding="utf-8")
+    exporter = (probe / "export_probe.py").read_text(encoding="utf-8")
+    runner = (probe / "run_on_910b.sh").read_text(encoding="utf-8")
+    verifier = (probe / "verify_probe.py").read_text(encoding="utf-8")
+    protocol = (probe / "protocol.md").read_text(encoding="utf-8")
+
+    assert controller.count("FlowBufferFactory::AllocTensor") == 1
+    assert "key_message_ = Allocate(context, cache_shape" in controller
+    assert "value_message_ = Allocate(context, cache_shape" in controller
+    assert '"attention_kv_graph_0",\n        {key_message_, value_message_' in controller
+    assert "key_message_.get() == key_message_address_" in controller
+    assert "value_message_.get() == value_message_address_" in controller
+    assert "reinterpret_cast<uint64_t>" not in controller
+
+    assert 'GraphPp("attention_kv_graph_pp"' in host
+    assert 'FlowNode("attention_kv_controller_node", 1, 1)' in host
+    assert "session->RunGraph" in host
+    assert "desc.SetPlacement(ge::kPlacementDevice)" in host
+    assert "tensor.SetData(reinterpret_cast<uint8_t *>(device), bytes" in host
+    assert '\\"host_cache_input_bytes\\": 0' in host
+    assert '\\"host_cache_output_bytes\\": 0' in host
+    assert "aclmdlExecute" not in host
+    assert "ModelPp" not in host
+
+    assert "torch_npu.npu_fused_infer_attention_score" in exporter
+    assert '"DevicePagedKvUpdate"' in exporter
+    assert '"DeviceQueryAfterKvUpdate"' in exporter
+    assert "build_isolated_opp.sh" in runner
+    assert "custom_opp_path=${ASCEND_CUSTOM_OPP_PATH}" in runner
+    assert (
+        "export ASCEND_CUSTOM_OPP_PATH=${custom_opp_path}:${ASCEND_CUSTOM_OPP_PATH}"
+        in runner
+    )
+    assert "for mode in graph dataflow" in runner
+    assert "v2_capture_hbm_baseline" in runner
+    assert "v2_wait_for_hbm_recovery" in runner
+    assert "STORAGE_GUARD_MAX_IDLE_HBM_PERCENT:-65" in runner
+
+    assert "host_cache_input_bytes" in verifier
+    assert "host_cache_output_bytes" in verifier
+    assert "all(dataflow_launches[name] >= 1" in verifier
+    assert "Any failure stops this combined path" in protocol
+    assert "does not prove" in protocol

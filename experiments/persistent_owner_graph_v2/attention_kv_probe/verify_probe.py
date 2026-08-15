@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""Verify the combined FunctionPp-owned PA-NZ update-to-FIA safety gate."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+from pathlib import Path
+
+
+PATTERNS = {
+    "update": re.compile(r"kernel_name=te_devicepagedkvupdate_", re.IGNORECASE),
+    "order": re.compile(r"kernel_name=te_devicequeryafterkvupdate_", re.IGNORECASE),
+    "fia": re.compile(r"kernel_name=te_fusedinferattentionscore_", re.IGNORECASE),
+}
+
+
+def read_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+
+
+def launch_counts(path: Path) -> dict[str, int]:
+    text = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+    return {name: len(pattern.findall(text)) for name, pattern in PATTERNS.items()}
+
+
+def exact_summaries(dataflow: dict) -> bool:
+    first = dataflow.get("first_summary", [])
+    second = dataflow.get("second_summary", [])
+    return (
+        len(first) == 32
+        and len(second) == 32
+        and first[0] == 1
+        and second[0] == 2
+        and first[1:10] == [0, 1, 1, 1, 1, 1, 1, 1, 1]
+        and second[1:10] == [0, 1, 2, 1, 1, 1, 1, 1, 1]
+        and first[11:13] == [0, 0]
+        and second[11:13] == [0, 0]
+        and first[18:22] == [16256, 16256, 0, 4096]
+        and second[18:22] == [16384, 16384, 0, 4096]
+        and first[22:24] == [0, 0]
+        and second[22:24] == [0, 0]
+        and first[28:32] == [1, 1, 1, 1]
+        and second[28:32] == [1, 1, 1, 1]
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--structure", type=Path, required=True)
+    parser.add_argument("--graph-result", type=Path, required=True)
+    parser.add_argument("--graph-log", type=Path, required=True)
+    parser.add_argument("--dataflow-result", type=Path, required=True)
+    parser.add_argument("--dataflow-log", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+
+    structure = read_json(args.structure)
+    graph = read_json(args.graph_result)
+    dataflow = read_json(args.dataflow_result)
+    graph_launches = launch_counts(args.graph_log)
+    dataflow_launches = launch_counts(args.dataflow_log)
+    summaries_exact = exact_summaries(dataflow)
+
+    structure_pass = (
+        structure.get("pass") is True
+        and structure.get("shared_update_and_fia_kv_inputs") is True
+        and structure.get("explicit_update_to_fia_dependency") is True
+        and structure.get("external_refdata_count") == 0
+        and structure.get("tensor_move_count") == 0
+        and structure.get("compact_attention_and_ticket_outputs") is True
+        and structure.get("full_kv_graph_output") is False
+    )
+    graph_pass = (
+        graph.get("pass") is True
+        and graph.get("device_placed_inputs_ready") is True
+        and graph.get("attention_exact") is True
+        and graph.get("ticket_exact") is True
+        and graph.get("host_cache_input_bytes") == 0
+        and graph.get("host_cache_output_bytes") == 0
+        and all(graph_launches[name] >= 1 for name in PATTERNS)
+    )
+    dataflow_pass = (
+        dataflow.get("pass") is True
+        and dataflow.get("exact_two_update_attention_calls") is True
+        and dataflow.get("allocation_count") == 1
+        and dataflow.get("graph_call_count") == 2
+        and dataflow.get("flowmsg_identity_stable") is True
+        and dataflow.get("buffer_address_stable") is True
+        and dataflow.get("full_cache_exact_after_each_call") is True
+        and dataflow.get("attention_observed_update_each_call") is True
+        and dataflow.get("device_owned_cache_bytes") == 3 * 1024 * 1024
+        and dataflow.get("host_cache_input_bytes") == 0
+        and dataflow.get("host_cache_output_bytes") == 0
+        and dataflow.get("raw_device_address_abi_used") is False
+        and dataflow.get("external_refdata_used") is False
+        and summaries_exact
+        and all(dataflow_launches[name] >= 1 for name in PATTERNS)
+    )
+    result = {
+        "gate": "V2-KV-ATTENTION",
+        "pass": structure_pass and graph_pass and dataflow_pass,
+        "structure_pass": structure_pass,
+        "ordinary_graph_pass": graph_pass,
+        "graphpp_functionpp_pass": dataflow_pass,
+        "explicit_update_to_fia_dependency": structure.get(
+            "explicit_update_to_fia_dependency"
+        ),
+        "shared_update_and_fia_kv_inputs": structure.get(
+            "shared_update_and_fia_kv_inputs"
+        ),
+        "ordinary_graph_launch_counts": graph_launches,
+        "graphpp_launch_counts": dataflow_launches,
+        "device_owned_allocation_count": dataflow.get("allocation_count"),
+        "device_owned_graph_call_count": dataflow.get("graph_call_count"),
+        "device_owned_cache_bytes": dataflow.get("device_owned_cache_bytes"),
+        "exact_full_cache_after_each_call": dataflow.get(
+            "full_cache_exact_after_each_call"
+        ),
+        "attention_observed_update_each_call": dataflow.get(
+            "attention_observed_update_each_call"
+        ),
+        "host_cache_input_bytes": dataflow.get("host_cache_input_bytes"),
+        "host_cache_output_bytes": dataflow.get("host_cache_output_bytes"),
+        "external_refdata_count": structure.get("external_refdata_count"),
+        "tensor_move_count": structure.get("tensor_move_count"),
+        "raw_device_address_abi_used": dataflow.get("raw_device_address_abi_used"),
+        "claim_boundary": (
+            "Combined FunctionPp-owned PA-NZ update-to-FIA component gate only; "
+            "no full Decoder, internal Device-copy, or P5 qualification claim."
+        ),
+    }
+    args.output.write_text(
+        json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print("V2_KV_ATTENTION_VERIFY " + json.dumps(result, sort_keys=True))
+    return 0 if result["pass"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
