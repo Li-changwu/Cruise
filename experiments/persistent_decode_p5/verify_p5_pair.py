@@ -30,6 +30,8 @@ def verify_pair(graph_path: Path, owner_path: Path) -> dict[str, Any]:
         and owner_metrics.get("host_token_step_api") is False
         and owner_metrics.get("forbidden_runtime_modules") == [],
         "owner_counter_coverage": owner_delta.get("admission_events") == 32
+        and owner_delta.get("admission_cohorts") == 8
+        and owner_delta.get("partial_admission_cohorts") == 0
         and owner_delta.get("aicore_calls") == 3064
         and owner_delta.get("commit_events") == 8192
         and owner_delta.get("host_decode_steps") == 0,

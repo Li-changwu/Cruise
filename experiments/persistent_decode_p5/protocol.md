@@ -19,6 +19,12 @@ freshly loaded route before the measurement window. Model loading and warmup
 are excluded from Host CPU and service timing; every measured request is
 included.
 
+The formal Owner service waits for exactly four compatible request-boundary
+admissions before releasing each staged cohort. This preserves closed-loop C4
+at the client while preventing one early replacement request from advancing a
+masked Device quantum before the other three replacements arrive. The general
+service default remains a bounded dynamic batch of one through four requests.
+
 The stock Graph route reads the single canonical model asset at
 `/workspace/cruise-assets/models/Qwen2.5-7B-Instruct-a09a35458c702b33eeacc393d103063234e8bc28`.
 The matrix preflight requires an exact revision marker and verifies the
@@ -79,10 +85,11 @@ Across the three starts, Owner must improve over same-round Graph by at least:
 - 15% in per-request TPOT p95;
 - 15% in output tokens per second.
 
-The gate additionally requires 32 admissions, exactly 3,064 AICore calls and
-8,192 Owner commit events per measured start, zero Host Decode steps, exact
-Graph/Owner semantics, six unique cold starts, and an empty legacy-route module
-audit. TTFT remains observable; ADR 0017 defers its final 5% guard to P6.
+The gate additionally requires 32 admissions in eight exact C4 cohorts, zero
+partial cohorts, exactly 3,064 AICore calls and 8,192 Owner commit events per
+measured start, zero Host Decode steps, exact Graph/Owner semantics, six unique
+cold starts, and an empty legacy-route module audit. TTFT remains observable;
+ADR 0017 defers its final 5% guard to P6.
 
 ## Storage boundary
 
@@ -110,6 +117,17 @@ tokens/s. Owner achieved 2.291 ms Host CPU per output token, but
 a 69.6% Host saving while missing both latency and throughput targets; it also
 reported 3,071 measured AICore calls instead of the frozen 3,064. This is a
 failed P5 pair, not a qualification result.
+
+The measured excess is exactly `3,071 - 8 * 383 = 7` calls, matching the seven
+handoffs between eight C4-sized waves. Source review found that the benchmark's
+rolling semaphore released each replacement request independently, while the
+service's timed dynamic batcher could admit that request before the other three
+replacements arrived. The old artifact did not expose cohort cardinalities, so
+the exact split sequence is source-attributed rather than directly observed.
+Formal Owner starts now stage exact C4 cohorts and report cohort counters; a
+start fails unless it measures eight cohorts and zero partial cohorts. This
+removes a coverage confounder but is not a performance improvement: the much
+larger TPOT and throughput loss remains assigned to the compute-plane redesign.
 
 The active redesign replaces the slow decomposed-attention compute closure
 with FusedInferAttentionScore while preserving the same Persistent Device Model

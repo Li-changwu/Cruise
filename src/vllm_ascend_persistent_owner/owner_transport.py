@@ -120,6 +120,8 @@ class OwnerTransport:
         self._reader_error: BaseException | None = None
         self._counters = {
             "admission_events": 0,
+            "admission_cohorts": 0,
+            "partial_admission_cohorts": 0,
             "credit_events": 0,
             "cancel_events": 0,
             "shutdown_events": 0,
@@ -280,6 +282,9 @@ class OwnerTransport:
                 self.requests.pop(request.key, None)
             raise
         self._counters["admission_events"] += len(batch)
+        self._counters["admission_cohorts"] += 1
+        if len(batch) != 4:
+            self._counters["partial_admission_cohorts"] += 1
 
     async def cancel(self, request: OwnerRequest) -> None:
         if request.retired or request.row < 0:

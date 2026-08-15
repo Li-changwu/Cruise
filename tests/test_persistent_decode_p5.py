@@ -36,6 +36,7 @@ from vllm_ascend_persistent_owner.graph_rmsnorm_compat import (
     install_cann9_rmsnorm_compat,
 )
 from vllm_ascend_persistent_owner.server import (
+    AdmissionBatcher,
     ServiceSettings,
     _validate_request,
     create_app,
@@ -79,9 +80,7 @@ def test_p5_driver_requires_full_model_revision_and_sha256_manifest() -> None:
     assert "P5_GRAPH1_SMOKE_COMPLETE" in driver
     assert "CRUISE_P5_STOP_AFTER_FIRST_PAIR" in driver
     assert "P5_FIRST_PAIR_COMPLETE" in driver
-    assert (
-        "STORAGE_GUARD_MAX_IDLE_HBM_PERCENT:-5" in driver
-    )
+    assert "STORAGE_GUARD_MAX_IDLE_HBM_PERCENT:-5" in driver
 
 
 def test_owner_entry_has_no_legacy_runtime_import() -> None:
@@ -117,6 +116,8 @@ def test_owner_entry_has_no_legacy_runtime_import() -> None:
         "ascend_compilation_config": {"fuse_norm_quant": False}
     }
     assert GRAPH_RMSNORM_BACKEND == COMPAT_RMSNORM_BACKEND
+    assert '"--admission-cohort-size"' in benchmark
+    assert '"exact_c4_admission_cohorts"' in benchmark
 
 
 def test_graph_rmsnorm_compat_is_local_and_idempotent() -> None:
@@ -217,6 +218,7 @@ class _FakeTransport:
         self.startup_timeout = startup_timeout
         self.closed = False
         self.admitted = 0
+        self.batch_sizes: list[int] = []
         self.instances.append(self)
 
     async def start(self) -> None:
@@ -232,6 +234,7 @@ class _FakeTransport:
     ) -> None:
         del cohort_id, ignore_eos, eos_token
         self.admitted += len(requests)
+        self.batch_sizes.append(len(requests))
         for request in requests:
             for index, token in enumerate((41, 42), start=1):
                 request.events.put_nowait(
@@ -325,6 +328,99 @@ def test_owner_service_streams_incremental_tokens_through_fake_transport() -> No
         }
     assert codec.prompts == [(1000, 1001)]
     assert _FakeTransport.instances[0].closed is True
+
+
+def test_formal_admission_batcher_waits_for_exact_c4() -> None:
+    async def exercise() -> None:
+        transport = _FakeTransport(("fake-owner",))
+        batcher = AdmissionBatcher(
+            transport, wait_ms=0, cohort_size=4  # type: ignore[arg-type]
+        )
+        batcher.start()
+        for index in range(3):
+            await batcher.submit((1000 + index,), 2, True)
+        await asyncio.sleep(0.01)
+        assert transport.batch_sizes == []
+        await batcher.submit((1003,), 2, True)
+        for _ in range(100):
+            if transport.batch_sizes:
+                break
+            await asyncio.sleep(0.001)
+        assert transport.batch_sizes == [4]
+        await batcher.close()
+
+    asyncio.run(exercise())
+
+
+def test_formal_admission_batcher_rejects_mixed_settings() -> None:
+    async def exercise() -> None:
+        transport = _FakeTransport(("fake-owner",))
+        batcher = AdmissionBatcher(
+            transport, wait_ms=0, cohort_size=4  # type: ignore[arg-type]
+        )
+        batcher.start()
+        accepted = [await batcher.submit((1000,), 2, True)]
+        rejected = await batcher.submit((2000,), 2, False)
+        for index in range(1, 4):
+            accepted.append(await batcher.submit((1000 + index,), 2, True))
+        for _ in range(100):
+            if transport.batch_sizes:
+                break
+            await asyncio.sleep(0.001)
+        assert transport.batch_sizes == [4]
+        error = rejected.events.get_nowait()
+        assert isinstance(error, RuntimeError)
+        assert str(error) == "strict admission cohort settings differ"
+        assert all(not request.events.empty() for request in accepted)
+        await batcher.close()
+
+    asyncio.run(exercise())
+
+
+def test_admission_batcher_close_rejects_staged_requests() -> None:
+    async def exercise() -> None:
+        transport = _FakeTransport(("fake-owner",))
+        batcher = AdmissionBatcher(
+            transport, wait_ms=0, cohort_size=4  # type: ignore[arg-type]
+        )
+        batcher.start()
+        requests = [
+            await batcher.submit((1000 + index,), 2, True) for index in range(2)
+        ]
+        await asyncio.sleep(0.001)
+        await batcher.close()
+        assert transport.batch_sizes == []
+        for request in requests:
+            error = request.events.get_nowait()
+            assert isinstance(error, RuntimeError)
+            assert str(error) == "admission batcher closed"
+
+    asyncio.run(exercise())
+
+
+def test_owner_transport_counts_full_and_partial_admission_cohorts() -> None:
+    async def exercise() -> None:
+        transport = OwnerTransport(("/bin/false",))
+        writes: list[list[str]] = []
+
+        async def capture(commands: list[str]) -> None:
+            writes.append(commands)
+
+        transport._write = capture  # type: ignore[method-assign]
+        requests = [OwnerRequest(index, 1, (1000,), 2) for index in range(1, 6)]
+        await transport.admit_many(
+            requests[:4], cohort_id=1, ignore_eos=True, eos_token=151645
+        )
+        await transport.admit_many(
+            requests[4:], cohort_id=2, ignore_eos=True, eos_token=151645
+        )
+        counters = transport.metrics()["counters"]
+        assert len(writes) == 2
+        assert counters["admission_events"] == 5
+        assert counters["admission_cohorts"] == 2
+        assert counters["partial_admission_cohorts"] == 1
+
+    asyncio.run(exercise())
 
 
 def test_owner_service_nonstreaming_uses_incremental_decoder() -> None:
@@ -444,6 +540,8 @@ def _synthetic_start(label: str) -> dict[str, object]:
         }
         result["owner_counter_delta"] = {
             "admission_events": 32,
+            "admission_cohorts": 8,
+            "partial_admission_cohorts": 0,
             "aicore_calls": 3064,
             "commit_events": 8192,
             "host_decode_steps": 0,

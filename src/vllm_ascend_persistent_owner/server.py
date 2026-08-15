@@ -25,6 +25,7 @@ class ServiceSettings:
     served_model_name: str
     owner_command: tuple[str, ...]
     batch_wait_ms: float = 5.0
+    admission_cohort_size: int | None = None
     eos_token_id: int = 151645
     owner_startup_timeout: float = 1140.0
 
@@ -68,9 +69,17 @@ class TokenCodec:
 
 
 class AdmissionBatcher:
-    def __init__(self, transport: OwnerTransport, wait_ms: float) -> None:
+    def __init__(
+        self,
+        transport: OwnerTransport,
+        wait_ms: float,
+        cohort_size: int | None = None,
+    ) -> None:
+        if cohort_size is not None and not 1 <= cohort_size <= 4:
+            raise ValueError("admission cohort size must be in [1, 4]")
         self.transport = transport
         self.wait_seconds = wait_ms / 1000.0
+        self.cohort_size = cohort_size
         self.pending: asyncio.Queue[tuple[OwnerRequest, bool]] = asyncio.Queue()
         self.next_request = 1
         self.next_generation = 1
@@ -96,34 +105,51 @@ class AdmissionBatcher:
 
     async def _run(self) -> None:
         while True:
-            first = await self.pending.get()
-            batch = [first]
-            ignore_eos = first[1]
-            deadline = asyncio.get_running_loop().time() + self.wait_seconds
-            while len(batch) < 4:
-                remaining = deadline - asyncio.get_running_loop().time()
-                if remaining <= 0:
-                    break
-                try:
-                    candidate = await asyncio.wait_for(
-                        self.pending.get(), timeout=remaining
-                    )
-                except asyncio.TimeoutError:
-                    break
-                if candidate[1] != ignore_eos:
-                    await self.pending.put(candidate)
-                    break
-                batch.append(candidate)
-            requests = [item[0] for item in batch]
+            batch: list[tuple[OwnerRequest, bool]] = []
             try:
+                first = await self.pending.get()
+                batch = [first]
+                ignore_eos = first[1]
+                if self.cohort_size is not None:
+                    while len(batch) < self.cohort_size:
+                        candidate = await self.pending.get()
+                        if candidate[1] != ignore_eos:
+                            candidate[0].events.put_nowait(
+                                RuntimeError(
+                                    "strict admission cohort settings differ"
+                                )
+                            )
+                            continue
+                        batch.append(candidate)
+                else:
+                    deadline = asyncio.get_running_loop().time() + self.wait_seconds
+                    while len(batch) < 4:
+                        remaining = deadline - asyncio.get_running_loop().time()
+                        if remaining <= 0:
+                            break
+                        try:
+                            candidate = await asyncio.wait_for(
+                                self.pending.get(), timeout=remaining
+                            )
+                        except asyncio.TimeoutError:
+                            break
+                        if candidate[1] != ignore_eos:
+                            await self.pending.put(candidate)
+                            break
+                        batch.append(candidate)
+                requests = [item[0] for item in batch]
                 await self.transport.admit_many(
                     requests,
                     cohort_id=self.next_cohort,
                     ignore_eos=ignore_eos,
                     eos_token=151645,
                 )
-            except BaseException as exc:
-                for request in requests:
+            except asyncio.CancelledError:
+                for request, _ in batch:
+                    request.events.put_nowait(RuntimeError("admission batcher closed"))
+                raise
+            except Exception as exc:
+                for request, _ in batch:
                     request.events.put_nowait(exc)
             self.next_cohort += 1
 
@@ -135,6 +161,10 @@ class AdmissionBatcher:
             await self.task
         except asyncio.CancelledError:
             pass
+        while not self.pending.empty():
+            request, _ = self.pending.get_nowait()
+            request.events.put_nowait(RuntimeError("admission batcher closed"))
+        self.task = None
 
 
 def _validate_request(body: Any, settings: ServiceSettings) -> tuple[tuple[int, ...], int, bool, bool, bool]:
@@ -253,7 +283,11 @@ def create_app(
             startup_timeout=settings.owner_startup_timeout,
         )
         await transport.start()
-        batcher = AdmissionBatcher(transport, settings.batch_wait_ms)
+        batcher = AdmissionBatcher(
+            transport,
+            settings.batch_wait_ms,
+            settings.admission_cohort_size,
+        )
         batcher.start()
         app.state.owner_transport = transport
         app.state.admission_batcher = batcher
@@ -398,6 +432,9 @@ def main() -> None:
     parser.add_argument("--air", type=Path, required=True)
     parser.add_argument("--owner-id", type=int, required=True)
     parser.add_argument("--batch-wait-ms", type=float, default=5.0)
+    parser.add_argument(
+        "--admission-cohort-size", type=int, choices=range(5), default=0
+    )
     parser.add_argument("--owner-startup-timeout", type=float, default=1140.0)
     args = parser.parse_args()
     required_paths = (
@@ -422,6 +459,7 @@ def main() -> None:
             str(args.owner_id),
         ),
         batch_wait_ms=args.batch_wait_ms,
+        admission_cohort_size=args.admission_cohort_size or None,
         owner_startup_timeout=args.owner_startup_timeout,
     )
     import uvicorn

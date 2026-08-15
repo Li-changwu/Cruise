@@ -401,6 +401,8 @@ def _server_command(args: argparse.Namespace, workload: Workload, port: int) -> 
             str(args.owner_id),
             "--owner-startup-timeout",
             str(OWNER_STARTUP_TIMEOUT_SECONDS),
+            "--admission-cohort-size",
+            "4",
         ]
     return [
         sys.executable,
@@ -755,6 +757,10 @@ def run_start(args: argparse.Namespace, workload: Workload) -> dict[str, Any]:
             and owner_delta.get("admission_events") == 32
             and owner_delta.get("credit_events") == 0
             and owner_delta.get("cancel_events") == 0,
+            "exact_c4_admission_cohorts": args.route != "owner"
+            or owner_delta is not None
+            and owner_delta.get("admission_cohorts") == 8
+            and owner_delta.get("partial_admission_cohorts") == 0,
             "device_c4_quantum_coverage": args.route != "owner"
             or owner_delta is not None
             and owner_delta.get("aicore_calls") == 3064,

@@ -165,6 +165,11 @@ def verify(paths: list[Path], workload_path: Path) -> dict[str, Any]:
             result.get("owner_counter_delta", {}).get("commit_events") == 8192
             and result.get("owner_counter_delta", {}).get("host_decode_steps") == 0
             and result.get("owner_counter_delta", {}).get("admission_events") == 32
+            and result.get("owner_counter_delta", {}).get("admission_cohorts") == 8
+            and result.get("owner_counter_delta", {}).get(
+                "partial_admission_cohorts"
+            )
+            == 0
             and result.get("owner_counter_delta", {}).get("aicore_calls") == 3064
             for result in grouped["owner"]
         ),
