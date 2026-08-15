@@ -61,10 +61,16 @@ and scheduling authority.
 _Avoid_: Universal graph, Host graph dispatcher, per-operator execution
 
 **Shared Device State Contract**:
-The identity, layout, ownership, and aliasing rules that allow graphs in one
-Controller-Aware Graph Family to advance the same Device KV Lease without a
-Host copy or an implicit full-cache reconstruction.
+The identity, layout, ownership, and handle-continuity rules that allow graphs
+in one Controller-Aware Graph Family to advance the same Device KV Lease
+without a Host copy or an implicit full-cache reconstruction.
 _Avoid_: KV tensor handoff, Host cache, matching tensor shapes
+
+**Device State Handle**:
+A Device-owned reference whose identity and lifetime bind multiple graphs to
+the same model-load-scoped state without moving that state through Host-facing
+input or output.
+_Avoid_: Raw Device address, external RefData, KV tensor payload
 
 **Epoch Reference Scaffold**:
 The frozen fixed-K Host-Visible Decode Epoch path retained only as a correctness

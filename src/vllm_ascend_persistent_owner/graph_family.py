@@ -17,9 +17,9 @@ SUPPORTED_PROCESS_POINT = "GraphPp"
 SUPPORTED_INVOCATION_API = "RunFlowModel"
 DEVICE_CONTROL_PLANE = "device_control_plane"
 PAGED_IN_PLACE = "paged_in_place"
-DEVICE_ALIAS = "device_alias"
+DEVICE_HANDLE_CONTINUITY = "device_handle_continuity"
 PROOF_PASSED = "passed"
-PROVEN_ALIAS_REQUIRED = "forbidden_without_proven_alias"
+DEVICE_HANDLE_INPUT_ONLY = "device_handle_input_only"
 
 
 class GraphFamilyContractError(ValueError):
@@ -443,14 +443,16 @@ def _validate_manifest_contract(manifest: GraphFamilyManifest) -> None:
         violations.append("the Persistent Owner must own shared KV state")
     if state.access_mode != PAGED_IN_PLACE:
         violations.append("shared KV must use paged_in_place access")
-    if state.phase_handoff != DEVICE_ALIAS:
-        violations.append("Prefill/Decode KV handoff must be a Device alias")
+    if state.phase_handoff != DEVICE_HANDLE_CONTINUITY:
+        violations.append("Prefill/Decode KV handoff must preserve a Device handle")
     if state.host_copy_allowed:
         violations.append("Host KV copies are forbidden")
-    if state.full_cache_graph_io_policy != PROVEN_ALIAS_REQUIRED:
-        violations.append("full-cache graph I/O must require a proven Device alias")
+    if state.full_cache_graph_io_policy != DEVICE_HANDLE_INPUT_ONLY:
+        violations.append("shared KV permits only a proven Device-handle input")
     if state.proof_required != "before_graphpp_candidate_gate":
-        violations.append("the Device alias proof must precede the GraphPp candidate gate")
+        violations.append(
+            "the Device State Handle proof must precede the GraphPp candidate gate"
+        )
     if state.capacity_tokens_per_row != state.page_size_tokens * state.pages_per_row:
         violations.append("KV capacity must equal page size times pages per row")
 
@@ -471,6 +473,10 @@ def _validate_manifest_contract(manifest: GraphFamilyManifest) -> None:
             violations.append(f"{graph.graph_id} batch does not match shared KV")
         if "FusedInferAttentionScore" not in graph.required_ops:
             violations.append(f"{graph.graph_id} does not require fused attention")
+        if graph.required_ops.get("DevicePagedKvUpdate") != 28:
+            violations.append(
+                f"{graph.graph_id} must require 28 DevicePagedKvUpdate nodes"
+            )
         for forbidden in ("SoftmaxV2", "BatchMatMul"):
             if forbidden not in graph.forbidden_ops:
                 violations.append(f"{graph.graph_id} must forbid {forbidden}")
@@ -481,7 +487,11 @@ def _validate_manifest_contract(manifest: GraphFamilyManifest) -> None:
             "native_rotary",
             "fused_attention",
             "paged_kv_update",
-            "kv_refdata_alias",
+            "functionpp_owned_state_handle",
+            "flowmsg_identity_continuity",
+            "no_external_refdata",
+            "compact_state_report_only",
+            "kv_update_attention_dependency",
             "no_kv_tensor_move",
         ):
             if feature not in graph.required_features:
@@ -610,17 +620,24 @@ def verify_graph_family(
             expected_state = {
                 "contract_id": manifest.shared_state.contract_id,
                 "access_mode": PAGED_IN_PLACE,
-                "phase_handoff": DEVICE_ALIAS,
+                "phase_handoff": DEVICE_HANDLE_CONTINUITY,
                 "host_copy_bytes": 0,
                 "full_cache_materialization_bytes": 0,
-                "alias_proof": PROOF_PASSED,
+                "state_handle_proof": PROOF_PASSED,
+                "same_flowmsg_across_calls": True,
+                "same_buffer_address_across_calls": True,
+                "raw_device_address_abi_used": False,
+                "external_refdata_used": False,
             }
             for key, expected in expected_state.items():
                 if kv_state.get(key) != expected:
                     graph_violations.append(f"kv_state.{key} must be {expected!r}")
-            for key in ("full_cache_input", "full_cache_output"):
-                if not isinstance(kv_state.get(key), bool):
-                    graph_violations.append(f"kv_state.{key} must be a boolean")
+            if kv_state.get("full_cache_input") is not True:
+                graph_violations.append(
+                    "kv_state.full_cache_input must be a proven Device handle"
+                )
+            if kv_state.get("full_cache_output") is not False:
+                graph_violations.append("kv_state.full_cache_output must be false")
 
             artifact = _mapping(report.get("artifact"), f"{prefix}.artifact")
             _sha256_string(artifact.get("sha256"), f"{prefix}.artifact.sha256")
@@ -734,7 +751,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "qualification_state": manifest.qualification_state,
                 "claim_boundary": (
                     "Contract validation only; graph artifacts, target hardware, "
-                    "correctness, shared-state aliasing, and performance are unproven."
+                    "correctness, Device State Handle continuity, and performance "
+                    "are unproven."
                 ),
             }
             exit_code = 0

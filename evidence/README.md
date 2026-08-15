@@ -89,3 +89,11 @@ Its compact verifier is retained under
 [`persistent-owner-custom-graphpp-20260815/`](persistent-owner-custom-graphpp-20260815/).
 It proves that `funcEntry=0` is not a general boundary for every custom AICore
 kernel on this stack; it does not prove FIA compatibility or P5 performance.
+
+The Controller-Aware Graph V2 Device-state handle result is summarized in
+[`PERSISTENT-OWNER-V2-DEVICE-KV-UPDATE-20260815.md`](PERSISTENT-OWNER-V2-DEVICE-KV-UPDATE-20260815.md).
+Its compact verifier is retained under
+[`persistent-owner-v2-device-kv-update-20260815/`](persistent-owner-v2-device-kv-update-20260815/).
+It proves exact repeated custom-AICore mutation of one FunctionPp-owned Device
+buffer without Host cache I/O, external `RefData`, or a raw-address ABI. It does
+not prove the target Paged-KV layout, graph ordering, full Decoder, or P5.

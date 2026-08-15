@@ -60,12 +60,16 @@ def _inspection(graph):
         "kv_state": {
             "contract_id": graph.kv_contract_id,
             "access_mode": "paged_in_place",
-            "phase_handoff": "device_alias",
+            "phase_handoff": "device_handle_continuity",
             "host_copy_bytes": 0,
             "full_cache_materialization_bytes": 0,
-            "full_cache_input": False,
+            "full_cache_input": True,
             "full_cache_output": False,
-            "alias_proof": "passed",
+            "state_handle_proof": "passed",
+            "same_flowmsg_across_calls": True,
+            "same_buffer_address_across_calls": True,
+            "raw_device_address_abi_used": False,
+            "external_refdata_used": False,
         },
         "correctness": {
             "ordinary_graph_exact": True,
@@ -103,12 +107,21 @@ def test_v2_language_and_adr_keep_the_historical_stop_boundary():
         / "adr"
         / "0021-preserve-device-control-with-a-graph-family.md"
     ).read_text(encoding="utf-8")
+    state_adr = (
+        ROOT
+        / "docs"
+        / "adr"
+        / "0022-retain-shared-state-behind-device-handles.md"
+    ).read_text(encoding="utf-8")
 
     assert "**Controller-Aware Graph Family**" in context
     assert "**Shared Device State Contract**" in context
     assert "ADR 0020 and the P5\nStopped / Unqualified state remain effective" in adr
     assert "private `ModelPp`" in adr
     assert "per-token Host `aclmdlExecute`" in adr
+    assert "**Device State Handle**" in context
+    assert "FunctionPp-owned `FlowMsg` handles" in state_adr
+    assert "raw Device addresses" in state_adr
 
 
 def test_v2_manifest_freezes_device_selection_and_exact_first_family():
@@ -123,8 +136,11 @@ def test_v2_manifest_freezes_device_selection_and_exact_first_family():
     assert graphs[GraphPhase.DECODE].graph_id == "Decode-B4"
     assert graphs[GraphPhase.DECODE].extent.attention_capacity_tokens == 384
     assert all(
-        graph.required_ops["ScatterPaKvCache"] == 28
-        and "kv_refdata_alias" in graph.required_features
+        graph.required_ops["DevicePagedKvUpdate"] == 28
+        and "functionpp_owned_state_handle" in graph.required_features
+        and "flowmsg_identity_continuity" in graph.required_features
+        and "no_external_refdata" in graph.required_features
+        and "kv_update_attention_dependency" in graph.required_features
         and "no_kv_tensor_move" in graph.required_features
         for graph in manifest.graphs
     )
@@ -167,7 +183,7 @@ def test_v2_manifest_rejects_host_selection_and_unproven_full_cache_io(tmp_path)
             {"full_cache_graph_io_policy": "always_allowed"}
         ),
     )
-    with pytest.raises(GraphFamilyContractError, match="proven Device alias"):
+    with pytest.raises(GraphFamilyContractError, match="Device-handle input"):
         load_graph_family(cache_path)
 
 
@@ -193,7 +209,18 @@ def test_v2_candidate_gate_accepts_complete_two_graph_evidence():
             1,
             "kv_state.full_cache_materialization_bytes",
         ),
-        ("kv_state", "alias_proof", "pending", "kv_state.alias_proof"),
+        (
+            "kv_state",
+            "state_handle_proof",
+            "pending",
+            "kv_state.state_handle_proof",
+        ),
+        (
+            "kv_state",
+            "same_flowmsg_across_calls",
+            False,
+            "kv_state.same_flowmsg_across_calls",
+        ),
     ],
 )
 def test_v2_candidate_gate_rejects_regressed_compute_or_control_paths(
@@ -210,15 +237,23 @@ def test_v2_candidate_gate_rejects_regressed_compute_or_control_paths(
     assert any(message in violation for violation in result.violations)
 
 
-def test_v2_candidate_gate_allows_full_cache_descriptor_only_with_proven_alias():
+def test_v2_candidate_gate_requires_handle_input_and_forbids_cache_output():
     manifest = load_graph_family(MANIFEST)
     reports = [_inspection(graph) for graph in manifest.graphs]
-    reports[1]["kv_state"]["full_cache_input"] = True
+    reports[1]["kv_state"]["full_cache_input"] = False
+
+    missing_handle = verify_graph_family(manifest, reports)
+
+    assert not missing_handle.passed
+    assert any("proven Device handle" in item for item in missing_handle.violations)
+
+    reports = [_inspection(graph) for graph in manifest.graphs]
     reports[1]["kv_state"]["full_cache_output"] = True
 
-    result = verify_graph_family(manifest, reports)
+    cache_output = verify_graph_family(manifest, reports)
 
-    assert result.passed
+    assert not cache_output.passed
+    assert any("full_cache_output" in item for item in cache_output.violations)
 
 
 def test_v2_candidate_gate_rejects_missing_merged_projection():

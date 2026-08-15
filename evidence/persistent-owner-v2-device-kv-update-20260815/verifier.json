@@ -1,0 +1,22 @@
+{
+  "claim_boundary": "One 8 KiB synthetic FunctionPp-owned Device buffer updated twice; no target KV layout, full Decoder, zero Device-copy, or P5 claim.",
+  "cross_call_checksum_continuity": true,
+  "device_owned_allocation_count": 1,
+  "device_owned_graph_call_count": 2,
+  "exact_cross_call_update": true,
+  "external_refdata_count": 0,
+  "gate": "V2-DEVICE-KV-UPDATE-LIFETIME",
+  "graphpp_exact_kernel_report_count": 2,
+  "graphpp_execution_count_source": "exact sequenced AICore reports",
+  "graphpp_functionpp_pass": true,
+  "graphpp_kernel_launch_record_count": 1,
+  "host_cache_input_bytes": 0,
+  "host_cache_output_bytes": 0,
+  "ordinary_graph_kernel_launch_count": 1,
+  "ordinary_graph_pass": true,
+  "pass": true,
+  "raw_device_address_abi_used": false,
+  "same_buffer_address_across_calls": true,
+  "same_flowmsg_across_calls": true,
+  "structure_pass": true
+}

@@ -22,9 +22,9 @@
     "pages_per_row": 3,
     "capacity_tokens_per_row": 384,
     "access_mode": "paged_in_place",
-    "phase_handoff": "device_alias",
+    "phase_handoff": "device_handle_continuity",
     "host_copy_allowed": false,
-    "full_cache_graph_io_policy": "forbidden_without_proven_alias",
+    "full_cache_graph_io_policy": "device_handle_input_only",
     "proof_required": "before_graphpp_candidate_gate"
   },
   "graphs": [
@@ -40,7 +40,7 @@
       "qualification_state": "contract_defined",
       "required_ops": {
         "FusedInferAttentionScore": 28,
-        "ScatterPaKvCache": 28,
+        "DevicePagedKvUpdate": 28,
         "RmsNorm": 1,
         "AddRmsNorm": 56,
         "RotaryMul": 56
@@ -56,7 +56,11 @@
         "native_rotary",
         "fused_attention",
         "paged_kv_update",
-        "kv_refdata_alias",
+        "functionpp_owned_state_handle",
+        "flowmsg_identity_continuity",
+        "no_external_refdata",
+        "compact_state_report_only",
+        "kv_update_attention_dependency",
         "no_kv_tensor_move"
       ],
       "kv_contract_id": "qwen2.5-7b-b4-k384-paged-kv-v1"
@@ -73,7 +77,7 @@
       "qualification_state": "contract_defined",
       "required_ops": {
         "FusedInferAttentionScore": 28,
-        "ScatterPaKvCache": 28,
+        "DevicePagedKvUpdate": 28,
         "RmsNorm": 1,
         "AddRmsNorm": 56,
         "RotaryMul": 56,
@@ -90,7 +94,11 @@
         "native_rotary",
         "fused_attention",
         "paged_kv_update",
-        "kv_refdata_alias",
+        "functionpp_owned_state_handle",
+        "flowmsg_identity_continuity",
+        "no_external_refdata",
+        "compact_state_report_only",
+        "kv_update_attention_dependency",
         "no_kv_tensor_move"
       ],
       "kv_contract_id": "qwen2.5-7b-b4-k384-paged-kv-v1"

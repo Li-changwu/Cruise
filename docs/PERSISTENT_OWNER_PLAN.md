@@ -195,3 +195,22 @@ component therefore did not pass, and no full P3 FIA graph, second Graph/Owner
 pair, or six-start matrix was run. P5 is Stopped / Unqualified on this CANN 9 /
 Ascend 910B2 stack; P6 remains closed under ADR 0020. Compact evidence is in
 `evidence/PERSISTENT-OWNER-FIA-GRAPHPP-20260815.md`.
+
+Controller-Aware Graph V2 first exported a stock `ScatterPaKvCache + RefData`
+structure, but public GraphPp could not assign a DataFlow data index to the
+external `RefData` transfer node. V2 therefore does not use external `RefData`
+as its shared-state boundary.
+
+The replacement Device-state handle lifetime probe passed on 2026-08-15 at
+clean commit `7055eb4`. FunctionPp allocated one 8 KiB synthetic Device buffer,
+retained the same `FlowMsg` and address, and invoked one custom AICore GraphPp
+twice. The dependent updates zero -> BF16 1.0 -> 2.0, complete-buffer scans,
+and cross-call checksums were exact. Host cache input/output stayed at zero;
+ordinary Graph also executed the same custom kernel exactly. Compact evidence
+is in `evidence/PERSISTENT-OWNER-V2-DEVICE-KV-UPDATE-20260815.md`.
+
+This advances only the public Device State Handle mechanism. The next ordered
+gate must prove the target B4/K384 Paged-KV layout and an explicit in-graph
+update-to-reader dependency before any Prefill/Decode graph uses the mechanism.
+P5 remains Stopped / Unqualified; no P5 pair, six-start matrix, or P6 run is
+authorized by this component result.
