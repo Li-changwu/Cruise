@@ -1,7 +1,7 @@
 # Controller-Aware Graph V2 owner-only component pass
 
 The bounded owner-only run
-`persistent-owner-v2-kv-attention-owner-only-20260816-r1` passed on NPU 0 on
+`persistent-owner-v2-kv-attention-owner-only-20260816-r2` passed on NPU 0 on
 2026-08-16. It proves that FunctionPp can allocate and retain the KV state in
 its CANN execution ownership domain and pass the same FlowMsg objects directly
 to GraphPp for two exact update-to-attention calls.
@@ -28,7 +28,7 @@ It contains one `DevicePagedKvUpdate`, one
 `DeviceQueryAfterKvUpdate`, one `FusedInferAttentionScore`, no `RefData`, no
 `TensorMove`, one explicit update-ticket-to-FIA dependency, and no full-KV
 graph output. The AIR SHA-256 is
-`9733f0883654b7cf276e26593fa4dc3b6075d7d51935cb509f045eda470a49e6`.
+`c438dd85bd05f9a64fd799eba8143b4549450dde4603a158cf70e7a6b3b0a906`.
 
 The exporter wrote a complete `pass=true` result and all checked artifacts,
 then retained its historical cleanup-time status 139. The driver accepts 139
@@ -68,14 +68,12 @@ proof.
 
 ## E4: identity and cleanup
 
-The execution is bound to source commit
-`6a628e869de88b29ebe79d00cb0f3f99e9819ab5` plus a captured dirty-worktree
-patch with SHA-256
-`0a47600c60bdce6f03957e45dc8d2a2f72812fbb346b4892d9033e3d127042a4`.
-The compact identity record also binds the custom package, FIA package
-manifest, AIR, ABI, Graph, FunctionPp, and deploy configs.
+The execution is bound directly to clean source commit
+`93aa31c6265145c35da669bb5fac1bd5e6b3d8a4`; the captured source-worktree
+status is empty. The compact identity record also binds the custom package,
+FIA package manifest, AIR, ABI, Graph, FunctionPp, and deploy configs.
 
-The driver exited 0. NPU 0 recovered from 3,452 MiB to 3,452 MiB HBM with three
+The driver exited 0. NPU 0 recovered from 3,451 MiB to 3,452 MiB HBM with three
 stable samples and no visible process. No NPU reset was performed. Static
 verification passed 33 focused tests and 272 repository tests excluding the
 separately isolated `tests/test_real_scheduler.py`, plus Bash/Python syntax
@@ -84,7 +82,7 @@ checks and `git diff --check`.
 Compact evidence is retained under
 `evidence/persistent-owner-v2-kv-attention-owner-20260816/`. The complete
 seven-day diagnostic bundle is under
-`/workspace/cruise-runs/persistent-owner-v2-kv-attention-owner-only-20260816-r1`.
+`/workspace/cruise-runs/persistent-owner-v2-kv-attention-owner-only-20260816-r2`.
 
 ## Decision boundary
 

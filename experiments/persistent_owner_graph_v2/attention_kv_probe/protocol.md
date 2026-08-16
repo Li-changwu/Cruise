@@ -102,7 +102,8 @@ allocates CANN-owned FlowMsg buffers in its execution context, retains them
 across both calls, and passes those same messages directly to GraphPp. Host
 sends only sequence/slot metadata and receives only compact summaries.
 
-Run `persistent-owner-v2-kv-attention-owner-only-20260816-r1` passed E0-E4.
+Run `persistent-owner-v2-kv-attention-owner-only-20260816-r2` passed E0-E4
+from clean source commit `93aa31c`.
 DataFlow add, compile, model load, and both Feed/Fetch rounds returned zero.
 FunctionPp allocated one 3 MiB KV state, completed two exact GraphPp calls, and
 kept FlowMsg identity and Device addresses stable. Full key/value scans,

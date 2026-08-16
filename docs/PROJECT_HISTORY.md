@@ -411,13 +411,15 @@ boundary. Under the ordered stop rule, GraphPp and all downstream Decoder/P5
 work were not run. P5 remains Stopped / Unqualified and P6 remains closed. See
 [`PERSISTENT-OWNER-V2-KV-ATTENTION-ABI-R2-20260816.md`](../evidence/PERSISTENT-OWNER-V2-KV-ATTENTION-ABI-R2-20260816.md).
 
-The subsequent owner-only revision separated the two ownership domains. It did
-not rerun ordinary Graph; FunctionPp instead allocated and retained one
-CANN-owned 3 MiB KV state and passed those same FlowMsg objects directly to
-GraphPp. Both Feed/Fetch rounds returned zero, the Device addresses stayed
-stable, both complete cache scans and attention/ticket results were exact, and
-Host KV I/O was 0/0. Three target task registrations were observed once each;
-the two semantic calls were independently proved by the controller summaries.
+The subsequent owner-only revision separated the two ownership domains. Clean
+source run `persistent-owner-v2-kv-attention-owner-only-20260816-r2` at
+`93aa31c` did not rerun ordinary Graph; FunctionPp instead allocated and
+retained one CANN-owned 3 MiB KV state and passed those same FlowMsg objects
+directly to GraphPp. Both Feed/Fetch rounds returned zero, the Device addresses
+stayed stable, both complete cache scans and attention/ticket results were
+exact, and Host KV I/O was 0/0. Three target task registrations were observed
+once each; the two semantic calls were independently proved by the controller
+summaries.
 See
 [`PERSISTENT-OWNER-V2-KV-ATTENTION-OWNER-20260816.md`](../evidence/PERSISTENT-OWNER-V2-KV-ATTENTION-OWNER-20260816.md).
 

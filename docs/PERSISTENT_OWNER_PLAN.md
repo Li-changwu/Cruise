@@ -279,9 +279,9 @@ exactly. Host KV I/O was 0/0, and bounded transfer logs contained no full-cache
 size match. Load-time task registration and two-call semantic evidence are now
 reported separately.
 
-This passes the bounded E0-E4 ownership component at source commit `6a628e8`
-plus the captured worktree patch. It does not reopen P5: the next independently
-tracked step is 28-layer Decoder integration and correctness before a new
-Graph/Owner pair. Compact evidence is in
+This passes the bounded E0-E4 ownership component at clean source commit
+`93aa31c`. It does not reopen P5: the next independently tracked step is
+28-layer Decoder integration and correctness before a new Graph/Owner pair.
+Compact evidence is in
 `evidence/PERSISTENT-OWNER-V2-KV-ATTENTION-OWNER-20260816.md`. P5 remains
 Stopped / Unqualified and P6 remains closed.
