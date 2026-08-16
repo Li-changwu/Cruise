@@ -14,15 +14,37 @@ PATTERNS = {
     "order": re.compile(r"kernel_name=te_devicequeryafterkvupdate_", re.IGNORECASE),
     "fia": re.compile(r"kernel_name=te_fusedinferattentionscore_", re.IGNORECASE),
 }
+FULL_CACHE_SIZES = ("1572864", "3145728", "0x180000", "0x300000")
 
 
-def read_json(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+def read_json(path: Path | None) -> dict:
+    if path is None or not path.is_file():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
-def launch_counts(path: Path) -> dict[str, int]:
-    text = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+def registration_counts(path: Path | None) -> dict[str, int]:
+    text = (
+        path.read_text(encoding="utf-8", errors="replace")
+        if path is not None and path.is_file()
+        else ""
+    )
     return {name: len(pattern.findall(text)) for name, pattern in PATTERNS.items()}
+
+
+def transfer_audit(path: Path) -> dict[str, int | bool]:
+    text = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+    lines = [line for line in text.splitlines() if line.strip()]
+    full_cache = [
+        line
+        for line in lines
+        if any(size in line.lower() for size in FULL_CACHE_SIZES)
+    ]
+    return {
+        "record_count": len(lines),
+        "full_cache_record_count": len(full_cache),
+        "no_full_cache_transfer_record": not full_cache,
+    }
 
 
 def exact_summaries(dataflow: dict) -> bool:
@@ -48,20 +70,42 @@ def exact_summaries(dataflow: dict) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--route", choices=("combined", "owner"), default="combined")
     parser.add_argument("--structure", type=Path, required=True)
-    parser.add_argument("--graph-result", type=Path, required=True)
-    parser.add_argument("--graph-log", type=Path, required=True)
+    parser.add_argument("--graph-result", type=Path)
+    parser.add_argument("--graph-log", type=Path)
+    parser.add_argument("--graph-transfer-log", type=Path)
     parser.add_argument("--dataflow-result", type=Path, required=True)
     parser.add_argument("--dataflow-log", type=Path, required=True)
+    parser.add_argument("--dataflow-transfer-log", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if args.route == "combined" and any(
+        path is None
+        for path in (args.graph_result, args.graph_log, args.graph_transfer_log)
+    ):
+        parser.error("combined route requires all ordinary Graph evidence")
 
     structure = read_json(args.structure)
     graph = read_json(args.graph_result)
     dataflow = read_json(args.dataflow_result)
-    graph_launches = launch_counts(args.graph_log)
-    dataflow_launches = launch_counts(args.dataflow_log)
+    graph_registrations = registration_counts(args.graph_log)
+    dataflow_registrations = registration_counts(args.dataflow_log)
+    graph_transfers = (
+        transfer_audit(args.graph_transfer_log)
+        if args.graph_transfer_log is not None
+        else None
+    )
+    dataflow_transfers = transfer_audit(args.dataflow_transfer_log)
     summaries_exact = exact_summaries(dataflow)
+    target_tasks_registered = all(
+        dataflow_registrations[name] >= 1 for name in PATTERNS
+    )
+    semantic_graph_calls_exact = (
+        dataflow.get("exact_two_update_attention_calls") is True
+        and dataflow.get("graph_call_count") == 2
+        and summaries_exact
+    )
 
     structure_pass = (
         structure.get("pass") is True
@@ -71,21 +115,31 @@ def main() -> int:
         and structure.get("tensor_move_count") == 0
         and structure.get("compact_attention_and_ticket_outputs") is True
         and structure.get("full_kv_graph_output") is False
+        and structure.get("data_input_abi_pass") is True
     )
-    graph_pass = (
-        graph.get("pass") is True
-        and graph.get("device_placed_inputs_ready") is True
-        and graph.get("attention_exact") is True
-        and graph.get("ticket_exact") is True
-        and graph.get("host_cache_input_bytes") == 0
-        and graph.get("host_cache_output_bytes") == 0
-        and all(graph_launches[name] >= 1 for name in PATTERNS)
-    )
+    graph_pass = None
+    if args.route == "combined":
+        graph_pass = (
+            graph.get("pass") is True
+            and graph.get("device_placed_inputs_ready") is True
+            and graph.get("abi_input_count") == 6
+            and graph.get("metadata_input_index") == 2
+            and graph.get("query_input_index") == 3
+            and graph.get("attention_exact") is True
+            and graph.get("ticket_exact") is True
+            and graph.get("host_cache_input_bytes") == 0
+            and graph.get("host_cache_output_bytes") == 0
+            and all(graph_registrations[name] >= 1 for name in PATTERNS)
+            and graph_transfers is not None
+            and graph_transfers["no_full_cache_transfer_record"] is True
+        )
     dataflow_pass = (
         dataflow.get("pass") is True
-        and dataflow.get("exact_two_update_attention_calls") is True
+        and semantic_graph_calls_exact
+        and dataflow.get("abi_input_count") == 6
+        and dataflow.get("metadata_input_index") == 2
+        and dataflow.get("query_input_index") == 3
         and dataflow.get("allocation_count") == 1
-        and dataflow.get("graph_call_count") == 2
         and dataflow.get("flowmsg_identity_stable") is True
         and dataflow.get("buffer_address_stable") is True
         and dataflow.get("full_cache_exact_after_each_call") is True
@@ -95,13 +149,18 @@ def main() -> int:
         and dataflow.get("host_cache_output_bytes") == 0
         and dataflow.get("raw_device_address_abi_used") is False
         and dataflow.get("external_refdata_used") is False
-        and summaries_exact
-        and all(dataflow_launches[name] >= 1 for name in PATTERNS)
+        and target_tasks_registered
+        and dataflow_transfers["no_full_cache_transfer_record"] is True
     )
+    ordinary_graph_required = args.route == "combined"
     result = {
         "gate": "V2-KV-ATTENTION",
-        "pass": structure_pass and graph_pass and dataflow_pass,
+        "pass": structure_pass
+        and dataflow_pass
+        and (graph_pass is True if ordinary_graph_required else True),
+        "route": args.route,
         "structure_pass": structure_pass,
+        "ordinary_graph_evaluated": ordinary_graph_required,
         "ordinary_graph_pass": graph_pass,
         "graphpp_functionpp_pass": dataflow_pass,
         "explicit_update_to_fia_dependency": structure.get(
@@ -110,8 +169,12 @@ def main() -> int:
         "shared_update_and_fia_kv_inputs": structure.get(
             "shared_update_and_fia_kv_inputs"
         ),
-        "ordinary_graph_launch_counts": graph_launches,
-        "graphpp_launch_counts": dataflow_launches,
+        "ordinary_graph_registration_counts": graph_registrations,
+        "graphpp_registration_counts": dataflow_registrations,
+        "graphpp_target_tasks_registered": target_tasks_registered,
+        "semantic_graph_calls_exact": semantic_graph_calls_exact,
+        "ordinary_graph_transfer_audit": graph_transfers,
+        "graphpp_transfer_audit": dataflow_transfers,
         "device_owned_allocation_count": dataflow.get("allocation_count"),
         "device_owned_graph_call_count": dataflow.get("graph_call_count"),
         "device_owned_cache_bytes": dataflow.get("device_owned_cache_bytes"),
@@ -127,8 +190,11 @@ def main() -> int:
         "tensor_move_count": structure.get("tensor_move_count"),
         "raw_device_address_abi_used": dataflow.get("raw_device_address_abi_used"),
         "claim_boundary": (
-            "Combined FunctionPp-owned PA-NZ update-to-FIA component gate only; "
-            "no full Decoder, internal Device-copy, or P5 qualification claim."
+            "FunctionPp-owned PA-NZ update-to-FIA component gate only; "
+            "launch logs prove task registration, while controller summaries "
+            "prove the two semantic GraphPp calls; "
+            "no full Decoder or P5 qualification claim; absence in bounded "
+            "runtime transfer logs is not a universal zero-copy proof."
         ),
     }
     args.output.write_text(

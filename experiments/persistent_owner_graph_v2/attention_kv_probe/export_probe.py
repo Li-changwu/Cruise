@@ -137,8 +137,8 @@ class AttentionKvProbe(torch.nn.Module):
         self,
         key_cache: torch.Tensor,
         value_cache: torch.Tensor,
-        query: torch.Tensor,
         metadata: torch.Tensor,
+        query: torch.Tensor,
         mask: torch.Tensor,
         block_table: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -176,7 +176,7 @@ def inputs() -> tuple[torch.Tensor, ...]:
     block_table = torch.arange(
         PHYSICAL_BLOCKS, dtype=torch.int32, device="npu"
     ).reshape(BATCH, BLOCKS_PER_ROW)
-    return key_cache, value_cache, query, metadata, mask, block_table
+    return key_cache, value_cache, metadata, query, mask, block_table
 
 
 def inspect_air(path: Path) -> dict[str, object]:
@@ -234,12 +234,23 @@ def main() -> int:
     (args.output_dir / "graph-structure.json").write_text(
         json.dumps(structure, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+    abi = {
+        "schema_version": 1,
+        "gate": "V2-KV-ATTENTION-ABI",
+        "pass": structure.get("data_input_abi_pass") is True,
+        "graph_sha256": structure.get("graph_sha256"),
+        "data_inputs": structure.get("data_input_abi", []),
+    }
+    (args.output_dir / "graph-abi.json").write_text(
+        json.dumps(abi, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     result = {
         "gate": "V2-KV-ATTENTION-EXPORT",
         "pass": bool(
             air.is_file()
             and graph.is_file()
             and structure.get("pass") is True
+            and abi["pass"] is True
             and air_result.get("fia_slot_contract_pass") is True
         ),
         "kv_shape": list(KV_SHAPE),
@@ -252,6 +263,7 @@ def main() -> int:
         "air_sha256": sha256(air) if air.is_file() else None,
         "graph_sha256": sha256(graph) if graph.is_file() else None,
         "structure_pass": structure.get("pass") is True,
+        "data_input_abi_pass": abi["pass"],
         "claim_boundary": (
             "Combined PA-NZ update-to-FIA export only; no execution, full "
             "Decoder, zero-copy, or P5 qualification claim."

@@ -6,6 +6,8 @@ v2_dir=$(cd -- "${script_dir}/.." && pwd)
 source_dir=$(cd -- "${script_dir}/../../.." && pwd)
 fia_probe_dir=${source_dir}/experiments/persistent_decoder_p3/fia_graphpp_probe
 physical_npu=${CRUISE_PHYSICAL_NPU:-0}
+max_stage=${CRUISE_V2_KV_ATTENTION_MAX_STAGE:-dataflow}
+allow_diagnostic_dirty=${CRUISE_ALLOW_DIAGNOSTIC_DIRTY:-0}
 run_id=${CRUISE_RUN_ID:-persistent-owner-v2-kv-attention-$(date -u +%Y%m%dT%H%M%SZ)}
 persistent_root=${CRUISE_PERSISTENT_ROOT:-/workspace/cruise-runs}
 run_root=${persistent_root}/${run_id}
@@ -31,6 +33,22 @@ verifier=${script_dir}/verify_probe.py
 controller_source=${script_dir}/controller
 op_kernel_dir=${script_dir}/op_kernel
 op_host_dir=${script_dir}/op_host
+
+case "${max_stage}" in
+  export|graph|owner|dataflow) ;;
+  *)
+    printf 'invalid V2 KV attention max stage: %s\n' "${max_stage}" >&2
+    exit 96
+    ;;
+esac
+case "${allow_diagnostic_dirty}" in
+  0|1) ;;
+  *)
+    printf 'invalid diagnostic dirty-worktree setting: %s\n' \
+      "${allow_diagnostic_dirty}" >&2
+    exit 96
+    ;;
+esac
 
 for required in "${python_bin}" "${cann_set_env}" "${guard}" \
   "${hardware_policy}" "${lifecycle_tool}" "${resource_writer}" \
@@ -61,7 +79,7 @@ done
 source "${guard}"
 source "${hardware_policy}"
 export STORAGE_GUARD_MAX_SCRATCH_GIB=1
-export STORAGE_GUARD_MAX_EVIDENCE_BYTES=$((128 * 1024 * 1024))
+export STORAGE_GUARD_MAX_EVIDENCE_BYTES=$((256 * 1024 * 1024))
 export STORAGE_GUARD_NPU_WAIT_SECONDS=60
 export STORAGE_GUARD_NPU_STABLE_SAMPLES=3
 export STORAGE_GUARD_MAX_IDLE_HBM_PERCENT=${STORAGE_GUARD_MAX_IDLE_HBM_PERCENT:-65}
@@ -90,6 +108,30 @@ build=${scratch}/build
 mkdir -p "${opp_proxy}" "${config_dir}" "${deploy_root}" \
   "${controller_workspace}" "${driver_logs}" "${cache}" "${tmp}" "${build}"
 
+extract_failure_logs() {
+  local mode source_file relative target
+  [[ -d "${driver_logs}" ]] || return 0
+  find "${driver_logs}" -type f -printf '%P\t%s\n' | sort \
+    >"${evidence}/driver-log-manifest.tsv"
+  for mode in graph dataflow; do
+    [[ -d "${driver_logs}/${mode}" ]] || continue
+    mkdir -p "${evidence}/failure-driver-logs/${mode}"
+    cp -a "${driver_logs}/${mode}/." \
+      "${evidence}/failure-driver-logs/${mode}/"
+    find "${driver_logs}/${mode}" -type f -print0 | sort -z | \
+      xargs -0 -r rg -n -i \
+        'error|failed|failure|invalid|exception|fault|107000' | \
+      tail -n 8192 >"${evidence}/${mode}-error-index.log" || true
+  done
+  while IFS= read -r -d '' source_file; do
+    relative=${source_file#"${driver_logs}"/}
+    target=${evidence}/failure-driver-logs/${relative}
+    mkdir -p "$(dirname -- "${target}")"
+    tail -c $((512 * 1024)) -- "${source_file}" >"${target}"
+  done < <(find "${driver_logs}" -mindepth 1 -maxdepth 1 -type f -print0 | \
+    sort -z)
+}
+
 finalize() {
   local command_status=$? recovery_status=0 finalize_status=0 cleanup_status=0
   local lifecycle_status=0
@@ -104,11 +146,7 @@ finalize() {
   fi
   if [[ ( ${command_status} -ne 0 || ${recovery_status} -ne 0 ) && \
         -d "${driver_logs}" ]]; then
-    mkdir -p "${evidence}/failure-driver-logs"
-    while IFS= read -r log; do
-      tail -c $((512 * 1024)) -- "${log}" \
-        >"${evidence}/failure-driver-logs/$(basename -- "${log}")"
-    done < <(find "${driver_logs}" -type f -print | sort | head -n 24)
+    extract_failure_logs
   fi
   for root in "${custom_install}" "${fia_install}"; do
     [[ -d "${root}" ]] && find "${root}" -type d -exec chmod u+w {} +
@@ -137,8 +175,13 @@ trap finalize EXIT
 git -C "${source_dir}" status --porcelain=v1 \
   >"${evidence}/source-worktree-status.txt"
 [[ ! -s "${evidence}/source-worktree-status.txt" ]] || {
-  printf 'V2 KV attention hardware probe requires a clean worktree\n' >&2
-  exit 94
+  if [[ "${allow_diagnostic_dirty}" != 1 ]]; then
+    printf 'V2 KV attention hardware probe requires a clean worktree\n' >&2
+    exit 94
+  fi
+  git -C "${source_dir}" diff --check
+  git -C "${source_dir}" diff --binary \
+    >"${evidence}/source-worktree.patch"
 }
 git -C "${source_dir}" rev-parse HEAD >"${evidence}/source-commit.txt"
 v2_capture_hbm_baseline "${evidence}" "${physical_npu}"
@@ -209,13 +252,6 @@ export ASCEND_CUSTOM_OPP_PATH=${custom_opp_path}:${ASCEND_CUSTOM_OPP_PATH}
 "${python_bin}" "${resource_writer}" --template "${resource_template}" \
   --physical-npu "${physical_npu}" --deploy-root "${deploy_root}" \
   --output "${RESOURCE_CONFIG_PATH}"
-"${python_bin}" "${config_writer}" \
-  --workspace "${controller_workspace}" \
-  --ascend-toolchain "${ascend_toolchain}" \
-  --graph-output "${config_dir}/graph.json" \
-  --function-output "${config_dir}/function.json" \
-  --toolchain-output "${config_dir}/toolchain.json" \
-  --deploy-output "${config_dir}/deploy.json"
 
 set +e
 cd "${scratch}"
@@ -227,7 +263,8 @@ set -e
 printf 'export-exit\t%s\n' "${export_status}" >"${evidence}/export-status.tsv"
 [[ ${export_status} -eq 0 || ${export_status} -eq 139 ]] || exit "${export_status}"
 "${python_bin}" - "${export_dir}/export-result.json" \
-  "${export_dir}/attention_kv_probe.air" "${export_dir}/dynamo.pbtxt" <<'PY'
+  "${export_dir}/attention_kv_probe.air" "${export_dir}/dynamo.pbtxt" \
+  "${export_dir}/graph-abi.json" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -239,8 +276,47 @@ if not all(Path(path).is_file() for path in sys.argv[2:]):
 PY
 wait_for_release
 
+"${python_bin}" "${config_writer}" \
+  --workspace "${controller_workspace}" \
+  --abi-input "${export_dir}/graph-abi.json" \
+  --header-output "${controller_workspace}/attention_kv_graph_abi.h" \
+  --ascend-toolchain "${ascend_toolchain}" \
+  --graph-output "${config_dir}/graph.json" \
+  --function-output "${config_dir}/function.json" \
+  --toolchain-output "${config_dir}/toolchain.json" \
+  --deploy-output "${config_dir}/deploy.json"
+
+cp --reflink=auto "${export_dir}/export-result.json" "${evidence}/"
+cp --reflink=auto "${export_dir}/graph-structure.json" "${evidence}/"
+cp --reflink=auto "${export_dir}/graph-abi.json" "${evidence}/"
+cp --reflink=auto "${export_dir}/dynamo.pbtxt" "${evidence}/"
+cp --reflink=auto "${config_dir}/graph.json" "${evidence}/graph-config.json"
+cp --reflink=auto "${config_dir}/function.json" "${evidence}/function-config.json"
+cp --reflink=auto "${config_dir}/deploy.json" "${evidence}/deploy-config.json"
+cp --reflink=auto "${controller_workspace}/attention_kv_graph_abi.h" \
+  "${evidence}/"
+sha256sum "${custom_package}" "${export_dir}/attention_kv_probe.air" \
+  "${export_dir}/graph-abi.json" \
+  >"${evidence}/artifact-identity.sha256"
+sha256sum "${exporter}" "${inspector}" "${config_writer}" "${host_source}" \
+  "${verifier}" "${hardware_policy}" "${script_dir}/run_on_910b.sh" \
+  "${controller_source}"/* "${op_host_dir}"/* "${op_kernel_dir}"/* \
+  >"${evidence}/source-identity.sha256"
+sha256sum "${ASCEND_HOME_PATH}/include/flow_func/flow_msg.h" \
+  "${ASCEND_HOME_PATH}/include/flow_func/meta_run_context.h" \
+  "${ASCEND_HOME_PATH}/include/graph/tensor.h" \
+  >"${evidence}/public-api.sha256"
+printf '%s\n' "${max_stage}" >"${evidence}/max-stage.txt"
+
+if [[ "${max_stage}" == export ]]; then
+  storage_guard_snapshot kv-attention-export-complete \
+    "${evidence}/storage-kv-attention-export-complete.tsv"
+  exit 0
+fi
+
 g++ -D_GLIBCXX_USE_CXX11_ABI=0 -O2 -std=c++11 -ftrapv \
   -fstack-protector-all -pthread \
+  -I"${controller_workspace}" \
   -I"${ASCEND_HOME_PATH}/include" -I"${ASCEND_HOME_PATH}/include/external" \
   "${host_source}" \
   -Wl,--whole-archive "${ASCEND_HOME_PATH}/lib64/libgraph.so" \
@@ -254,7 +330,12 @@ g++ -D_GLIBCXX_USE_CXX11_ABI=0 -O2 -std=c++11 -ftrapv \
   -o "${build}/attention_kv_probe_host" >"${evidence}/host-compile.log" 2>&1
 
 : >"${evidence}/mode-status.tsv"
-for mode in graph dataflow; do
+case "${max_stage}" in
+  graph) modes=(graph) ;;
+  owner) modes=(dataflow) ;;
+  dataflow) modes=(graph dataflow) ;;
+esac
+for mode in "${modes[@]}"; do
   mode_driver_logs=${driver_logs}/${mode}
   mkdir -p "${mode_driver_logs}"
   export ASCEND_PROCESS_LOG_PATH=${mode_driver_logs}
@@ -277,34 +358,65 @@ for mode in graph dataflow; do
     xargs -0 -r rg -i \
       'LaunchKernel: kernel info.*kernel_name=te_(devicepagedkvupdate|devicequeryafterkvupdate|fusedinferattentionscore)_' \
     >"${evidence}/${mode}-launch-metadata.txt" || true
+  find "${mode_driver_logs}" -type f -print0 | sort -z | \
+    xargs -0 -r rg -i \
+      'MemcpyAsync|Memcpy|TensorMove|TransData|H2D|D2H|copy task' | \
+    sed -n '1,4096p' >"${evidence}/${mode}-transfer-metadata.txt" || true
   wait_for_release
+  [[ ${mode_status} -eq 0 ]] || exit "${mode_status}"
+  if [[ "${mode}" == graph ]]; then
+    "${python_bin}" - "${evidence}/graph.json" \
+      "${evidence}/graph-launch-metadata.txt" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+result = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+launches = Path(sys.argv[2]).read_text(encoding="utf-8", errors="replace")
+required = (
+    r"kernel_name=te_devicepagedkvupdate_",
+    r"kernel_name=te_devicequeryafterkvupdate_",
+    r"kernel_name=te_fusedinferattentionscore_",
+)
+if (
+    result.get("pass") is not True
+    or result.get("attention_exact") is not True
+    or result.get("ticket_exact") is not True
+    or result.get("metadata_input_index") != 2
+    or result.get("query_input_index") != 3
+    or not all(re.search(pattern, launches, re.IGNORECASE) for pattern in required)
+):
+    raise SystemExit(1)
+PY
+  fi
 done
 
-cp --reflink=auto "${export_dir}/export-result.json" "${evidence}/"
-cp --reflink=auto "${export_dir}/graph-structure.json" "${evidence}/"
-cp --reflink=auto "${export_dir}/dynamo.pbtxt" "${evidence}/"
-cp --reflink=auto "${config_dir}/graph.json" "${evidence}/graph-config.json"
-cp --reflink=auto "${config_dir}/function.json" "${evidence}/function-config.json"
-cp --reflink=auto "${config_dir}/deploy.json" "${evidence}/deploy-config.json"
-sha256sum "${custom_package}" "${export_dir}/attention_kv_probe.air" \
-  >"${evidence}/artifact-identity.sha256"
-sha256sum "${exporter}" "${inspector}" "${config_writer}" "${host_source}" \
-  "${verifier}" "${hardware_policy}" "${script_dir}/run_on_910b.sh" \
-  "${controller_source}"/* "${op_host_dir}"/* "${op_kernel_dir}"/* \
-  >"${evidence}/source-identity.sha256"
-sha256sum "${ASCEND_HOME_PATH}/include/flow_func/flow_msg.h" \
-  "${ASCEND_HOME_PATH}/include/flow_func/meta_run_context.h" \
-  "${ASCEND_HOME_PATH}/include/graph/tensor.h" \
-  >"${evidence}/public-api.sha256"
+if [[ "${max_stage}" == graph ]]; then
+  storage_guard_snapshot kv-attention-graph-complete \
+    "${evidence}/storage-kv-attention-graph-complete.tsv"
+  exit 0
+fi
 
 set +e
-"${python_bin}" "${verifier}" \
-  --structure "${evidence}/graph-structure.json" \
-  --graph-result "${evidence}/graph.json" \
-  --graph-log "${evidence}/graph-launch-metadata.txt" \
-  --dataflow-result "${evidence}/dataflow.json" \
-  --dataflow-log "${evidence}/dataflow-launch-metadata.txt" \
+verifier_route=combined
+[[ "${max_stage}" == owner ]] && verifier_route=owner
+verifier_args=(
+  --route "${verifier_route}"
+  --structure "${evidence}/graph-structure.json"
+  --dataflow-result "${evidence}/dataflow.json"
+  --dataflow-log "${evidence}/dataflow-launch-metadata.txt"
+  --dataflow-transfer-log "${evidence}/dataflow-transfer-metadata.txt"
   --output "${evidence}/verifier.json"
+)
+if [[ "${verifier_route}" == combined ]]; then
+  verifier_args+=(
+    --graph-result "${evidence}/graph.json"
+    --graph-log "${evidence}/graph-launch-metadata.txt"
+    --graph-transfer-log "${evidence}/graph-transfer-metadata.txt"
+  )
+fi
+"${python_bin}" "${verifier}" "${verifier_args[@]}"
 verifier_status=$?
 set -e
 storage_guard_snapshot kv-attention-complete \

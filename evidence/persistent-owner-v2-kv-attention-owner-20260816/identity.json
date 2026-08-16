@@ -1,0 +1,16 @@
+{
+  "air_sha256": "c438dd85bd05f9a64fd799eba8143b4549450dde4603a158cf70e7a6b3b0a906",
+  "custom_opp_package_sha256": "3fc0c04b9861a613f8354f620bb046f359f3ba99f2541373baf6f96cb37918dc",
+  "dataflow_result_sha256": "971d6a37133ae2bf1201318a5c9a052091327d3f00c681523ce3952bfdb7af17",
+  "deploy_config_sha256": "92a76d634388178d242275c91bb486e90f882cc49543bffbfafcfae1fe13446f",
+  "fia_opp_staging_manifest_sha256": "eb78c4a6107ca165b38c83a6b2282c8985c56119f36efda743b1f5574157f915",
+  "function_config_sha256": "454936f02f716e702f7dc080dd42d2c2ceb04042bfec391b428a56529af75467",
+  "graph_abi_sha256": "0d23ed2d1c4cae6ef392a716794a883ae1ea0dfbd6080e90997db4b0bf971964",
+  "graph_config_sha256": "166ac11fb433fbb4b8371dc924d17a65fd89d49e8c160256a93b07dd90bfcbf3",
+  "run_id": "persistent-owner-v2-kv-attention-owner-only-20260816-r2",
+  "schema_version": 1,
+  "source_commit": "93aa31c6265145c35da669bb5fac1bd5e6b3d8a4",
+  "source_worktree_dirty": false,
+  "source_worktree_status_bytes": 0,
+  "verifier_sha256": "8a2c6016a1b4792a82aa359a43d4da84f44e19dd1432a7d16c51289b5c48312d"
+}

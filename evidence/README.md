@@ -105,3 +105,23 @@ Its compact verifier is retained under
 It proves exact B4/K384 PA-NZ updates and an explicit in-graph update-to-reader
 dependency through ordinary Graph and public GraphPp. It does not prove real
 attention, internal Device-copy absence, a whole-model graph, or P5.
+
+The first combined Controller-Aware Graph V2 KV-update-to-attention failure is
+summarized in
+[`PERSISTENT-OWNER-V2-KV-ATTENTION-20260815.md`](PERSISTENT-OWNER-V2-KV-ATTENTION-20260815.md).
+It preserves the ABI-r1 negative result: TorchAir's metadata/query order did not
+match the callers, so neither route launched a target kernel.
+
+The separately authorized ABI-r2 result is summarized in
+[`PERSISTENT-OWNER-V2-KV-ATTENTION-ABI-R2-20260816.md`](PERSISTENT-OWNER-V2-KV-ATTENTION-ABI-R2-20260816.md).
+It proves the corrected AIR-derived six-input ABI and one launch of each target
+kernel through ordinary Graph. Runtime status `107000` prevented exact compact
+outputs, so GraphPp was not run and no full Decoder or P5 claim is made.
+
+The owner-only ownership result is summarized in
+[`PERSISTENT-OWNER-V2-KV-ATTENTION-OWNER-20260816.md`](PERSISTENT-OWNER-V2-KV-ATTENTION-OWNER-20260816.md).
+Its compact identity and verifier are retained under
+[`persistent-owner-v2-kv-attention-owner-20260816/`](persistent-owner-v2-kv-attention-owner-20260816/).
+It proves two exact GraphPp calls over one FunctionPp-owned, stable 3 MiB KV
+allocation with Host KV I/O 0/0. It does not prove a full Decoder, service
+behavior, performance, or P5 qualification.

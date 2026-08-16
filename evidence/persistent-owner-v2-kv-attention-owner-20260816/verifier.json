@@ -1,0 +1,40 @@
+{
+  "attention_observed_update_each_call": true,
+  "claim_boundary": "FunctionPp-owned PA-NZ update-to-FIA component gate only; launch logs prove task registration, while controller summaries prove the two semantic GraphPp calls; no full Decoder or P5 qualification claim; absence in bounded runtime transfer logs is not a universal zero-copy proof.",
+  "device_owned_allocation_count": 1,
+  "device_owned_cache_bytes": 3145728,
+  "device_owned_graph_call_count": 2,
+  "exact_full_cache_after_each_call": true,
+  "explicit_update_to_fia_dependency": true,
+  "external_refdata_count": 0,
+  "gate": "V2-KV-ATTENTION",
+  "graphpp_functionpp_pass": true,
+  "graphpp_registration_counts": {
+    "fia": 1,
+    "order": 1,
+    "update": 1
+  },
+  "graphpp_target_tasks_registered": true,
+  "graphpp_transfer_audit": {
+    "full_cache_record_count": 0,
+    "no_full_cache_transfer_record": true,
+    "record_count": 1524
+  },
+  "host_cache_input_bytes": 0,
+  "host_cache_output_bytes": 0,
+  "ordinary_graph_evaluated": false,
+  "ordinary_graph_pass": null,
+  "ordinary_graph_registration_counts": {
+    "fia": 0,
+    "order": 0,
+    "update": 0
+  },
+  "ordinary_graph_transfer_audit": null,
+  "pass": true,
+  "raw_device_address_abi_used": false,
+  "route": "owner",
+  "semantic_graph_calls_exact": true,
+  "shared_update_and_fia_kv_inputs": true,
+  "structure_pass": true,
+  "tensor_move_count": 0
+}
