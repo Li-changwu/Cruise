@@ -31,7 +31,7 @@ Any failure stops this combined path. A pass remains a component result: it
 does not prove zero internal Device-to-Device copies, full-model correctness,
 service behavior, performance, or P5 qualification.
 
-## Result
+## r1 result
 
 The single run `persistent-owner-v2-kv-attention-20260815-r1` failed and stops
 this path. Toolchain build, AIR export, and structure passed. The exported AIR
@@ -44,4 +44,19 @@ Ordinary Graph and GraphPp both stopped before a target kernel launch.
 GraphPp returned compile status `1343225857` before its first Feed, so
 FunctionPp performed zero allocations and zero graph calls. Address lifetime,
 exact update, attention visibility, and dual-route execution were not proven.
-No corrected rerun or downstream P5 work is authorized by this probe.
+That run did not authorize a corrected rerun or downstream P5 work.
+
+## ABI-r2 authorization
+
+On 2026-08-16 the user explicitly authorized one ABI-corrected experiment as a
+new revision. The r1 failure and evidence remain unchanged. ABI-r2 must derive
+all six input indices, AIR dtypes, and shapes from the exported graph, reject a
+metadata/query swap before execution, and generate both the Graph config and
+C++ input constants from that checked manifest.
+
+Execution is staged and fail-closed: export and static ABI first; then one
+ordinary Graph exact update-to-FIA run with all three target kernel launches;
+then two FunctionPp calls through GraphPp with stable FlowMsg and Device
+addresses, full-cache scans, exact attention, and bounded transfer-log review.
+Failure at any stage stops the later stages. A complete pass remains component
+evidence only and does not reopen P5 or authorize full Decoder work by itself.

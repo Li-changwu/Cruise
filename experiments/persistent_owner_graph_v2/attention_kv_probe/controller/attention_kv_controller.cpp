@@ -4,10 +4,12 @@
 #include <memory>
 #include <vector>
 
+#include "attention_kv_graph_abi.h"
 #include "flow_func/meta_multi_func.h"
 
 namespace FlowFunc {
 namespace {
+namespace GraphAbi = CruiseAttentionKvGraphAbi;
 constexpr int64_t kBatch = 4;
 constexpr int64_t kBlocksPerRow = 3;
 constexpr int64_t kPhysicalBlocks = 12;
@@ -119,12 +121,16 @@ class AttentionKvController : public MetaMultiFunc {
     auto *value = static_cast<uint16_t *>(value_message_->GetTensor()->GetData());
     const bool before_exact =
         FullCacheExact(key, sequence - 1) && FullCacheExact(value, sequence - 1);
+    std::vector<std::shared_ptr<FlowMsg>> graph_inputs(GraphAbi::kInputCount);
+    graph_inputs[GraphAbi::kKeyCacheInput] = key_message_;
+    graph_inputs[GraphAbi::kValueCacheInput] = value_message_;
+    graph_inputs[GraphAbi::kMetadataInput] = inputs[0];
+    graph_inputs[GraphAbi::kQueryInput] = query_message_;
+    graph_inputs[GraphAbi::kMaskInput] = mask_message_;
+    graph_inputs[GraphAbi::kBlockTableInput] = block_table_message_;
     std::vector<std::shared_ptr<FlowMsg>> outputs;
     const int32_t model_status = context->RunFlowModel(
-        "attention_kv_graph_0",
-        {key_message_, value_message_, query_message_, inputs[0], mask_message_,
-         block_table_message_},
-        outputs, kRunModelTimeoutMs);
+        "attention_kv_graph_0", graph_inputs, outputs, kRunModelTimeoutMs);
     ++graph_calls_;
 
     bool attention_exact = false;

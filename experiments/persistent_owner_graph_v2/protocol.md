@@ -63,12 +63,15 @@ ceiling, and post-run recovery relative to the observed starting point.
 
 The passed ordering probe is component evidence only. The bounded public FIA
 and PA-NZ consumer prerequisites later passed, but the one combined real-
-attention gate failed before execution. TorchAir exported metadata at `Data`
+attention r1 gate failed before execution. TorchAir exported metadata at `Data`
 index 2 and query at index 3, while the Graph config and C++ callers supplied
 query at index 2 and metadata at index 3. GE rejected BF16 metadata for
 `DevicePagedKvUpdate`; ordinary Graph launched no target kernel, and GraphPp
-failed compilation before FunctionPp allocation or Feed. Under the frozen
-stop rule, gates 5-9 do not advance and this path receives no corrected rerun.
+failed compilation before FunctionPp allocation or Feed. That r1 run remains a
+frozen negative result. On 2026-08-16 the user separately authorized one new
+ABI-r2 experiment, staged as export/static ABI, ordinary Graph, and only then
+two GraphPp calls. ABI-r2 does not advance gates 5-9 unless every preceding
+stage passes, and a component pass does not itself reopen P5.
 
 No gate here changes ADR 0020. Until all component gates are backed by target
 NPU evidence, the V2 state is `contract_defined`, P5 remains Stopped /

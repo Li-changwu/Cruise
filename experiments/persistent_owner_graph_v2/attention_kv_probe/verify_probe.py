@@ -14,6 +14,7 @@ PATTERNS = {
     "order": re.compile(r"kernel_name=te_devicequeryafterkvupdate_", re.IGNORECASE),
     "fia": re.compile(r"kernel_name=te_fusedinferattentionscore_", re.IGNORECASE),
 }
+FULL_CACHE_SIZES = ("1572864", "3145728", "0x180000", "0x300000")
 
 
 def read_json(path: Path) -> dict:
@@ -23,6 +24,21 @@ def read_json(path: Path) -> dict:
 def launch_counts(path: Path) -> dict[str, int]:
     text = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
     return {name: len(pattern.findall(text)) for name, pattern in PATTERNS.items()}
+
+
+def transfer_audit(path: Path) -> dict[str, int | bool]:
+    text = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+    lines = [line for line in text.splitlines() if line.strip()]
+    full_cache = [
+        line
+        for line in lines
+        if any(size in line.lower() for size in FULL_CACHE_SIZES)
+    ]
+    return {
+        "record_count": len(lines),
+        "full_cache_record_count": len(full_cache),
+        "no_full_cache_transfer_record": not full_cache,
+    }
 
 
 def exact_summaries(dataflow: dict) -> bool:
@@ -51,8 +67,10 @@ def main() -> int:
     parser.add_argument("--structure", type=Path, required=True)
     parser.add_argument("--graph-result", type=Path, required=True)
     parser.add_argument("--graph-log", type=Path, required=True)
+    parser.add_argument("--graph-transfer-log", type=Path, required=True)
     parser.add_argument("--dataflow-result", type=Path, required=True)
     parser.add_argument("--dataflow-log", type=Path, required=True)
+    parser.add_argument("--dataflow-transfer-log", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
@@ -61,6 +79,8 @@ def main() -> int:
     dataflow = read_json(args.dataflow_result)
     graph_launches = launch_counts(args.graph_log)
     dataflow_launches = launch_counts(args.dataflow_log)
+    graph_transfers = transfer_audit(args.graph_transfer_log)
+    dataflow_transfers = transfer_audit(args.dataflow_transfer_log)
     summaries_exact = exact_summaries(dataflow)
 
     structure_pass = (
@@ -71,19 +91,27 @@ def main() -> int:
         and structure.get("tensor_move_count") == 0
         and structure.get("compact_attention_and_ticket_outputs") is True
         and structure.get("full_kv_graph_output") is False
+        and structure.get("data_input_abi_pass") is True
     )
     graph_pass = (
         graph.get("pass") is True
         and graph.get("device_placed_inputs_ready") is True
+        and graph.get("abi_input_count") == 6
+        and graph.get("metadata_input_index") == 2
+        and graph.get("query_input_index") == 3
         and graph.get("attention_exact") is True
         and graph.get("ticket_exact") is True
         and graph.get("host_cache_input_bytes") == 0
         and graph.get("host_cache_output_bytes") == 0
         and all(graph_launches[name] >= 1 for name in PATTERNS)
+        and graph_transfers["no_full_cache_transfer_record"] is True
     )
     dataflow_pass = (
         dataflow.get("pass") is True
         and dataflow.get("exact_two_update_attention_calls") is True
+        and dataflow.get("abi_input_count") == 6
+        and dataflow.get("metadata_input_index") == 2
+        and dataflow.get("query_input_index") == 3
         and dataflow.get("allocation_count") == 1
         and dataflow.get("graph_call_count") == 2
         and dataflow.get("flowmsg_identity_stable") is True
@@ -96,7 +124,8 @@ def main() -> int:
         and dataflow.get("raw_device_address_abi_used") is False
         and dataflow.get("external_refdata_used") is False
         and summaries_exact
-        and all(dataflow_launches[name] >= 1 for name in PATTERNS)
+        and all(dataflow_launches[name] >= 2 for name in PATTERNS)
+        and dataflow_transfers["no_full_cache_transfer_record"] is True
     )
     result = {
         "gate": "V2-KV-ATTENTION",
@@ -112,6 +141,8 @@ def main() -> int:
         ),
         "ordinary_graph_launch_counts": graph_launches,
         "graphpp_launch_counts": dataflow_launches,
+        "ordinary_graph_transfer_audit": graph_transfers,
+        "graphpp_transfer_audit": dataflow_transfers,
         "device_owned_allocation_count": dataflow.get("allocation_count"),
         "device_owned_graph_call_count": dataflow.get("graph_call_count"),
         "device_owned_cache_bytes": dataflow.get("device_owned_cache_bytes"),
@@ -128,7 +159,8 @@ def main() -> int:
         "raw_device_address_abi_used": dataflow.get("raw_device_address_abi_used"),
         "claim_boundary": (
             "Combined FunctionPp-owned PA-NZ update-to-FIA component gate only; "
-            "no full Decoder, internal Device-copy, or P5 qualification claim."
+            "no full Decoder or P5 qualification claim; absence in bounded "
+            "runtime transfer logs is not a universal zero-copy proof."
         ),
     }
     args.output.write_text(

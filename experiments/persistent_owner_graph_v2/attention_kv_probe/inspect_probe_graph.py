@@ -11,6 +11,16 @@ from collections import Counter
 from pathlib import Path
 
 
+EXPECTED_DATA_INPUTS = (
+    ("key_cache", "DT_BF16", [12, 4, 8, 128, 16]),
+    ("value_cache", "DT_BF16", [12, 4, 8, 128, 16]),
+    ("metadata", "DT_INT32", [5]),
+    ("query", "DT_BF16", [4, 28, 1, 128]),
+    ("mask", "DT_BOOL", [4, 1, 1, 384]),
+    ("block_table", "DT_INT32", [4, 3]),
+)
+
+
 def _blocks(text: str):
     block: list[str] = []
     for line in text.splitlines(keepends=True):
@@ -35,12 +45,27 @@ def _source(value: str) -> str:
     return value.lstrip("^").split(":", 1)[0]
 
 
+def _data_contract(block: str) -> tuple[int, str, list[int]]:
+    index = re.search(
+        r'key: "index"\s+value \{\s+s: \'i: (\d+)\\n\'', block
+    )
+    dtypes = re.findall(r"dtype: (DT_[A-Z0-9]+)", block)
+    dimensions = [int(value) for value in re.findall(r"dim: (-?\d+)", block)]
+    if index is None or not dtypes or any(dtype != dtypes[0] for dtype in dtypes):
+        raise ValueError("Data node has no unique index or dtype")
+    half = len(dimensions) // 2
+    if len(dimensions) % 2 == 0 and dimensions[:half] == dimensions[half:]:
+        dimensions = dimensions[:half]
+    return int(index.group(1)), dtypes[0], dimensions
+
+
 def inspect_graph_text(text: str) -> dict[str, object]:
     nodes = [
         {
             "name": _field(block, "name"),
             "op": _field(block, "op"),
             "inputs": re.findall(r'^\s+input: "([^"]*)"', block, re.MULTILINE),
+            "block": block,
         }
         for block in _blocks(text)
     ]
@@ -79,6 +104,53 @@ def inspect_graph_text(text: str) -> dict[str, object]:
         and output_inputs == [fias[0]["name"], updates[0]["name"]]
     )
     data_inputs_only = all(input_ops.get(name) == "Data" for name in update_inputs)
+    role_sources = {}
+    if len(update_inputs) == 3:
+        role_sources.update(
+            {
+                "key_cache": update_inputs[0],
+                "value_cache": update_inputs[1],
+                "metadata": update_inputs[2],
+            }
+        )
+    if len(order_inputs) == 2:
+        role_sources["query"] = order_inputs[0]
+    if len(fia_inputs) == 31:
+        role_sources["mask"] = fia_inputs[4]
+        role_sources["block_table"] = fia_inputs[14]
+    data_input_abi = []
+    for role, source in role_sources.items():
+        node = by_name.get(source)
+        if node is None or node["op"] != "Data":
+            continue
+        index, dtype, shape = _data_contract(str(node["block"]))
+        data_input_abi.append(
+            {
+                "index": index,
+                "role": role,
+                "node": source,
+                "data_type": dtype,
+                "shape": shape,
+            }
+        )
+    data_input_abi.sort(key=lambda item: int(item["index"]))
+    expected_abi = [
+        {
+            "index": index,
+            "role": role,
+            "data_type": dtype,
+            "shape": shape,
+        }
+        for index, (role, dtype, shape) in enumerate(EXPECTED_DATA_INPUTS)
+    ]
+    comparable_abi = [
+        {
+            key: item[key]
+            for key in ("index", "role", "data_type", "shape")
+        }
+        for item in data_input_abi
+    ]
+    data_input_abi_pass = comparable_abi == expected_abi
     result = {
         "gate": "V2-KV-ATTENTION-STRUCTURE",
         "pass": bool(
@@ -89,6 +161,7 @@ def inspect_graph_text(text: str) -> dict[str, object]:
             and shared_key_value
             and explicit_dependency
             and compact_outputs
+            and data_input_abi_pass
             and counts["RefData"] == 0
             and counts["TensorMove"] == 0
         ),
@@ -103,6 +176,8 @@ def inspect_graph_text(text: str) -> dict[str, object]:
         "tensor_move_count": counts["TensorMove"],
         "compact_attention_and_ticket_outputs": compact_outputs,
         "full_kv_graph_output": not compact_outputs,
+        "data_input_abi": data_input_abi,
+        "data_input_abi_pass": data_input_abi_pass,
         "claim_boundary": "AIR structure only; no execution or copy claim.",
     }
     return result

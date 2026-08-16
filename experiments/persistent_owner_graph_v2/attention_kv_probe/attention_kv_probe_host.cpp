@@ -13,11 +13,13 @@
 #include <unistd.h>
 
 #include "acl/acl.h"
+#include "attention_kv_graph_abi.h"
 #include "flow_graph/data_flow.h"
 #include "ge/ge_api.h"
 #include "graph/graph.h"
 
 namespace {
+namespace GraphAbi = CruiseAttentionKvGraphAbi;
 constexpr uint32_t kGraphId = 0;
 constexpr int32_t kFeedTimeoutMs = 240000;
 constexpr int32_t kFetchTimeoutMs = 240000;
@@ -97,27 +99,38 @@ class DeviceInputs {
     for (size_t index = 0; index < block_table.size(); ++index) {
       block_table[index] = static_cast<int32_t>(index);
     }
-    return Add({12, 4, 8, 128, 16}, ge::DT_BF16, nullptr,
+    tensors_.resize(GraphAbi::kInputCount);
+    pointers_.resize(GraphAbi::kInputCount, nullptr);
+    return Add(GraphAbi::kKeyCacheInput, {12, 4, 8, 128, 16}, ge::DT_BF16,
+               nullptr,
                kCacheElements * sizeof(uint16_t)) &&
-           Add({12, 4, 8, 128, 16}, ge::DT_BF16, nullptr,
+           Add(GraphAbi::kValueCacheInput, {12, 4, 8, 128, 16}, ge::DT_BF16,
+               nullptr,
                kCacheElements * sizeof(uint16_t)) &&
-           Add({4, 28, 1, 128}, ge::DT_BF16, query.data(),
+           Add(GraphAbi::kMetadataInput, {5}, ge::DT_INT32, metadata.data(),
+               sizeof(metadata)) &&
+           Add(GraphAbi::kQueryInput, {4, 28, 1, 128}, ge::DT_BF16,
+               query.data(),
                query.size() * sizeof(query[0])) &&
-           Add({5}, ge::DT_INT32, metadata.data(), sizeof(metadata)) &&
-           Add({4, 1, 1, 384}, ge::DT_BOOL, mask.data(), mask.size()) &&
-           Add({4, 3}, ge::DT_INT32, block_table.data(), sizeof(block_table));
+           Add(GraphAbi::kMaskInput, {4, 1, 1, 384}, ge::DT_BOOL, mask.data(),
+               mask.size()) &&
+           Add(GraphAbi::kBlockTableInput, {4, 3}, ge::DT_INT32,
+               block_table.data(), sizeof(block_table));
   }
 
   const std::vector<ge::Tensor> &tensors() const { return tensors_; }
 
  private:
-  bool Add(const std::vector<int64_t> &shape, ge::DataType dtype,
-           const void *host_data, size_t bytes) {
+  bool Add(size_t input_index, const std::vector<int64_t> &shape,
+           ge::DataType dtype, const void *host_data, size_t bytes) {
+    if (input_index >= pointers_.size() || pointers_[input_index] != nullptr) {
+      return false;
+    }
     void *device = nullptr;
     if (aclrtMalloc(&device, bytes, ACL_MEM_MALLOC_HUGE_FIRST) != ACL_SUCCESS) {
       return false;
     }
-    pointers_.push_back(device);
+    pointers_[input_index] = device;
     const aclError init =
         host_data == nullptr
             ? aclrtMemset(device, bytes, 0, bytes)
@@ -133,7 +146,7 @@ class DeviceInputs {
         tensor.SetPlacement(ge::kPlacementDevice) != ge::GRAPH_SUCCESS) {
       return false;
     }
-    tensors_.push_back(std::move(tensor));
+    tensors_[input_index] = std::move(tensor);
     return true;
   }
 
@@ -221,6 +234,10 @@ void WriteGraphResult(const std::string &path, ge::Status status,
          << "  \"model_valid\": " << (model_valid ? "true" : "false") << ",\n"
          << "  \"device_placed_inputs_ready\": "
          << (inputs_ready ? "true" : "false") << ",\n"
+         << "  \"abi_input_count\": " << GraphAbi::kInputCount << ",\n"
+         << "  \"metadata_input_index\": " << GraphAbi::kMetadataInput
+         << ",\n"
+         << "  \"query_input_index\": " << GraphAbi::kQueryInput << ",\n"
          << "  \"attention_exact\": " << (attention_exact ? "true" : "false") << ",\n"
          << "  \"ticket_exact\": " << (ticket_exact ? "true" : "false") << ",\n"
          << "  \"host_cache_input_bytes\": 0,\n"
@@ -258,6 +275,10 @@ void WriteDataflowResult(
          << "  \"second_fetch_status\": " << static_cast<uint32_t>(second_fetch) << ",\n"
          << "  \"model_load_status\": " << load_status << ",\n"
          << "  \"model_valid\": " << (model_valid ? "true" : "false") << ",\n"
+         << "  \"abi_input_count\": " << GraphAbi::kInputCount << ",\n"
+         << "  \"metadata_input_index\": " << GraphAbi::kMetadataInput
+         << ",\n"
+         << "  \"query_input_index\": " << GraphAbi::kQueryInput << ",\n"
          << "  \"exact_two_update_attention_calls\": " << (exact ? "true" : "false") << ",\n"
          << "  \"allocation_count\": " << second[2] << ",\n"
          << "  \"graph_call_count\": " << second[3] << ",\n"

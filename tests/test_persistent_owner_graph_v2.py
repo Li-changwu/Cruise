@@ -27,6 +27,14 @@ from experiments.persistent_owner_graph_v2.paged_kv_order_probe.prepare_probe_co
 from experiments.persistent_owner_graph_v2.attention_kv_probe.inspect_probe_graph import (
     inspect_graph_text as inspect_attention_kv_graph,
 )
+from experiments.persistent_owner_graph_v2.attention_kv_probe.prepare_probe_config import (
+    graph_config as attention_kv_graph_config,
+    load_abi as load_attention_kv_abi,
+    render_header as render_attention_kv_header,
+)
+from experiments.persistent_owner_graph_v2.attention_kv_probe.verify_probe import (
+    transfer_audit as audit_attention_kv_transfers,
+)
 
 from vllm_ascend_persistent_owner.graph_family import (
     GraphFamilyContractError,
@@ -655,36 +663,84 @@ def test_v2_paged_kv_order_uses_public_graph_graphpp_and_bounded_evidence():
     assert "source-worktree-status.txt" in runner
 
 
-def _attention_kv_graph(ticket_source: str = "update") -> str:
+def _attention_kv_data(
+    name: str, index: int, data_type: str, shape: tuple[int, ...]
+) -> str:
+    dimensions = "".join(f"  dim: {dimension}\\n" for dimension in shape)
+    descriptor = f"dtype: {data_type}\\nshape {{\\n{dimensions}}}\\n"
+    return f'''node {{
+  name: "{name}"
+  op: "Data"
+  attr {{
+    key: "index"
+    value {{
+      s: 'i: {index}\\n'
+    }}
+  }}
+  attr {{
+    key: "[i]x"
+    value {{
+      s: '{descriptor}'
+    }}
+  }}
+  attr {{
+    key: "[o]y"
+    value {{
+      s: '{descriptor}'
+    }}
+  }}
+}}
+'''
+
+
+def _attention_kv_graph(
+    ticket_source: str = "update", *, swap_metadata_query: bool = False
+) -> str:
     ticket_node = ""
     if ticket_source != "update":
-        ticket_node = '''node {
-  name: "other_ticket"
-  op: "Data"
-}
-'''
-    fia_inputs = ["ordered_query", "key_cache", "value_cache"] + [""] * 28
+        ticket_node = _attention_kv_data("other_ticket", 6, "DT_INT32", (9,))
+    indices = {
+        "key_cache": 0,
+        "value_cache": 1,
+        "metadata": 3 if swap_metadata_query else 2,
+        "query": 2 if swap_metadata_query else 3,
+        "mask": 4,
+        "block_table": 5,
+    }
+    data_nodes = "".join(
+        (
+            _attention_kv_data(
+                "key_cache", indices["key_cache"], "DT_BF16", (12, 4, 8, 128, 16)
+            ),
+            _attention_kv_data(
+                "value_cache",
+                indices["value_cache"],
+                "DT_BF16",
+                (12, 4, 8, 128, 16),
+            ),
+            _attention_kv_data(
+                "metadata", indices["metadata"], "DT_INT32", (5,)
+            ),
+            _attention_kv_data(
+                "query", indices["query"], "DT_BF16", (4, 28, 1, 128)
+            ),
+            _attention_kv_data(
+                "mask", indices["mask"], "DT_BOOL", (4, 1, 1, 384)
+            ),
+            _attention_kv_data(
+                "block_table", indices["block_table"], "DT_INT32", (4, 3)
+            ),
+        )
+    )
+    fia_inputs = [""] * 31
+    fia_inputs[0:3] = ["ordered_query", "key_cache", "value_cache"]
+    fia_inputs[4] = "mask"
+    fia_inputs[14] = "block_table"
     fia_input_text = "".join(
         f'  input: "{name}:0"\n' if name else '  input: ""\n'
         for name in fia_inputs
     )
-    return f'''node {{
-  name: "key_cache"
-  op: "Data"
-}}
-node {{
-  name: "value_cache"
-  op: "Data"
-}}
-node {{
-  name: "query"
-  op: "Data"
-}}
-node {{
-  name: "metadata"
-  op: "Data"
-}}
-{ticket_node}node {{
+    return f'''{data_nodes}{ticket_node}node {{
   name: "update"
   op: "DevicePagedKvUpdate"
   input: "key_cache:0"
@@ -712,6 +768,9 @@ node {{
 
 def test_v2_attention_kv_structure_shares_state_and_orders_fia():
     accepted = inspect_attention_kv_graph(_attention_kv_graph())
+    swapped = inspect_attention_kv_graph(
+        _attention_kv_graph(swap_metadata_query=True)
+    )
     unordered = inspect_attention_kv_graph(_attention_kv_graph("other_ticket"))
     external = inspect_attention_kv_graph(
         _attention_kv_graph().replace(
@@ -727,10 +786,85 @@ def test_v2_attention_kv_structure_shares_state_and_orders_fia():
     assert not accepted["full_kv_graph_output"]
     assert accepted["external_refdata_count"] == 0
     assert accepted["tensor_move_count"] == 0
+    assert accepted["data_input_abi_pass"]
+    assert [item["role"] for item in accepted["data_input_abi"]] == [
+        "key_cache",
+        "value_cache",
+        "metadata",
+        "query",
+        "mask",
+        "block_table",
+    ]
+    assert not swapped["pass"]
+    assert not swapped["data_input_abi_pass"]
     assert not unordered["pass"]
     assert not unordered["explicit_update_to_fia_dependency"]
     assert not external["pass"]
     assert external["external_refdata_count"] == 1
+
+
+def test_v2_attention_kv_config_and_header_follow_validated_air_abi(tmp_path):
+    inspected = inspect_attention_kv_graph(_attention_kv_graph())
+    abi_path = tmp_path / "graph-abi.json"
+    abi_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "pass": inspected["data_input_abi_pass"],
+                "data_inputs": inspected["data_input_abi"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    inputs = load_attention_kv_abi(abi_path)
+    assert attention_kv_graph_config(inputs)["inputs_tensor_desc"] == [
+        {"data_type": "DT_BFLOAT16", "shape": [12, 4, 8, 128, 16]},
+        {"data_type": "DT_BFLOAT16", "shape": [12, 4, 8, 128, 16]},
+        {"data_type": "DT_INT32", "shape": [5]},
+        {"data_type": "DT_BFLOAT16", "shape": [4, 28, 1, 128]},
+        {"data_type": "DT_BOOL", "shape": [4, 1, 1, 384]},
+        {"data_type": "DT_INT32", "shape": [4, 3]},
+    ]
+    header = render_attention_kv_header(inputs)
+    assert "kInputCount = 6U" in header
+    assert "kMetadataInput = 2U" in header
+    assert "kQueryInput = 3U" in header
+
+    swapped = json.loads(abi_path.read_text(encoding="utf-8"))
+    swapped["data_inputs"][2]["index"] = 3
+    swapped["data_inputs"][3]["index"] = 2
+    abi_path.write_text(json.dumps(swapped), encoding="utf-8")
+    with pytest.raises(ValueError, match="incomplete or reordered"):
+        load_attention_kv_abi(abi_path)
+
+    wrong_shape = json.loads(json.dumps(swapped))
+    wrong_shape["data_inputs"][2]["index"] = 2
+    wrong_shape["data_inputs"][3]["index"] = 3
+    wrong_shape["data_inputs"][3]["shape"] = [4, 28, 2, 128]
+    abi_path.write_text(json.dumps(wrong_shape), encoding="utf-8")
+    with pytest.raises(ValueError, match="type or shape mismatch"):
+        load_attention_kv_abi(abi_path)
+
+
+def test_v2_attention_kv_transfer_audit_rejects_full_cache_records(tmp_path):
+    transfer_log = tmp_path / "transfer.log"
+    transfer_log.write_text("rtMemcpyAsync size=28672\n", encoding="utf-8")
+    assert audit_attention_kv_transfers(transfer_log) == {
+        "record_count": 1,
+        "full_cache_record_count": 0,
+        "no_full_cache_transfer_record": True,
+    }
+
+    transfer_log.write_text(
+        "rtMemcpyAsync size=1572864\ncopy task bytes=0x300000\n",
+        encoding="utf-8",
+    )
+    assert audit_attention_kv_transfers(transfer_log) == {
+        "record_count": 2,
+        "full_cache_record_count": 2,
+        "no_full_cache_transfer_record": False,
+    }
 
 
 def test_v2_attention_kv_uses_owned_buffers_narrow_host_io_and_public_routes():
@@ -747,7 +881,8 @@ def test_v2_attention_kv_uses_owned_buffers_narrow_host_io_and_public_routes():
     assert controller.count("FlowBufferFactory::AllocTensor") == 1
     assert "key_message_ = Allocate(context, cache_shape" in controller
     assert "value_message_ = Allocate(context, cache_shape" in controller
-    assert '"attention_kv_graph_0",\n        {key_message_, value_message_' in controller
+    assert "graph_inputs[GraphAbi::kMetadataInput] = inputs[0]" in controller
+    assert "graph_inputs[GraphAbi::kQueryInput] = query_message_" in controller
     assert "key_message_.get() == key_message_address_" in controller
     assert "value_message_.get() == value_message_address_" in controller
     assert "reinterpret_cast<uint64_t>" not in controller
@@ -755,6 +890,9 @@ def test_v2_attention_kv_uses_owned_buffers_narrow_host_io_and_public_routes():
     assert 'GraphPp("attention_kv_graph_pp"' in host
     assert 'FlowNode("attention_kv_controller_node", 1, 1)' in host
     assert "session->RunGraph" in host
+    assert "tensors_[input_index] = std::move(tensor)" in host
+    assert "GraphAbi::kMetadataInput" in host
+    assert "GraphAbi::kQueryInput" in host
     assert "desc.SetPlacement(ge::kPlacementDevice)" in host
     assert "tensor.SetData(reinterpret_cast<uint8_t *>(device), bytes" in host
     assert '\\"host_cache_input_bytes\\": 0' in host
@@ -771,13 +909,23 @@ def test_v2_attention_kv_uses_owned_buffers_narrow_host_io_and_public_routes():
         "export ASCEND_CUSTOM_OPP_PATH=${custom_opp_path}:${ASCEND_CUSTOM_OPP_PATH}"
         in runner
     )
-    assert "for mode in graph dataflow" in runner
+    assert "CRUISE_V2_KV_ATTENTION_MAX_STAGE:-dataflow" in runner
+    assert 'modes=(graph)' in runner
+    assert 'modes+=(dataflow)' in runner
+    assert "graph-transfer-metadata.txt" in runner
+    assert "dataflow-transfer-metadata.txt" in runner
+    assert runner.index('if [[ "${max_stage}" == export ]]') < runner.index(
+        'modes=(graph)'
+    )
+    assert runner.index('if [[ "${mode}" == graph ]]') < runner.index(
+        'if [[ "${max_stage}" == graph ]]'
+    )
     assert "v2_capture_hbm_baseline" in runner
     assert "v2_wait_for_hbm_recovery" in runner
     assert "STORAGE_GUARD_MAX_IDLE_HBM_PERCENT:-65" in runner
 
     assert "host_cache_input_bytes" in verifier
     assert "host_cache_output_bytes" in verifier
-    assert "all(dataflow_launches[name] >= 1" in verifier
+    assert "all(dataflow_launches[name] >= 2" in verifier
     assert "Any failure stops this combined path" in protocol
     assert "does not prove" in protocol
