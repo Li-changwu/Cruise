@@ -7,6 +7,7 @@ source_dir=$(cd -- "${script_dir}/../../.." && pwd)
 fia_probe_dir=${source_dir}/experiments/persistent_decoder_p3/fia_graphpp_probe
 physical_npu=${CRUISE_PHYSICAL_NPU:-0}
 max_stage=${CRUISE_V2_KV_ATTENTION_MAX_STAGE:-dataflow}
+allow_diagnostic_dirty=${CRUISE_ALLOW_DIAGNOSTIC_DIRTY:-0}
 run_id=${CRUISE_RUN_ID:-persistent-owner-v2-kv-attention-$(date -u +%Y%m%dT%H%M%SZ)}
 persistent_root=${CRUISE_PERSISTENT_ROOT:-/workspace/cruise-runs}
 run_root=${persistent_root}/${run_id}
@@ -34,9 +35,17 @@ op_kernel_dir=${script_dir}/op_kernel
 op_host_dir=${script_dir}/op_host
 
 case "${max_stage}" in
-  export|graph|dataflow) ;;
+  export|graph|owner|dataflow) ;;
   *)
     printf 'invalid V2 KV attention max stage: %s\n' "${max_stage}" >&2
+    exit 96
+    ;;
+esac
+case "${allow_diagnostic_dirty}" in
+  0|1) ;;
+  *)
+    printf 'invalid diagnostic dirty-worktree setting: %s\n' \
+      "${allow_diagnostic_dirty}" >&2
     exit 96
     ;;
 esac
@@ -70,7 +79,7 @@ done
 source "${guard}"
 source "${hardware_policy}"
 export STORAGE_GUARD_MAX_SCRATCH_GIB=1
-export STORAGE_GUARD_MAX_EVIDENCE_BYTES=$((128 * 1024 * 1024))
+export STORAGE_GUARD_MAX_EVIDENCE_BYTES=$((256 * 1024 * 1024))
 export STORAGE_GUARD_NPU_WAIT_SECONDS=60
 export STORAGE_GUARD_NPU_STABLE_SAMPLES=3
 export STORAGE_GUARD_MAX_IDLE_HBM_PERCENT=${STORAGE_GUARD_MAX_IDLE_HBM_PERCENT:-65}
@@ -99,6 +108,30 @@ build=${scratch}/build
 mkdir -p "${opp_proxy}" "${config_dir}" "${deploy_root}" \
   "${controller_workspace}" "${driver_logs}" "${cache}" "${tmp}" "${build}"
 
+extract_failure_logs() {
+  local mode source_file relative target
+  [[ -d "${driver_logs}" ]] || return 0
+  find "${driver_logs}" -type f -printf '%P\t%s\n' | sort \
+    >"${evidence}/driver-log-manifest.tsv"
+  for mode in graph dataflow; do
+    [[ -d "${driver_logs}/${mode}" ]] || continue
+    mkdir -p "${evidence}/failure-driver-logs/${mode}"
+    cp -a "${driver_logs}/${mode}/." \
+      "${evidence}/failure-driver-logs/${mode}/"
+    find "${driver_logs}/${mode}" -type f -print0 | sort -z | \
+      xargs -0 -r rg -n -i \
+        'error|failed|failure|invalid|exception|fault|107000' | \
+      tail -n 8192 >"${evidence}/${mode}-error-index.log" || true
+  done
+  while IFS= read -r -d '' source_file; do
+    relative=${source_file#"${driver_logs}"/}
+    target=${evidence}/failure-driver-logs/${relative}
+    mkdir -p "$(dirname -- "${target}")"
+    tail -c $((512 * 1024)) -- "${source_file}" >"${target}"
+  done < <(find "${driver_logs}" -mindepth 1 -maxdepth 1 -type f -print0 | \
+    sort -z)
+}
+
 finalize() {
   local command_status=$? recovery_status=0 finalize_status=0 cleanup_status=0
   local lifecycle_status=0
@@ -113,11 +146,7 @@ finalize() {
   fi
   if [[ ( ${command_status} -ne 0 || ${recovery_status} -ne 0 ) && \
         -d "${driver_logs}" ]]; then
-    mkdir -p "${evidence}/failure-driver-logs"
-    while IFS= read -r log; do
-      tail -c $((512 * 1024)) -- "${log}" \
-        >"${evidence}/failure-driver-logs/$(basename -- "${log}")"
-    done < <(find "${driver_logs}" -type f -print | sort | head -n 24)
+    extract_failure_logs
   fi
   for root in "${custom_install}" "${fia_install}"; do
     [[ -d "${root}" ]] && find "${root}" -type d -exec chmod u+w {} +
@@ -146,8 +175,13 @@ trap finalize EXIT
 git -C "${source_dir}" status --porcelain=v1 \
   >"${evidence}/source-worktree-status.txt"
 [[ ! -s "${evidence}/source-worktree-status.txt" ]] || {
-  printf 'V2 KV attention hardware probe requires a clean worktree\n' >&2
-  exit 94
+  if [[ "${allow_diagnostic_dirty}" != 1 ]]; then
+    printf 'V2 KV attention hardware probe requires a clean worktree\n' >&2
+    exit 94
+  fi
+  git -C "${source_dir}" diff --check
+  git -C "${source_dir}" diff --binary \
+    >"${evidence}/source-worktree.patch"
 }
 git -C "${source_dir}" rev-parse HEAD >"${evidence}/source-commit.txt"
 v2_capture_hbm_baseline "${evidence}" "${physical_npu}"
@@ -296,8 +330,11 @@ g++ -D_GLIBCXX_USE_CXX11_ABI=0 -O2 -std=c++11 -ftrapv \
   -o "${build}/attention_kv_probe_host" >"${evidence}/host-compile.log" 2>&1
 
 : >"${evidence}/mode-status.tsv"
-modes=(graph)
-[[ "${max_stage}" == dataflow ]] && modes+=(dataflow)
+case "${max_stage}" in
+  graph) modes=(graph) ;;
+  owner) modes=(dataflow) ;;
+  dataflow) modes=(graph dataflow) ;;
+esac
 for mode in "${modes[@]}"; do
   mode_driver_logs=${driver_logs}/${mode}
   mkdir -p "${mode_driver_logs}"
@@ -362,15 +399,24 @@ if [[ "${max_stage}" == graph ]]; then
 fi
 
 set +e
-"${python_bin}" "${verifier}" \
-  --structure "${evidence}/graph-structure.json" \
-  --graph-result "${evidence}/graph.json" \
-  --graph-log "${evidence}/graph-launch-metadata.txt" \
-  --graph-transfer-log "${evidence}/graph-transfer-metadata.txt" \
-  --dataflow-result "${evidence}/dataflow.json" \
-  --dataflow-log "${evidence}/dataflow-launch-metadata.txt" \
-  --dataflow-transfer-log "${evidence}/dataflow-transfer-metadata.txt" \
+verifier_route=combined
+[[ "${max_stage}" == owner ]] && verifier_route=owner
+verifier_args=(
+  --route "${verifier_route}"
+  --structure "${evidence}/graph-structure.json"
+  --dataflow-result "${evidence}/dataflow.json"
+  --dataflow-log "${evidence}/dataflow-launch-metadata.txt"
+  --dataflow-transfer-log "${evidence}/dataflow-transfer-metadata.txt"
   --output "${evidence}/verifier.json"
+)
+if [[ "${verifier_route}" == combined ]]; then
+  verifier_args+=(
+    --graph-result "${evidence}/graph.json"
+    --graph-log "${evidence}/graph-launch-metadata.txt"
+    --graph-transfer-log "${evidence}/graph-transfer-metadata.txt"
+  )
+fi
+"${python_bin}" "${verifier}" "${verifier_args[@]}"
 verifier_status=$?
 set -e
 storage_guard_snapshot kv-attention-complete \

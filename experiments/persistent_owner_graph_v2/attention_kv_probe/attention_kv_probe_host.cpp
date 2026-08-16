@@ -353,6 +353,12 @@ int main(int argc, char **argv) {
     std::vector<ge::Tensor> outputs;
     status = inputs_ready ? session->RunGraph(kGraphId, inputs.tensors(), outputs)
                           : ge::FAILED;
+    const std::string ge_error = ge::GEGetErrorMsg();
+    const char *acl_error = aclGetRecentErrMsg();
+    std::cerr << "V2_KV_ATTENTION_RUNGRAPH status=" << status
+              << " outputs=" << outputs.size() << " ge_error=" << ge_error
+              << " acl_error=" << (acl_error == nullptr ? "" : acl_error)
+              << std::endl;
     bool attention_exact = false;
     bool ticket_exact = false;
     if (status == ge::SUCCESS) {

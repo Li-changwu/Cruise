@@ -1,4 +1,5 @@
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,7 @@ from experiments.persistent_owner_graph_v2.attention_kv_probe.prepare_probe_conf
     render_header as render_attention_kv_header,
 )
 from experiments.persistent_owner_graph_v2.attention_kv_probe.verify_probe import (
+    main as verify_attention_kv,
     transfer_audit as audit_attention_kv_transfers,
 )
 
@@ -867,6 +869,98 @@ def test_v2_attention_kv_transfer_audit_rejects_full_cache_records(tmp_path):
     }
 
 
+def test_v2_attention_kv_owner_verifier_separates_registration_from_calls(
+    tmp_path, monkeypatch
+):
+    structure = {
+        "pass": True,
+        "shared_update_and_fia_kv_inputs": True,
+        "explicit_update_to_fia_dependency": True,
+        "external_refdata_count": 0,
+        "tensor_move_count": 0,
+        "compact_attention_and_ticket_outputs": True,
+        "full_kv_graph_output": False,
+        "data_input_abi_pass": True,
+    }
+    first = [
+        1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 3145728, 0, 0, 14336, 9, 0,
+        16256, 16256, 16256, 16256, 0, 4096, 0, 0, 6, 2, 20, 256, 1, 1,
+        1, 1,
+    ]
+    second = [
+        2, 0, 1, 2, 1, 1, 1, 1, 1, 1, 3145728, 0, 0, 14336, 9, 16256,
+        16384, 16384, 16384, 16384, 0, 4096, 0, 0, 6, 2, 20, 256, 1, 1,
+        1, 1,
+    ]
+    dataflow = {
+        "pass": True,
+        "exact_two_update_attention_calls": True,
+        "abi_input_count": 6,
+        "metadata_input_index": 2,
+        "query_input_index": 3,
+        "allocation_count": 1,
+        "graph_call_count": 2,
+        "flowmsg_identity_stable": True,
+        "buffer_address_stable": True,
+        "full_cache_exact_after_each_call": True,
+        "attention_observed_update_each_call": True,
+        "device_owned_cache_bytes": 3 * 1024 * 1024,
+        "host_cache_input_bytes": 0,
+        "host_cache_output_bytes": 0,
+        "raw_device_address_abi_used": False,
+        "external_refdata_used": False,
+        "first_summary": first,
+        "second_summary": second,
+    }
+    structure_path = tmp_path / "structure.json"
+    dataflow_path = tmp_path / "dataflow.json"
+    registration_path = tmp_path / "registrations.log"
+    transfer_path = tmp_path / "transfers.log"
+    output_path = tmp_path / "verifier.json"
+    structure_path.write_text(json.dumps(structure), encoding="utf-8")
+    dataflow_path.write_text(json.dumps(dataflow), encoding="utf-8")
+    registration_path.write_text(
+        "kernel_name=te_devicepagedkvupdate_test\n"
+        "kernel_name=te_devicequeryafterkvupdate_test\n"
+        "kernel_name=te_fusedinferattentionscore_test\n",
+        encoding="utf-8",
+    )
+    transfer_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "verify_probe.py",
+            "--route",
+            "owner",
+            "--structure",
+            str(structure_path),
+            "--dataflow-result",
+            str(dataflow_path),
+            "--dataflow-log",
+            str(registration_path),
+            "--dataflow-transfer-log",
+            str(transfer_path),
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    assert verify_attention_kv() == 0
+    result = json.loads(output_path.read_text(encoding="utf-8"))
+    assert result["pass"]
+    assert result["route"] == "owner"
+    assert not result["ordinary_graph_evaluated"]
+    assert result["ordinary_graph_pass"] is None
+    assert result["graphpp_target_tasks_registered"]
+    assert result["semantic_graph_calls_exact"]
+    assert result["graphpp_registration_counts"] == {
+        "update": 1,
+        "order": 1,
+        "fia": 1,
+    }
+
+
 def test_v2_attention_kv_uses_owned_buffers_narrow_host_io_and_public_routes():
     probe = V2 / "attention_kv_probe"
     controller = (probe / "controller" / "attention_kv_controller.cpp").read_text(
@@ -895,6 +989,8 @@ def test_v2_attention_kv_uses_owned_buffers_narrow_host_io_and_public_routes():
     assert "GraphAbi::kQueryInput" in host
     assert "desc.SetPlacement(ge::kPlacementDevice)" in host
     assert "tensor.SetData(reinterpret_cast<uint8_t *>(device), bytes" in host
+    assert "ge::GEGetErrorMsg()" in host
+    assert "aclGetRecentErrMsg()" in host
     assert '\\"host_cache_input_bytes\\": 0' in host
     assert '\\"host_cache_output_bytes\\": 0' in host
     assert "aclmdlExecute" not in host
@@ -910,10 +1006,20 @@ def test_v2_attention_kv_uses_owned_buffers_narrow_host_io_and_public_routes():
         in runner
     )
     assert "CRUISE_V2_KV_ATTENTION_MAX_STAGE:-dataflow" in runner
-    assert 'modes=(graph)' in runner
-    assert 'modes+=(dataflow)' in runner
+    assert "CRUISE_ALLOW_DIAGNOSTIC_DIRTY:-0" in runner
+    assert '"${allow_diagnostic_dirty}" != 1' in runner
+    assert "source-worktree.patch" in runner
+    assert "export|graph|owner|dataflow" in runner
+    assert 'owner) modes=(dataflow) ;;' in runner
+    assert 'dataflow) modes=(graph dataflow) ;;' in runner
+    assert '[[ "${max_stage}" == owner ]] && verifier_route=owner' in runner
     assert "graph-transfer-metadata.txt" in runner
     assert "dataflow-transfer-metadata.txt" in runner
+    assert 'cp -a "${driver_logs}/${mode}/."' in runner
+    assert "driver-log-manifest.tsv" in runner
+    assert '"${evidence}/${mode}-error-index.log"' in runner
+    assert 'relative=${source_file#"${driver_logs}"/}' in runner
+    assert 'head -n 24' not in runner
     assert runner.index('if [[ "${max_stage}" == export ]]') < runner.index(
         'modes=(graph)'
     )
@@ -926,6 +1032,11 @@ def test_v2_attention_kv_uses_owned_buffers_narrow_host_io_and_public_routes():
 
     assert "host_cache_input_bytes" in verifier
     assert "host_cache_output_bytes" in verifier
-    assert "all(dataflow_launches[name] >= 2" in verifier
-    assert "Any failure stops this combined path" in protocol
+    assert 'parser.add_argument("--route"' in verifier
+    assert "target_tasks_registered" in verifier
+    assert "semantic_graph_calls_exact" in verifier
+    assert "dataflow_registrations[name] >= 1" in verifier
+    assert "dataflow_registrations[name] >= 2" not in verifier
+    assert "The owner-only gate passes only when" in protocol
+    assert "not one launch per Feed" in protocol
     assert "does not prove" in protocol

@@ -269,3 +269,19 @@ rule prevented GraphPp, full Decoder integration, another P5 pair, and the
 six-start matrix. Compact evidence is in
 `evidence/PERSISTENT-OWNER-V2-KV-ATTENTION-ABI-R2-20260816.md`. P5 remains
 Stopped / Unqualified and P6 remains closed.
+
+The follow-up owner-only revision removed ordinary Graph from the ownership
+gate while retaining it as a frozen negative diagnostic. FunctionPp allocated
+one 3 MiB CANN-owned key/value state, retained the same FlowMsg objects and
+Device addresses, and passed them directly to GraphPp. Two Feed/Fetch rounds,
+two complete cache scans, attention, tickets, mask, table, and query all passed
+exactly. Host KV I/O was 0/0, and bounded transfer logs contained no full-cache
+size match. Load-time task registration and two-call semantic evidence are now
+reported separately.
+
+This passes the bounded E0-E4 ownership component at source commit `6a628e8`
+plus the captured worktree patch. It does not reopen P5: the next independently
+tracked step is 28-layer Decoder integration and correctness before a new
+Graph/Owner pair. Compact evidence is in
+`evidence/PERSISTENT-OWNER-V2-KV-ATTENTION-OWNER-20260816.md`. P5 remains
+Stopped / Unqualified and P6 remains closed.

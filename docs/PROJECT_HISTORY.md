@@ -411,6 +411,21 @@ boundary. Under the ordered stop rule, GraphPp and all downstream Decoder/P5
 work were not run. P5 remains Stopped / Unqualified and P6 remains closed. See
 [`PERSISTENT-OWNER-V2-KV-ATTENTION-ABI-R2-20260816.md`](../evidence/PERSISTENT-OWNER-V2-KV-ATTENTION-ABI-R2-20260816.md).
 
+The subsequent owner-only revision separated the two ownership domains. It did
+not rerun ordinary Graph; FunctionPp instead allocated and retained one
+CANN-owned 3 MiB KV state and passed those same FlowMsg objects directly to
+GraphPp. Both Feed/Fetch rounds returned zero, the Device addresses stayed
+stable, both complete cache scans and attention/ticket results were exact, and
+Host KV I/O was 0/0. Three target task registrations were observed once each;
+the two semantic calls were independently proved by the controller summaries.
+See
+[`PERSISTENT-OWNER-V2-KV-ATTENTION-OWNER-20260816.md`](../evidence/PERSISTENT-OWNER-V2-KV-ATTENTION-OWNER-20260816.md).
+
+This closes the bounded KV ownership component blocker, not the full Decoder or
+performance gate. P5 remains Stopped / Unqualified and P6 remains closed; the
+next separately tracked exploration is 28-layer Decoder integration and
+correctness.
+
 ### M2: Lifecycle, Recovery, and Resource Safety
 
 - [ ] Add sidecar supervision, bounded startup and request timeouts, readiness
