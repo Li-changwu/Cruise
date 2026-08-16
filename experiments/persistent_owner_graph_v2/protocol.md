@@ -73,6 +73,15 @@ ABI-r2 experiment, staged as export/static ABI, ordinary Graph, and only then
 two GraphPp calls. ABI-r2 does not advance gates 5-9 unless every preceding
 stage passes, and a component pass does not itself reopen P5.
 
+ABI-r2 export and static ABI validation passed at clean commit `e414092` on
+2026-08-16. Ordinary Graph loaded the corrected six-input AIR and launched the
+update, ordered-query, and FIA kernels once each, then returned runtime status
+`107000` without compact outputs. The retained failure logs do not identify
+which operator or output boundary supplied the invalid parameter. Because
+ordinary Graph exactness failed, GraphPp was not run under the ordered stop
+rule. The V2 state remains `contract_defined`; see
+`evidence/PERSISTENT-OWNER-V2-KV-ATTENTION-ABI-R2-20260816.md`.
+
 No gate here changes ADR 0020. Until all component gates are backed by target
 NPU evidence, the V2 state is `contract_defined`, P5 remains Stopped /
 Unqualified, and the six-start matrix and P6 remain closed.

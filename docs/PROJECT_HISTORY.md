@@ -398,6 +398,19 @@ Feed. The frozen one-run stop rule therefore keeps the combined V2 path closed,
 with no corrected rerun, second P5 pair, or six-start matrix. See
 [`PERSISTENT-OWNER-V2-KV-ATTENTION-20260815.md`](../evidence/PERSISTENT-OWNER-V2-KV-ATTENTION-20260815.md).
 
+On 2026-08-16, one explicitly authorized ABI-r2 diagnostic generated the Graph
+and C++ input contracts from the validated AIR order. Export and static ABI
+checks passed at clean commit `e414092`. Ordinary Graph then loaded the AIR and
+launched the KV update, ordered-query, and FIA kernels once each, but returned
+runtime status `107000` without compact outputs. This moves the failure beyond
+the r1 input-order defect but does not establish exact attention execution.
+
+The retained failure bundle omitted the detailed execution-process log tails,
+so the invalid parameter cannot be assigned to one operator or output-recovery
+boundary. Under the ordered stop rule, GraphPp and all downstream Decoder/P5
+work were not run. P5 remains Stopped / Unqualified and P6 remains closed. See
+[`PERSISTENT-OWNER-V2-KV-ATTENTION-ABI-R2-20260816.md`](../evidence/PERSISTENT-OWNER-V2-KV-ATTENTION-ABI-R2-20260816.md).
+
 ### M2: Lifecycle, Recovery, and Resource Safety
 
 - [ ] Add sidecar supervision, bounded startup and request timeouts, readiness

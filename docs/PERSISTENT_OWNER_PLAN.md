@@ -252,3 +252,20 @@ stops the path. No corrected rerun, full Decoder graph-family integration,
 second P5 pair, or six-start matrix is authorized. Compact evidence is in
 `evidence/PERSISTENT-OWNER-V2-KV-ATTENTION-20260815.md`. P5 remains Stopped /
 Unqualified and P6 remains closed.
+
+One separately authorized ABI-r2 diagnostic then derived the six input
+positions, dtypes, and shapes from AIR and generated both Graph descriptors and
+C++ constants from the checked manifest. Export/static ABI passed at clean
+commit `e414092`. Ordinary Graph loaded the artifact and launched
+`DevicePagedKvUpdate`, `DeviceQueryAfterKvUpdate`, and
+`FusedInferAttentionScore` once each, but `RunGraph` returned runtime status
+`107000` without compact outputs. The input-order defect was therefore fixed,
+but ordinary Graph exactness was not established.
+
+The failure bundle retained only the first 24 sorted driver logs and omitted
+the detailed execution-process tails, so this result cannot assign the invalid
+parameter to a particular kernel or output-recovery boundary. The staged stop
+rule prevented GraphPp, full Decoder integration, another P5 pair, and the
+six-start matrix. Compact evidence is in
+`evidence/PERSISTENT-OWNER-V2-KV-ATTENTION-ABI-R2-20260816.md`. P5 remains
+Stopped / Unqualified and P6 remains closed.

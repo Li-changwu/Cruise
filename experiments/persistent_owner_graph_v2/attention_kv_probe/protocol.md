@@ -60,3 +60,24 @@ then two FunctionPp calls through GraphPp with stable FlowMsg and Device
 addresses, full-cache scans, exact attention, and bounded transfer-log review.
 Failure at any stage stops the later stages. A complete pass remains component
 evidence only and does not reopen P5 or authorize full Decoder work by itself.
+
+## ABI-r2 result
+
+The authorized ABI-r2 experiment ran on 2026-08-16 at clean commit `e414092`.
+Export and static ABI validation passed with the required order: key, value,
+metadata, query, mask, and block table. The ordinary Graph then loaded and
+launched `DevicePagedKvUpdate`, `DeviceQueryAfterKvUpdate`, and
+`FusedInferAttentionScore` once each, but `RunGraph` returned runtime status
+`107000` (`ACL_ERROR_RT_PARAM_INVALID`) without compact outputs.
+
+This is distinct from r1: the corrected inputs reached execution and all three
+target kernels launched. Retained logs are insufficient to attribute the
+runtime error to a specific operator or output boundary because failure cleanup
+preserved only the first 24 sorted driver logs, not the detailed execution
+tails. The bounded transfer audit found no 1.5 MiB or 3 MiB full-KV-size match.
+
+Ordinary Graph exactness did not pass, so the protocol stopped before GraphPp.
+Two-call lifetime and exactness checks, full-cache scans, and dual-route
+execution remain unproven. See
+`evidence/PERSISTENT-OWNER-V2-KV-ATTENTION-ABI-R2-20260816.md`. P5 remains
+Stopped / Unqualified and P6 remains closed.
